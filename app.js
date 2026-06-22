@@ -13,6 +13,7 @@
   const addDays = (date, amount) => { const result = new Date(date); result.setDate(result.getDate() + amount); return result; };
   const startOfWeek = (date = new Date()) => { const result = new Date(date); const day = result.getDay() || 7; result.setDate(result.getDate() - day + 1); result.setHours(0, 0, 0, 0); return result; };
   const endOfWeek = date => { const result = addDays(startOfWeek(date), 6); result.setHours(23, 59, 59, 999); return result; };
+  const startOfDay = (date = new Date()) => { const result = new Date(date); result.setHours(0, 0, 0, 0); return result; };
   const startOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth(), 1);
   const endOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
   const dateInRange = (iso, start, end) => { const date = parseISO(iso); return Boolean(date && date >= start && date <= end); };
@@ -36,7 +37,7 @@
 
   function freshState() {
     return {
-      version: 2,
+      version: 3,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -45,7 +46,8 @@
         monthlyExpenseLimit: 70000,
         theme: 'dark',
         notificationsEnabled: false,
-        lastBackup: null
+        lastBackup: null,
+        progressRange: '6m'
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -56,8 +58,8 @@
       obligations: [],
       projects: [],
       goals: [
-        { id: uid(), title: 'Капитал 1 000 000 ₽', current: 0, target: 1000000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 0, nextAction: '', autoSource: 'capital' },
-        { id: uid(), title: 'Доход 200 000 ₽ в месяц', current: 0, target: 200000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 200000, nextAction: '', autoSource: 'monthlyIncome' }
+        { id: uid(), title: 'Капитал 1 000 000 ₽', current: 0, target: 1000000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 0, nextAction: '', autoSource: 'capital', createdAt: new Date().toISOString() },
+        { id: uid(), title: 'Доход 200 000 ₽ в месяц', current: 0, target: 200000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 200000, nextAction: '', autoSource: 'monthlyIncome', createdAt: new Date().toISOString() }
       ],
       habits: [
         { id: uid(), title: 'Профессиональное развитие', logs: {}, targetPerWeek: 5, schedule: [1, 2, 3, 4, 5] },
@@ -66,7 +68,8 @@
         { id: uid(), title: 'Спорт', logs: {}, targetPerWeek: 2, schedule: [4, 5] },
         { id: uid(), title: 'Без импульсивных покупок', logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0] }
       ],
-      weeklyReviews: []
+      weeklyReviews: [],
+      snapshots: []
     };
   }
 
@@ -75,7 +78,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 2,
+      version: 3,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -84,7 +87,8 @@
       projects: Array.isArray(raw.projects) ? raw.projects : [],
       goals: Array.isArray(raw.goals) ? raw.goals : [],
       habits: Array.isArray(raw.habits) ? raw.habits : [],
-      weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : []
+      weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : [],
+      snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
     result.tasks = result.tasks.map(task => ({
@@ -93,10 +97,10 @@
       status: task.status || (task.done ? 'done' : 'todo')
     }));
     result.accounts = result.accounts.map(account => ({ type: 'card', balance: 0, ...account, balance: Number(account.balance || 0) }));
-    result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', ...tx, amount: Number(tx.amount || 0) }));
+    result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', ...tx, amount: Number(tx.amount || 0) }));
     result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
     result.projects = result.projects.map(project => ({ type: 'client', service: '', contact: '', value: 0, status: 'active', paymentStatus: 'not_due', debt: 0, paymentDate: '', nextContact: '', next: '', site: '', adBudget: 0, leads: 0, cpl: 0, result: '', notes: '', startDate: '', ...project }));
-    result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
+    result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', createdAt: new Date(new Date().getFullYear(), 0, 1).toISOString(), ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
     result.habits = result.habits.map(habit => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], ...habit }));
     return result;
   }
@@ -141,6 +145,8 @@
   let financeTab = 'overview';
   let taskFilter = 'today';
   let taskSearch = '';
+  let financeCompareCurrent = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
+  let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
   let modalAction = null;
 
   const app = $('#app');
@@ -154,7 +160,8 @@
   const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 2;
+    state.version = 3;
+    recordSnapshot();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
@@ -178,47 +185,56 @@
 
   function getFinanceAnalytics() {
     const now = new Date();
+    const currentEnd = endOfToday(now);
     const weekStart = startOfWeek(now);
-    const weekEnd = endOfWeek(now);
+    const weekDayIndex = (now.getDay() || 7) - 1;
     const previousWeekStart = addDays(weekStart, -7);
-    const previousWeekEnd = addDays(weekEnd, -7);
+    const previousWeekEnd = endOfToday(addDays(previousWeekStart, weekDayIndex));
     const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
     const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const previousMonthStart = startOfMonth(previousMonthDate);
-    const previousMonthEnd = endOfMonth(previousMonthDate);
+    const previousMonthLastDay = endOfMonth(previousMonthDate).getDate();
+    const comparableDay = Math.min(now.getDate(), previousMonthLastDay);
+    const previousMonthEnd = endOfToday(new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth(), comparableDay));
 
-    const liquid = sum(state.accounts.map(account => account.balance));
+    const assets = sum(state.accounts.map(account => account.balance));
+    const investment = sum(state.accounts.filter(account => account.type === 'investment').map(account => account.balance));
+    const liquid = sum(state.accounts.filter(account => account.type !== 'investment').map(account => account.balance));
     const debt = sum(openObligations('debt').map(item => item.amount));
     const expected = sum(openObligations('expected').map(item => item.amount));
-    const capital = liquid - debt;
-    const weekExpense = sumTransactions('expense', weekStart, weekEnd);
+    const upcomingPayments = sum(openObligations().filter(item => item.type !== 'expected' && item.dueDate && dateInRange(item.dueDate, now, addDays(now, 30))).map(item => item.amount));
+    const capital = assets - debt;
+    const freeBalance = liquid - upcomingPayments;
+    const weekExpense = sumTransactions('expense', weekStart, currentEnd);
     const previousWeekExpense = sumTransactions('expense', previousWeekStart, previousWeekEnd);
-    const monthExpense = sumTransactions('expense', monthStart, monthEnd);
+    const monthExpense = sumTransactions('expense', monthStart, currentEnd);
     const previousMonthExpense = sumTransactions('expense', previousMonthStart, previousMonthEnd);
-    const monthIncome = sumTransactions('income', monthStart, monthEnd);
+    const monthIncome = sumTransactions('income', monthStart, currentEnd);
     const previousMonthIncome = sumTransactions('income', previousMonthStart, previousMonthEnd);
-    const monthSalary = sum(transactionsInRange('income', monthStart, monthEnd).filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const monthSalary = sum(transactionsInRange('income', monthStart, currentEnd).filter(tx => tx.category === 'salary').map(tx => tx.amount));
     const previousMonthSalary = sum(transactionsInRange('income', previousMonthStart, previousMonthEnd).filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const todayExpense = sumTransactions('expense', startOfDay(now), currentEnd);
     const monthBalance = monthIncome - monthExpense;
     const savingsRate = monthIncome > 0 ? Math.round(monthBalance / monthIncome * 100) : 0;
+    const optionalExpense = sum(transactionsInRange('expense', monthStart, currentEnd).filter(tx => tx.necessity === 'optional').map(tx => tx.amount));
 
     const categories = new Map();
-    transactionsInRange('expense', monthStart, monthEnd).forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
+    transactionsInRange('expense', monthStart, currentEnd).forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
     const categoryRows = [...categories.entries()].map(([key, amount]) => ({ key, label: categoryLabel(key), amount })).sort((a, b) => b.amount - a.amount);
 
     const daysElapsed = now.getDate();
-    const daysInMonth = monthEnd.getDate();
+    const daysInMonth = endOfMonth(now).getDate();
     const projectedExpense = daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
+    const remainingLimit = Number(state.profile.monthlyExpenseLimit || 0) - monthExpense;
 
     return {
-      liquid, debt, expected, capital,
+      assets, investment, liquid, debt, expected, capital, upcomingPayments, freeBalance,
       weekExpense, previousWeekExpense,
       monthExpense, previousMonthExpense,
       monthIncome, previousMonthIncome,
       monthSalary, previousMonthSalary,
-      monthBalance, savingsRate, categoryRows, projectedExpense,
-      weekStart, weekEnd, monthStart, monthEnd
+      todayExpense, monthBalance, savingsRate, optionalExpense, categoryRows, projectedExpense, remainingLimit,
+      weekStart, weekEnd: currentEnd, monthStart, monthEnd: currentEnd
     };
   }
 
@@ -262,6 +278,11 @@
       insights.push({ cls: 'danger', text: `При текущем темпе расходы месяца могут составить ${money(analytics.projectedExpense)}. Это выше лимита на ${money(analytics.projectedExpense - state.profile.monthlyExpenseLimit)}.` });
     } else if (analytics.monthExpense > 0) {
       insights.push({ cls: '', text: `Прогноз расходов к концу месяца - ${money(analytics.projectedExpense)} при лимите ${money(state.profile.monthlyExpenseLimit)}.` });
+    }
+
+    if (analytics.monthExpense > 0 && analytics.optionalExpense > 0) {
+      const optionalShare = Math.round(analytics.optionalExpense / analytics.monthExpense * 100);
+      if (optionalShare >= 25) insights.push({ cls: 'warning', text: `Необязательные траты составляют ${money(analytics.optionalExpense)} - ${optionalShare}% расходов месяца. Это первая зона для сокращения без ущерба обязательствам.` });
     }
 
     if (analytics.monthIncome > 0 && analytics.savingsRate < 20) {
@@ -310,10 +331,185 @@
     return ({ none: 'Не повторяется', daily: 'Каждый день', weekly: 'Каждую неделю', monthly: 'Каждый месяц' })[repeat] || 'Не повторяется';
   }
 
+  function endOfToday(date = new Date()) {
+    const result = new Date(date);
+    result.setHours(23, 59, 59, 999);
+    return result;
+  }
+
+  function monthKey(date = new Date()) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+  }
+
+  function monthRange(key) {
+    const [year, month] = String(key).split('-').map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0, 23, 59, 59, 999);
+    return { start, end };
+  }
+
+  function monthName(key) {
+    const { start } = monthRange(key);
+    return new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(start);
+  }
+
+  function monthsForSelect() {
+    const keys = new Set();
+    const now = new Date();
+    for (let index = 0; index < 18; index += 1) keys.add(monthKey(new Date(now.getFullYear(), now.getMonth() - index, 1)));
+    state.transactions.forEach(tx => { if (tx.date) keys.add(String(tx.date).slice(0, 7)); });
+    return [...keys].sort().reverse();
+  }
+
+  function monthMetrics(key) {
+    const { start, end } = monthRange(key);
+    const incomeRows = transactionsInRange('income', start, end);
+    const expenseRows = transactionsInRange('expense', start, end);
+    const income = sum(incomeRows.map(tx => tx.amount));
+    const expense = sum(expenseRows.map(tx => tx.amount));
+    const salary = sum(incomeRows.filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const net = income - expense;
+    const savingsRate = income > 0 ? Math.round(net / income * 100) : 0;
+    const categories = new Map();
+    expenseRows.forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
+    const optionalExpense = sum(expenseRows.filter(tx => tx.necessity === 'optional').map(tx => tx.amount));
+    const workExpense = sum(expenseRows.filter(tx => tx.scope === 'work').map(tx => tx.amount));
+    return { key, income, expense, salary, net, savingsRate, categories, optionalExpense, workExpense };
+  }
+
+  function compareSentence(label, current, base, lowerIsBetter = false, unit = '₽') {
+    const change = percentageChange(current, base);
+    if (change === null) {
+      const cls = current > 0 && lowerIsBetter ? 'bad' : 'neutral';
+      return `<span class="compare ${cls}">нет базы для сравнения</span>`;
+    }
+    if (change === 0) return '<span class="compare neutral">без изменений</span>';
+    const rose = change > 0;
+    const good = lowerIsBetter ? !rose : rose;
+    const verb = rose ? 'выросли' : 'снизились';
+    return `<span class="compare ${good ? 'good' : 'bad'}">${label} ${verb} на ${Math.abs(change)}%</span>`;
+  }
+
+  function taskWeekStats(date = new Date(), partial = false) {
+    const start = startOfWeek(date);
+    const end = partial ? endOfToday(date) : endOfWeek(date);
+    const rows = state.tasks.filter(task => task.due && dateInRange(task.due, start, end));
+    const completed = rows.filter(task => task.status === 'done').length;
+    return { total: rows.length, completed, rate: rows.length ? Math.round(completed / rows.length * 100) : 100 };
+  }
+
+  function habitWeekStats(date = new Date(), currentPartial = false) {
+    const start = startOfWeek(date);
+    const maxDays = currentPartial ? ((date.getDay() || 7)) : 7;
+    let planned = 0;
+    let completed = 0;
+    state.habits.forEach(habit => {
+      for (let offset = 0; offset < maxDays; offset += 1) {
+        const day = addDays(start, offset);
+        if ((habit.schedule || []).includes(day.getDay())) {
+          planned += 1;
+          if (habit.logs?.[localISO(day)]) completed += 1;
+        }
+      }
+    });
+    return { planned, completed, rate: planned ? Math.round(completed / planned * 100) : 100 };
+  }
+
+  function recordSnapshot() {
+    state.snapshots ||= [];
+    const analytics = getFinanceAnalytics();
+    const tasks = taskWeekStats(new Date(), true);
+    const habits = habitWeekStats(new Date(), true);
+    const snapshot = {
+      date: todayISO(),
+      capital: analytics.capital,
+      assets: analytics.assets,
+      liquid: analytics.liquid,
+      debt: analytics.debt,
+      monthIncome: analytics.monthIncome,
+      monthExpense: analytics.monthExpense,
+      savingsRate: analytics.savingsRate,
+      taskRate: tasks.rate,
+      habitRate: habits.rate,
+      activeProjects: state.projects.filter(project => ['active', 'growth'].includes(project.status)).length,
+      overdueTasks: state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length,
+      updatedAt: new Date().toISOString()
+    };
+    const existing = state.snapshots.find(item => item.date === snapshot.date);
+    if (existing) Object.assign(existing, snapshot); else state.snapshots.push(snapshot);
+    state.snapshots = state.snapshots.slice().sort((a, b) => a.date.localeCompare(b.date)).slice(-730);
+  }
+
+  function snapshotChange(key) {
+    const rows = (state.snapshots || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    if (rows.length < 2) return null;
+    const current = Number(rows.at(-1)?.[key] || 0);
+    const previous = Number(rows.at(-2)?.[key] || 0);
+    return { current, previous, change: current - previous, percent: percentageChange(current, previous) };
+  }
+
+  function lineChart(rows, key, label = '') {
+    if (rows.length < 2) return '<div class="item-meta">Динамика капитала появится после двух дней использования новой версии.</div>';
+    const width = 640;
+    const height = 170;
+    const values = rows.map(row => Number(row[key] || 0));
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const spread = Math.max(1, max - min);
+    const points = rows.map((row, index) => {
+      const x = rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width;
+      const y = height - 18 - ((Number(row[key] || 0) - min) / spread) * (height - 38);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(label)}"><line x1="0" y1="${height - 18}" x2="${width}" y2="${height - 18}" class="chart-axis"/><polyline points="${points}" class="chart-line"/></svg><div class="chart-labels"><span>${dateText(rows[0].date)}</span><span>${dateText(rows.at(-1).date)}</span></div></div>`;
+  }
+
+  function dualBarChart(rows) {
+    const max = Math.max(1, ...rows.flatMap(row => [row.income, row.expense]));
+    return `<div class="dual-chart">${rows.map(row => `<div class="dual-column"><div class="dual-bars"><span class="income-bar" style="height:${Math.max(3, Math.round(row.income / max * 100))}%"></span><span class="expense-bar" style="height:${Math.max(3, Math.round(row.expense / max * 100))}%"></span></div><small>${escapeHtml(row.label)}</small></div>`).join('')}</div><div class="chart-legend"><span><i class="legend-income"></i>Доход</span><span><i class="legend-expense"></i>Расход</span></div>`;
+  }
+
+  function monthlyMoneySeries(count = 6) {
+    const now = new Date();
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (count - 1 - index), 1);
+      const metrics = monthMetrics(monthKey(date));
+      return { label: monthLabel(date), income: metrics.income, expense: metrics.expense, net: metrics.net };
+    });
+  }
+
+  function goalPace(goal, current, percent) {
+    if (!goal.deadline) return { cls: 'neutral', text: 'Без срока' };
+    const start = new Date(goal.createdAt || new Date(new Date().getFullYear(), 0, 1));
+    const end = parseISO(goal.deadline);
+    const now = new Date();
+    if (!end || end <= start) return { cls: 'neutral', text: 'Проверь срок цели' };
+    const expected = Math.max(0, Math.min(100, Math.round((now - start) / (end - start) * 100)));
+    const gap = percent - expected;
+    if (gap >= -5) return { cls: 'good', text: gap >= 5 ? `Опережение ${gap} п.п.` : 'Идёшь по плану' };
+    return { cls: 'bad', text: `Отставание ${Math.abs(gap)} п.п.` };
+  }
+
+  function systemInsights() {
+    const analytics = getFinanceAnalytics();
+    const currentTasks = taskWeekStats(new Date(), true);
+    const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
+    const currentHabits = habitWeekStats(new Date(), true);
+    const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
+    const rows = [...getFinanceInsights(analytics)];
+    if (currentTasks.rate < previousTasks.rate - 10) rows.push({ cls: 'danger', text: `Выполнение задач снизилось с ${previousTasks.rate}% до ${currentTasks.rate}%. Уменьши число активных задач и закрой 3 ключевые.` });
+    if (currentHabits.rate < previousHabits.rate - 10) rows.push({ cls: 'warning', text: `Дисциплина просела на ${previousHabits.rate - currentHabits.rate} п.п. Самая сильная коррекция - вернуть 1-2 базовые привычки, а не пытаться закрыть все сразу.` });
+    const overdueProjects = state.projects.filter(project => project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO()));
+    if (overdueProjects.length) rows.push({ cls: 'danger', text: `${overdueProjects.length} проект(а) с просроченной оплатой. Это прямой риск денежного потока - поставь контакт с клиентом в задачи сегодня.` });
+    const stalled = state.projects.filter(project => ['active', 'growth'].includes(project.status) && !String(project.next || '').trim());
+    if (stalled.length) rows.push({ cls: 'warning', text: `${stalled.length} активных проект(а) без следующего шага. Проект без следующего действия фактически стоит.` });
+    return rows.slice(0, 8);
+  }
+
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
-    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Рост' };
+    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
     $('#screenTitle').textContent = titles[currentScreen];
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
     ({ dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth })[currentScreen]();
@@ -349,20 +545,29 @@
   function renderDashboard() {
     const analytics = getFinanceAnalytics();
     const score = overallScore();
-    const mainTask = getMainTask();
-    const overdue = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
+    const mainTasks = state.tasks
+      .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
+      .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))
+      .slice(0, 3);
+    const overdueTasks = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
+    const overdueMoney = openObligations().filter(item => item.dueDate && item.dueDate < todayISO()).length;
     const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 7))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-    const capitalProgress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
+    const hasData = Boolean(state.accounts.length || state.transactions.length || state.projects.length || state.tasks.length > 2);
+    const monthLimit = Number(state.profile.monthlyExpenseLimit || 0);
+    const alertRows = [];
+    if (overdueTasks) alertRows.push(`<div class="alert-row danger"><b>${overdueTasks}</b><span>просроченных задач</span><button data-go="tasks">Открыть</button></div>`);
+    if (overdueMoney) alertRows.push(`<div class="alert-row danger"><b>${overdueMoney}</b><span>просроченных платежей</span><button data-go="finance">Открыть</button></div>`);
+    if (monthLimit > 0 && analytics.projectedExpense > monthLimit) alertRows.push(`<div class="alert-row warning"><b>${money(analytics.projectedExpense - monthLimit)}</b><span>прогноз превышения бюджета</span><button data-go="finance">Разобрать</button></div>`);
 
     app.innerHTML = `
       <section class="hero">
         <div class="hero-top">
           <div>
             <p class="eyebrow">${escapeHtml(state.profile.name || 'Пользователь')}</p>
-            <h2>${score >= 75 ? 'Держишь курс' : score >= 45 ? 'Нужно вернуть контроль' : 'Система проседает'}</h2>
-            <p>${mainTask ? `Главный фокус: ${escapeHtml(mainTask.title)}` : 'Главные задачи на сегодня закрыты.'}</p>
+            <h2>${!hasData ? 'Система готова к работе' : score >= 75 ? 'Держишь курс' : score >= 45 ? 'Нужно вернуть контроль' : 'Система проседает'}</h2>
+            <p>${!hasData ? 'Добавь счета, реальные деньги и 3 приоритетные задачи.' : mainTasks[0] ? `Главный фокус: ${escapeHtml(mainTasks[0].title)}` : 'Критичных задач на сегодня нет.'}</p>
           </div>
-          <div class="score-ring" style="--score:${score}"><span>${score}</span></div>
+          <div class="score-ring" style="--score:${hasData ? score : 0}"><span>${hasData ? score : '—'}</span></div>
         </div>
       </section>
 
@@ -372,41 +577,29 @@
         <button class="quick-btn" type="button" id="quickIncome"><span>＋</span>Доход</button>
       </section>
 
-      <section class="stats grid two">
-        <div class="stat-card"><small>Заработано за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong></div>
-        <div class="stat-card"><small>Расходы за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong></div>
-        <div class="stat-card"><small>Свободный остаток</small><strong>${money(analytics.monthBalance)}</strong></div>
-        <div class="stat-card"><small>Просроченные задачи</small><strong class="${overdue ? 'negative' : ''}">${overdue}</strong></div>
-      </section>
+      ${alertRows.length ? `<section class="section"><div class="section-head"><h2>Требует внимания</h2></div><div class="alert-list">${alertRows.join('')}</div></section>` : ''}
 
       <section class="section">
-        <div class="section-head"><h2>Капитал</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
-        <div class="card">
-          <div class="metric-row"><strong>${money(analytics.capital)}</strong><span>${capitalProgress}% цели</span></div>
-          <div class="progress"><span style="width:${capitalProgress}%"></span></div>
-          <div class="item-meta" style="margin-top:9px">Цель: ${money(state.profile.capitalTarget)} · ликвидно ${money(analytics.liquid)} · долги ${money(analytics.debt)}</div>
+        <div class="section-head"><h2>Финансовый пульс</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
+        <div class="card pulse-card">
+          <div class="pulse-main"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Свободно после платежей</small><strong class="${analytics.freeBalance < 0 ? 'negative' : ''}">${money(analytics.freeBalance)}</strong></div></div>
+          <div class="pulse-grid"><div><small>Сегодня</small><b>${money(analytics.todayExpense)}</b></div><div><small>Неделя</small><b>${money(analytics.weekExpense)}</b></div><div><small>Месяц</small><b>${money(analytics.monthExpense)}</b></div><div><small>До лимита</small><b class="${analytics.remainingLimit < 0 ? 'negative' : 'positive'}">${money(analytics.remainingLimit)}</b></div></div>
         </div>
       </section>
 
       <section class="section">
         <div class="section-head"><h2>Главное сегодня</h2><button class="link-btn" type="button" data-go="tasks">Все задачи</button></div>
-        <div class="list">${mainTask ? taskItem(mainTask) : empty('Все обязательные задачи на сегодня закрыты.')}</div>
+        <div class="list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
       </section>
 
       <section class="section">
         <div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
-        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 7 дней обязательств не записано.')}</div>
+        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 7 дней платежей и поступлений нет.')}</div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Привычки сегодня</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
-        <div class="grid two">
-          ${state.habits.map(habit => `
-            <label class="card habit-today">
-              <input class="check habit-check" type="checkbox" data-id="${habit.id}" ${habit.logs?.[todayISO()] ? 'checked' : ''}>
-              <span class="item-title">${escapeHtml(habit.title)}</span>
-            </label>`).join('')}
-        </div>
+        <div class="section-head"><h2>Дисциплина сегодня</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
+        <div class="discipline-strip"><strong>${habitCompletionToday()}%</strong><span>привычек выполнено сегодня</span></div>
       </section>
     `;
     bindCommon();
@@ -512,8 +705,9 @@
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     app.innerHTML = `
       <section class="hero compact">
-        <p class="eyebrow">Чистый капитал</p>
+        <p class="eyebrow">Общий капитал</p>
         <div class="kpi">${money(analytics.capital)}</div>
+        <div class="capital-breakdown"><span>Активы ${money(analytics.assets)}</span><span>Долги ${money(analytics.debt)}</span><span>Ликвидно ${money(analytics.liquid)}</span></div>
         <div class="metric-row"><span class="muted">Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </section>
@@ -537,12 +731,36 @@
   function renderFinanceOverview(analytics) {
     const insights = getFinanceInsights(analytics);
     const maxCategory = Math.max(1, ...analytics.categoryRows.map(row => row.amount));
+    const currentMetrics = monthMetrics(financeCompareCurrent);
+    const baseMetrics = monthMetrics(financeCompareBase);
+    const monthOptions = monthsForSelect().map(key => `<option value="${key}">${escapeHtml(monthName(key))}</option>`).join('');
+    const categoryKeys = new Set([...currentMetrics.categories.keys(), ...baseMetrics.categories.keys()]);
+    const categoryCompare = [...categoryKeys].map(key => {
+      const current = Number(currentMetrics.categories.get(key) || 0);
+      const base = Number(baseMetrics.categories.get(key) || 0);
+      return { key, label: categoryLabel(key), current, base, delta: current - base, percent: percentageChange(current, base) };
+    }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 6);
     return `
+      <div class="period-note">Текущая неделя и месяц сравниваются с теми же прошедшими днями прошлого периода.</div>
       <section class="stats grid two">
-        <div class="stat-card"><small>Заработано за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareBadge(analytics.monthIncome, analytics.previousMonthIncome)}</div>
-        <div class="stat-card"><small>Расходы за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareBadge(analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
-        <div class="stat-card"><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong>${compareBadge(analytics.weekExpense, analytics.previousWeekExpense, true)}</div>
+        <div class="stat-card"><small>Заработано за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareSentence('Доходы', analytics.monthIncome, analytics.previousMonthIncome)}</div>
+        <div class="stat-card"><small>Расходы за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareSentence('Расходы', analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
+        <div class="stat-card"><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong>${compareSentence('Расходы', analytics.weekExpense, analytics.previousWeekExpense, true)}</div>
         <div class="stat-card"><small>Сбережено за месяц</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Сравнение месяцев</h2></div>
+        <div class="card compare-panel">
+          <div class="compare-selects"><label>Текущий<select id="compareCurrent">${monthOptions}</select></label><span>к</span><label>База<select id="compareBase">${monthOptions}</select></label></div>
+          <div class="comparison-grid">
+            <div><small>Доход</small><strong>${money(currentMetrics.income)}</strong>${compareSentence('Доходы', currentMetrics.income, baseMetrics.income)}</div>
+            <div><small>Расход</small><strong>${money(currentMetrics.expense)}</strong>${compareSentence('Расходы', currentMetrics.expense, baseMetrics.expense, true)}</div>
+            <div><small>Зарплата</small><strong>${money(currentMetrics.salary)}</strong>${compareSentence('Зарплата', currentMetrics.salary, baseMetrics.salary)}</div>
+            <div><small>Сбережено</small><strong>${money(currentMetrics.net)}</strong>${compareSentence('Сбережения', currentMetrics.net, baseMetrics.net)}</div>
+          </div>
+          ${categoryCompare.length ? `<div class="category-compare"><h3>Что изменилось по категориям</h3>${categoryCompare.map(row => `<div class="category-delta"><span>${escapeHtml(row.label)}<small>${money(row.base)} → ${money(row.current)}</small></span><b class="${row.delta <= 0 ? 'positive' : 'negative'}">${row.percent === null ? 'нет базы' : `${row.delta > 0 ? '+' : '−'}${Math.abs(row.percent)}%`}</b></div>`).join('')}</div>` : ''}
+        </div>
       </section>
 
       <section class="section">
@@ -551,11 +769,11 @@
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Рост зарплаты</h2><button class="link-btn" type="button" data-add-transaction="income">+ Доход</button></div>
+        <div class="section-head"><h2>Доход и зарплата</h2><button class="link-btn" type="button" data-add-transaction="income">+ Доход</button></div>
         <div class="card">
           <div class="metric-row"><span class="muted">Зарплата в этом месяце</span><strong>${money(analytics.monthSalary)}</strong></div>
           ${barChart(monthlySalarySeries())}
-          <div class="item-meta">При добавлении дохода выбирай категорию «Зарплата» - график обновится автоматически.</div>
+          <div class="item-meta">Для точной динамики выбирай категорию «Зарплата» отдельно от клиентов и других поступлений.</div>
         </div>
       </section>
 
@@ -592,13 +810,14 @@
 
   function transactionItem(tx) {
     const account = state.accounts.find(item => item.id === tx.accountId);
+    const project = state.projects.find(item => item.id === tx.projectId);
     const sign = tx.type === 'expense' ? '−' : '+';
     return `
       <div class="item">
         <div class="category-icon ${tx.type}">${tx.type === 'expense' ? '−' : '+'}</div>
         <div class="item-main">
           <div class="item-title">${escapeHtml(tx.title)}</div>
-          <div class="item-meta">${escapeHtml(categoryLabel(tx.category))} · ${dateText(tx.date)}${account ? ` · ${escapeHtml(account.name)}` : ''}</div>
+          <div class="item-meta">${escapeHtml(categoryLabel(tx.category))} · ${dateText(tx.date)}${account ? ` · ${escapeHtml(account.name)}` : ''}${project ? ` · ${escapeHtml(project.name)}` : ''}${tx.type === 'expense' ? ` · ${tx.necessity === 'required' ? 'обязательная' : tx.necessity === 'optional' ? 'необязательная' : 'характер не указан'}${tx.scope === 'work' ? ' · рабочая' : ''}` : ''}</div>
           ${tx.notes ? `<div class="item-note">${escapeHtml(tx.notes)}</div>` : ''}
         </div>
         <div class="amount-block">
@@ -614,7 +833,7 @@
   function renderFinanceAccounts(analytics) {
     return `
       <section class="stats grid two">
-        <div class="stat-card"><small>Всего на счетах</small><strong>${money(analytics.liquid)}</strong></div>
+        <div class="stat-card"><small>Все активы</small><strong>${money(analytics.assets)}</strong></div>
         <div class="stat-card"><small>Чистый капитал</small><strong>${money(analytics.capital)}</strong></div>
       </section>
       <section class="section">
@@ -666,6 +885,11 @@
   }
 
   function bindFinanceActions() {
+    const compareCurrent = $('#compareCurrent');
+    const compareBase = $('#compareBase');
+    if (compareCurrent) { compareCurrent.value = financeCompareCurrent; compareCurrent.addEventListener('change', () => { financeCompareCurrent = compareCurrent.value; renderFinance(); }); }
+    if (compareBase) { compareBase.value = financeCompareBase; compareBase.addEventListener('change', () => { financeCompareBase = compareBase.value; renderFinance(); }); }
+
     $$('[data-add-transaction]').forEach(button => button.addEventListener('click', () => openTransactionModal(null, button.dataset.addTransaction)));
     $$('[data-finance-tab-jump]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTabJump; renderFinance(); }));
     $('#addAccount')?.addEventListener('click', () => openAccountModal());
@@ -767,20 +991,64 @@
   }
 
   function renderGrowth() {
+    const analytics = getFinanceAnalytics();
     const days = getLast7Days();
     const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
     const currentWeek = localISO(startOfWeek(new Date()));
     const currentReview = reviews.find(review => review.weekStart === currentWeek);
+    const currentTasks = taskWeekStats(new Date(), true);
+    const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
+    const currentHabits = habitWeekStats(new Date(), true);
+    const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
+    const moneySeries = monthlyMoneySeries(6);
+    const snapshots = (state.snapshots || []).slice(-30);
+    const activeProjects = state.projects.filter(project => ['active', 'growth'].includes(project.status));
+    const overduePayments = state.projects.filter(project => project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO())).length;
+    const projectIncome = sum(activeProjects.map(project => project.value));
+    const projectActualIncome = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, analytics.monthStart, analytics.monthEnd)).map(tx => tx.amount));
+    const insights = systemInsights();
+
     app.innerHTML = `
-      <section class="section" style="margin-top:4px">
+      <section class="growth-summary">
+        <div class="stat-card"><small>Капитал</small><strong>${money(analytics.capital)}</strong><span class="compare neutral">все активы минус долги</span></div>
+        <div class="stat-card"><small>Доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareSentence('Доходы', analytics.monthIncome, analytics.previousMonthIncome)}</div>
+        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
+        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Динамика денег</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
+        <div class="card">
+          ${dualBarChart(moneySeries)}
+          <div class="metric-row trend-footer"><span>За 6 месяцев</span><strong>${money(sum(moneySeries.map(row => row.net)))}</strong></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Динамика капитала</h2><span class="badge">последние 30 дней</span></div>
+        <div class="card">${lineChart(snapshots, 'capital', 'Динамика капитала')}<div class="item-meta">История капитала записывается автоматически с этой версии приложения.</div></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Где теряется прогресс</h2></div>
+        <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Критичных отклонений пока не найдено. Продолжай регулярно заполнять операции, задачи и привычки.</div>'}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Проекты и доход</h2><button class="link-btn" type="button" data-go="projects">Проекты</button></div>
+        <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Плановый доход</small><strong>${money(projectIncome)}</strong></div><div><small>Факт по проектам</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Просрочено оплат</small><strong class="${overduePayments ? 'negative' : ''}">${overduePayments}</strong></div><div><small>Без следующего шага</small><strong>${activeProjects.filter(project => !String(project.next || '').trim()).length}</strong></div></div>
+      </section>
+
+      <section class="section">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
         <div class="list">${state.goals.length ? state.goals.map(goal => {
           const current = goalCurrent(goal);
           const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
+          const pace = goalPace(goal, current, percent);
           return `<div class="card">
             <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
             <div class="progress"><span style="width:${percent}%"></span></div>
-            <div class="item-meta" style="margin-top:9px">${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} · срок ${dateText(goal.deadline)}</div>
+            <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
             ${goal.nextAction ? `<div class="insight" style="margin-top:12px">Следующее действие: ${escapeHtml(goal.nextAction)}</div>` : ''}
             <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
           </div>`;
@@ -966,12 +1234,20 @@
         <div class="field"><label>Категория</label><select name="category" id="transactionCategory">${categoryOptions(type, item?.category || (type === 'income' ? 'salary' : 'groceries'))}</select></div>
         <div class="field"><label>Дата</label><input name="date" type="date" value="${item?.date || todayISO()}"></div>
       </div>
-      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(item?.accountId || '')}</select><small>Если выбрать счёт, его баланс изменится автоматически.</small></div>
+      <div id="expenseDetails" ${type === 'income' ? 'hidden' : ''}>
+        <div class="form-grid">
+          <div class="field"><label>Характер траты</label><select name="necessity"><option value="required" ${item?.necessity === 'required' ? 'selected' : ''}>Обязательная</option><option value="optional" ${!item || item?.necessity !== 'required' ? 'selected' : ''}>Необязательная</option></select></div>
+          <div class="field"><label>Контекст</label><select name="scope"><option value="personal" ${!item || item?.scope !== 'work' ? 'selected' : ''}>Личная</option><option value="work" ${item?.scope === 'work' ? 'selected' : ''}>Рабочая</option></select></div>
+        </div>
+      </div>
+      <div class="field"><label>Связать с проектом</label><select name="projectId">${projectOptions(item?.projectId || '')}</select></div>
+      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(item?.accountId || '')}</select><small>Если выбрать счёт, баланс изменится автоматически.</small></div>
       <div class="field"><label>Комментарий</label><textarea name="notes" placeholder="На что именно или откуда доход">${escapeHtml(item?.notes || '')}</textarea></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.amount = Number(data.amount || 0);
       if (!data.title.trim() || data.amount <= 0) return false;
+      if (data.type === 'income') { data.necessity = ''; data.scope = ''; }
       if (item) {
         applyTransactionToAccount(item, -1);
         Object.assign(item, data);
@@ -987,6 +1263,7 @@
       const select = $('#transactionCategory');
       select.innerHTML = categoryOptions(event.target.value, event.target.value === 'income' ? 'salary' : 'groceries');
       modalTitle.textContent = event.target.value === 'income' ? 'Новый доход' : 'Новый расход';
+      $('#expenseDetails').hidden = event.target.value === 'income';
     });
   }
 
@@ -1109,7 +1386,7 @@
       data.target = Number(data.target || 1);
       data.monthlyPlan = Number(data.monthlyPlan || 0);
       if (!data.title.trim()) return false;
-      if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data });
+      if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
       return true;
     });
   }
