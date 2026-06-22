@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Alexander OS" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Alexander OS</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="todayLabel">Сегодня</p>
+        <h1 id="screenTitle">Главная</h1>
+      </div>
+      <button class="icon-btn" id="settingsButton" aria-label="Настройки">⚙️</button>
+    </header>
+
+    <main id="app" class="content" aria-live="polite"></main>
+
+    <nav class="bottom-nav" aria-label="Навигация">
+      <button class="nav-item active" data-screen="dashboard"><span>⌂</span><small>Сегодня</small></button>
+      <button class="nav-item" data-screen="tasks"><span>✓</span><small>Задачи</small></button>
+      <button class="nav-item" data-screen="finance"><span>₽</span><small>Финансы</small></button>
+      <button class="nav-item" data-screen="projects"><span>◫</span><small>Проекты</small></button>
+      <button class="nav-item" data-screen="growth"><span>↗</span><small>Рост</small></button>
+    </nav>
+  </div>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-card" id="modalForm">
+      <div class="modal-head">
+        <h2 id="modalTitle">Добавить</h2>
+        <button class="icon-btn" value="cancel" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn secondary" value="cancel">Отмена</button>
+        <button class="btn primary" id="modalSubmit" value="default">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Настройки и данные</h2>
+        <button class="icon-btn" id="closeSettings" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="settings-list">
+        <button class="settings-row" id="exportData">Экспортировать резервную копию <span>›</span></button>
+        <label class="settings-row file-row">Импортировать резервную копию <span>›</span><input id="importData" type="file" accept="application/json" /></label>
+        <button class="settings-row" id="installHelp">Как установить на iPhone <span>›</span></button>
+        <button class="settings-row danger" id="resetData">Сбросить все данные <span>›</span></button>
+      </div>
+      <p class="privacy-note">Данные хранятся локально на устройстве. Для переноса на другой телефон используйте экспорт.</p>
+    </div>
+  </dialog>
+
+  <template id="emptyTemplate">
+    <div class="empty-state">
+      <div class="empty-icon">＋</div>
+      <h3>Пока пусто</h3>
+      <p>Добавьте первую запись, чтобы начать контроль.</p>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
