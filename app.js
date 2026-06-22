@@ -4,39 +4,143 @@
   const STORAGE_KEY = 'alexander_os_v1';
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
   const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-  const todayISO = () => new Date().toISOString().slice(0, 10);
-  const money = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(value || 0)) + ' ₽';
-  const dateText = value => value ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(new Date(`${value}T12:00:00`)) : 'Без срока';
+  const pad = value => String(value).padStart(2, '0');
+  const localISO = (date = new Date()) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const todayISO = () => localISO(new Date());
+  const parseISO = value => value ? new Date(`${value}T12:00:00`) : null;
+  const addDays = (date, amount) => { const result = new Date(date); result.setDate(result.getDate() + amount); return result; };
+  const startOfWeek = (date = new Date()) => { const result = new Date(date); const day = result.getDay() || 7; result.setDate(result.getDate() - day + 1); result.setHours(0, 0, 0, 0); return result; };
+  const endOfWeek = date => { const result = addDays(startOfWeek(date), 6); result.setHours(23, 59, 59, 999); return result; };
+  const startOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth(), 1);
+  const endOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  const dateInRange = (iso, start, end) => { const date = parseISO(iso); return Boolean(date && date >= start && date <= end); };
+  const money = value => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(value || 0))} ₽`;
+  const numberText = value => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(Number(value || 0));
+  const dateText = value => value ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(parseISO(value)) : 'Без срока';
+  const longDateText = value => value ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(parseISO(value)) : 'Не указано';
   const fullDate = () => new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-  const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
+  const monthLabel = date => new Intl.DateTimeFormat('ru-RU', { month: 'short' }).format(date).replace('.', '');
+  const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[char]);
+  const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
 
-  const defaultState = {
-    version: 1,
-    profile: { name: 'Пользователь', capitalTarget: 1000000, monthlyIncomeTarget: 200000, cushionTarget: 200000 },
-    tasks: [
-      { id: uid(), title: 'Определить 3 главные задачи дня', project: 'Личное управление', priority: 'high', due: todayISO(), done: false },
-      { id: uid(), title: 'Проверить финансы и обязательные платежи', project: 'Финансы', priority: 'medium', due: todayISO(), done: false },
-      { id: uid(), title: '30 минут профессионального развития', project: 'Развитие', priority: 'low', due: todayISO(), done: false }
-    ],
-    transactions: [],
-    projects: [],
-    goals: [
-      { id: uid(), title: 'Капитал 1 000 000 ₽', current: 0, target: 1000000, deadline: '2026-12-31' },
-      { id: uid(), title: 'Доход 200 000 ₽ в месяц', current: 0, target: 200000, deadline: '2026-12-31' }
-    ],
-    habits: [
-      { id: uid(), title: 'Профессиональное развитие', logs: {} },
-      { id: uid(), title: 'Работа над личным проектом', logs: {} },
-      { id: uid(), title: 'Чтение', logs: {} },
-      { id: uid(), title: 'Спорт', logs: {} },
-      { id: uid(), title: 'Без импульсивных покупок', logs: {} }
-    ],
-    weeklyNotes: ''
-  };
+  const INCOME_CATEGORIES = [
+    ['salary', 'Зарплата'], ['client', 'Клиенты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
+  ];
+  const EXPENSE_CATEGORIES = [
+    ['groceries', 'Продукты'], ['cafes', 'Кафе и доставка'], ['transport', 'Транспорт'], ['taxi', 'Такси'], ['housing', 'Жильё'], ['subscriptions', 'Подписки'], ['health', 'Здоровье'], ['clothing', 'Одежда'], ['entertainment', 'Развлечения'], ['education', 'Обучение'], ['business', 'Бизнес'], ['gifts', 'Подарки'], ['debt_payment', 'Долги и кредиты'], ['travel', 'Путешествия'], ['other_expense', 'Другое']
+  ];
+  const ALL_CATEGORIES = new Map([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES]);
+  const CATEGORY_REDUCIBLE = new Set(['cafes', 'taxi', 'subscriptions', 'clothing', 'entertainment', 'travel', 'other_expense']);
+
+  function freshState() {
+    return {
+      version: 2,
+      profile: {
+        name: 'Александр',
+        capitalTarget: 1000000,
+        monthlyIncomeTarget: 200000,
+        cushionTarget: 200000,
+        monthlyExpenseLimit: 70000,
+        theme: 'dark',
+        notificationsEnabled: false,
+        lastBackup: null
+      },
+      tasks: [
+        { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
+        { id: uid(), title: 'Проверить финансы и обязательные платежи', projectId: '', project: 'Финансы', priority: 'medium', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'weekly', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null }
+      ],
+      accounts: [],
+      transactions: [],
+      obligations: [],
+      projects: [],
+      goals: [
+        { id: uid(), title: 'Капитал 1 000 000 ₽', current: 0, target: 1000000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 0, nextAction: '', autoSource: 'capital' },
+        { id: uid(), title: 'Доход 200 000 ₽ в месяц', current: 0, target: 200000, deadline: '2026-12-31', unit: '₽', monthlyPlan: 200000, nextAction: '', autoSource: 'monthlyIncome' }
+      ],
+      habits: [
+        { id: uid(), title: 'Профессиональное развитие', logs: {}, targetPerWeek: 5, schedule: [1, 2, 3, 4, 5] },
+        { id: uid(), title: 'Работа над личным проектом', logs: {}, targetPerWeek: 5, schedule: [1, 2, 3, 4, 5] },
+        { id: uid(), title: 'Чтение', logs: {}, targetPerWeek: 5, schedule: [1, 2, 3, 4, 5] },
+        { id: uid(), title: 'Спорт', logs: {}, targetPerWeek: 2, schedule: [4, 5] },
+        { id: uid(), title: 'Без импульсивных покупок', logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0] }
+      ],
+      weeklyReviews: []
+    };
+  }
+
+  function normalizeState(raw) {
+    const base = freshState();
+    const result = {
+      ...base,
+      ...raw,
+      version: 2,
+      profile: { ...base.profile, ...(raw.profile || {}) },
+      tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
+      accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
+      transactions: Array.isArray(raw.transactions) ? raw.transactions : [],
+      obligations: Array.isArray(raw.obligations) ? raw.obligations : [],
+      projects: Array.isArray(raw.projects) ? raw.projects : [],
+      goals: Array.isArray(raw.goals) ? raw.goals : [],
+      habits: Array.isArray(raw.habits) ? raw.habits : [],
+      weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : []
+    };
+
+    result.tasks = result.tasks.map(task => ({
+      projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
+      ...task,
+      status: task.status || (task.done ? 'done' : 'todo')
+    }));
+    result.accounts = result.accounts.map(account => ({ type: 'card', balance: 0, ...account, balance: Number(account.balance || 0) }));
+    result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', ...tx, amount: Number(tx.amount || 0) }));
+    result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
+    result.projects = result.projects.map(project => ({ type: 'client', service: '', contact: '', value: 0, status: 'active', paymentStatus: 'not_due', debt: 0, paymentDate: '', nextContact: '', next: '', site: '', adBudget: 0, leads: 0, cpl: 0, result: '', notes: '', startDate: '', ...project }));
+    result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
+    result.habits = result.habits.map(habit => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], ...habit }));
+    return result;
+  }
+
+  function migrateState(raw) {
+    if (!raw || typeof raw !== 'object') return freshState();
+    if (Number(raw.version || 1) >= 2) return normalizeState(raw);
+
+    const migrated = freshState();
+    migrated.profile = { ...migrated.profile, ...(raw.profile || {}) };
+    migrated.tasks = (raw.tasks || []).map(task => ({
+      id: task.id || uid(), title: task.title || '', projectId: '', project: task.project || '', priority: task.priority || 'medium', due: task.due || '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: task.done ? new Date().toISOString() : null
+    }));
+    migrated.accounts = (raw.transactions || []).filter(item => item.type === 'balance' || item.type === 'cash').map(item => ({
+      id: uid(), name: item.title || (item.type === 'cash' ? 'Наличные' : 'Карта'), type: item.type === 'cash' ? 'cash' : 'card', balance: Number(item.amount || 0)
+    }));
+    migrated.transactions = (raw.transactions || []).filter(item => item.type === 'expense').map(item => ({
+      id: item.id || uid(), title: item.title || 'Расход', type: 'expense', amount: Number(item.amount || 0), date: item.date || todayISO(), category: 'other_expense', accountId: '', notes: ''
+    }));
+    migrated.obligations = (raw.transactions || []).filter(item => item.type === 'income' || item.type === 'debt').map(item => ({
+      id: item.id || uid(), title: item.title || '', type: item.type === 'income' ? 'expected' : 'debt', amount: Number(item.amount || 0), dueDate: item.date || '', status: 'open', notes: ''
+    }));
+    migrated.projects = (raw.projects || []).map(project => ({ id: project.id || uid(), name: project.name || '', type: 'client', service: '', contact: '', value: Number(project.value || 0), status: project.status || 'active', paymentStatus: 'not_due', debt: 0, paymentDate: project.paymentDate || '', nextContact: '', next: project.next || '', site: '', adBudget: 0, leads: 0, cpl: 0, result: '', notes: '', startDate: '' }));
+    migrated.goals = (raw.goals || []).map(goal => ({ id: goal.id || uid(), title: goal.title || '', current: Number(goal.current || 0), target: Number(goal.target || 1), deadline: goal.deadline || '', unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none' }));
+    migrated.habits = (raw.habits || []).map(habit => ({ id: habit.id || uid(), title: habit.title || '', logs: habit.logs || {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0] }));
+    migrated.weeklyReviews = raw.weeklyNotes ? [{ id: uid(), weekStart: localISO(startOfWeek(new Date())), wins: raw.weeklyNotes, income: 0, saved: 0, failures: '', timeLeaks: '', lesson: '', priorities: '', createdAt: new Date().toISOString() }] : [];
+    return normalizeState(migrated);
+  }
+
+  function loadState() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? migrateState(JSON.parse(saved)) : freshState();
+    } catch (error) {
+      console.error(error);
+      return freshState();
+    }
+  }
 
   let state = loadState();
   let currentScreen = 'dashboard';
+  let financeTab = 'overview';
+  let taskFilter = 'today';
+  let taskSearch = '';
   let modalAction = null;
 
   const app = $('#app');
@@ -44,288 +148,672 @@
   const modalTitle = $('#modalTitle');
   const modalBody = $('#modalBody');
   const modalForm = $('#modalForm');
+  const modalActions = $('#modalActions');
+  const modalSubmit = $('#modalSubmit');
   const settingsModal = $('#settingsModal');
-
-  function loadState() {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return structuredClone(defaultState);
-      return { ...structuredClone(defaultState), ...JSON.parse(saved) };
-    } catch (error) {
-      console.error(error);
-      return structuredClone(defaultState);
-    }
-  }
+  const settingsBody = $('#settingsBody');
 
   function saveState() {
+    state.version = 2;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  function applyTheme() {
+    document.documentElement.dataset.theme = state.profile.theme || 'dark';
+    const themeColor = state.profile.theme === 'light' ? '#f3f6fb' : '#0b1020';
+    $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
+  }
+
+  function transactionsInRange(type, start, end) {
+    return state.transactions.filter(tx => tx.type === type && dateInRange(tx.date, start, end));
+  }
+
+  function sumTransactions(type, start, end) {
+    return sum(transactionsInRange(type, start, end).map(tx => tx.amount));
+  }
+
+  function openObligations(type = null) {
+    return state.obligations.filter(item => item.status === 'open' && (!type || item.type === type));
+  }
+
+  function getFinanceAnalytics() {
+    const now = new Date();
+    const weekStart = startOfWeek(now);
+    const weekEnd = endOfWeek(now);
+    const previousWeekStart = addDays(weekStart, -7);
+    const previousWeekEnd = addDays(weekEnd, -7);
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+    const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthStart = startOfMonth(previousMonthDate);
+    const previousMonthEnd = endOfMonth(previousMonthDate);
+
+    const liquid = sum(state.accounts.map(account => account.balance));
+    const debt = sum(openObligations('debt').map(item => item.amount));
+    const expected = sum(openObligations('expected').map(item => item.amount));
+    const capital = liquid - debt;
+    const weekExpense = sumTransactions('expense', weekStart, weekEnd);
+    const previousWeekExpense = sumTransactions('expense', previousWeekStart, previousWeekEnd);
+    const monthExpense = sumTransactions('expense', monthStart, monthEnd);
+    const previousMonthExpense = sumTransactions('expense', previousMonthStart, previousMonthEnd);
+    const monthIncome = sumTransactions('income', monthStart, monthEnd);
+    const previousMonthIncome = sumTransactions('income', previousMonthStart, previousMonthEnd);
+    const monthSalary = sum(transactionsInRange('income', monthStart, monthEnd).filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const previousMonthSalary = sum(transactionsInRange('income', previousMonthStart, previousMonthEnd).filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const monthBalance = monthIncome - monthExpense;
+    const savingsRate = monthIncome > 0 ? Math.round(monthBalance / monthIncome * 100) : 0;
+
+    const categories = new Map();
+    transactionsInRange('expense', monthStart, monthEnd).forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
+    const categoryRows = [...categories.entries()].map(([key, amount]) => ({ key, label: categoryLabel(key), amount })).sort((a, b) => b.amount - a.amount);
+
+    const daysElapsed = now.getDate();
+    const daysInMonth = monthEnd.getDate();
+    const projectedExpense = daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
+
+    return {
+      liquid, debt, expected, capital,
+      weekExpense, previousWeekExpense,
+      monthExpense, previousMonthExpense,
+      monthIncome, previousMonthIncome,
+      monthSalary, previousMonthSalary,
+      monthBalance, savingsRate, categoryRows, projectedExpense,
+      weekStart, weekEnd, monthStart, monthEnd
+    };
+  }
+
+  function percentageChange(current, previous) {
+    if (!previous) return current ? null : 0;
+    return Math.round((current - previous) / previous * 100);
+  }
+
+  function compareBadge(current, previous, lowerIsBetter = false) {
+    const change = percentageChange(current, previous);
+    if (change === null) return '<span class="compare neutral">нет базы</span>';
+    if (change === 0) return '<span class="compare neutral">без изменений</span>';
+    const good = lowerIsBetter ? change < 0 : change > 0;
+    const arrow = change > 0 ? '↑' : '↓';
+    return `<span class="compare ${good ? 'good' : 'bad'}">${arrow} ${Math.abs(change)}%</span>`;
+  }
+
+  function getFinanceInsights(analytics) {
+    const insights = [];
+    if (!state.transactions.length) {
+      return [{ cls: 'warning', text: 'Добавляй каждый доход и расход. Без фактических операций приложение не сможет показать реальную динамику.' }];
+    }
+
+    const weekChange = percentageChange(analytics.weekExpense, analytics.previousWeekExpense);
+    if (weekChange !== null) {
+      if (weekChange > 15) insights.push({ cls: 'danger', text: `Расходы этой недели выросли на ${weekChange}% к прошлой. Проверь ежедневные траты, пока рост не стал новой нормой.` });
+      if (weekChange < -10) insights.push({ cls: '', text: `Расходы этой недели снизились на ${Math.abs(weekChange)}%. Зафиксируй, от каких трат отказался, чтобы сохранить результат.` });
+    }
+
+    const top = analytics.categoryRows[0];
+    if (top && analytics.monthExpense > 0) {
+      const share = Math.round(top.amount / analytics.monthExpense * 100);
+      if (CATEGORY_REDUCIBLE.has(top.key)) {
+        insights.push({ cls: 'warning', text: `Главная зона сокращения - «${top.label}»: ${money(top.amount)}, или ${share}% расходов месяца. Поставь лимит на остаток месяца.` });
+      } else {
+        insights.push({ cls: '', text: `Больше всего в этом месяце ушло на «${top.label}» - ${money(top.amount)} (${share}%). Проверь, соответствует ли это твоим приоритетам.` });
+      }
+    }
+
+    if (analytics.projectedExpense > state.profile.monthlyExpenseLimit) {
+      insights.push({ cls: 'danger', text: `При текущем темпе расходы месяца могут составить ${money(analytics.projectedExpense)}. Это выше лимита на ${money(analytics.projectedExpense - state.profile.monthlyExpenseLimit)}.` });
+    } else if (analytics.monthExpense > 0) {
+      insights.push({ cls: '', text: `Прогноз расходов к концу месяца - ${money(analytics.projectedExpense)} при лимите ${money(state.profile.monthlyExpenseLimit)}.` });
+    }
+
+    if (analytics.monthIncome > 0 && analytics.savingsRate < 20) {
+      insights.push({ cls: 'warning', text: `Сохраняется только ${analytics.savingsRate}% дохода. Для роста капитала цель - удерживать минимум 20-30%, не повышая постоянные расходы.` });
+    }
+
+    if (analytics.monthSalary || analytics.previousMonthSalary) {
+      const salaryChange = percentageChange(analytics.monthSalary, analytics.previousMonthSalary);
+      if (salaryChange !== null && salaryChange !== 0) {
+        insights.push({ cls: salaryChange > 0 ? '' : 'warning', text: `Зарплата изменилась на ${salaryChange > 0 ? '+' : ''}${salaryChange}% к прошлому месяцу: сейчас ${money(analytics.monthSalary)}.` });
+      }
+    }
+
+    return insights.slice(0, 4);
+  }
+
+  function categoryLabel(key) {
+    return ALL_CATEGORIES.get(key) || 'Другое';
+  }
+
+  function accountTypeText(type) {
+    return ({ card: 'Карта', cash: 'Наличные', savings: 'Накопительный счёт', investment: 'Инвестиции' })[type] || 'Счёт';
+  }
+
+  function obligationTypeText(type) {
+    return ({ expected: 'Ожидаемый доход', debt: 'Долг', payment: 'Обязательный платёж' })[type] || 'Обязательство';
+  }
+
+  function taskStatusText(status) {
+    return ({ todo: 'К выполнению', doing: 'В работе', waiting: 'Жду', deferred: 'Отложено', done: 'Выполнено' })[status] || 'К выполнению';
+  }
+
+  function projectStatusText(status) {
+    return ({ active: 'Активен', growth: 'Развитие', paused: 'Пауза', completed: 'Завершён' })[status] || 'Активен';
+  }
+
+  function paymentStatusText(status) {
+    return ({ not_due: 'Не наступила', waiting: 'Ожидается', paid: 'Оплачено', overdue: 'Просрочено' })[status] || 'Не указано';
+  }
+
+  function priorityText(priority) {
+    return ({ high: 'Высокий', medium: 'Средний', low: 'Низкий' })[priority] || 'Средний';
+  }
+
+  function repeatText(repeat) {
+    return ({ none: 'Не повторяется', daily: 'Каждый день', weekly: 'Каждую неделю', monthly: 'Каждый месяц' })[repeat] || 'Не повторяется';
+  }
+
   function render() {
+    applyTheme();
     $('#todayLabel').textContent = fullDate();
     const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Рост' };
     $('#screenTitle').textContent = titles[currentScreen];
-    $$('.nav-item').forEach(btn => btn.classList.toggle('active', btn.dataset.screen === currentScreen));
+    $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
     ({ dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth })[currentScreen]();
   }
 
-  function getFinanceSummary() {
-    const sumType = type => state.transactions.filter(x => x.type === type).reduce((sum, x) => sum + Number(x.amount || 0), 0);
-    const liquid = sumType('balance') + sumType('cash');
-    const expected = sumType('income');
-    const debt = sumType('debt');
-    const expenses = sumType('expense');
-    const capital = Math.max(0, liquid - debt);
-    return { liquid, expected, debt, expenses, capital };
-  }
-
-  function taskCompletion() {
-    const todays = state.tasks.filter(t => !t.due || t.due <= todayISO());
-    if (!todays.length) return 100;
-    return Math.round(todays.filter(t => t.done).length / todays.length * 100);
+  function taskCompletionToday() {
+    const tasks = state.tasks.filter(task => task.due === todayISO());
+    if (!tasks.length) return 100;
+    return Math.round(tasks.filter(task => task.status === 'done').length / tasks.length * 100);
   }
 
   function habitCompletionToday() {
-    if (!state.habits.length) return 100;
-    return Math.round(state.habits.filter(h => h.logs?.[todayISO()]).length / state.habits.length * 100);
+    const scheduled = state.habits.filter(habit => (habit.schedule || []).includes(new Date().getDay()));
+    if (!scheduled.length) return 100;
+    return Math.round(scheduled.filter(habit => habit.logs?.[todayISO()]).length / scheduled.length * 100);
   }
 
   function overallScore() {
-    const taskScore = taskCompletion();
+    const finance = getFinanceAnalytics();
+    const taskScore = taskCompletionToday();
     const habitScore = habitCompletionToday();
-    const finance = getFinanceSummary();
-    const cushionScore = Math.min(100, Math.round(finance.liquid / Math.max(1, state.profile.cushionTarget) * 100));
-    return Math.round(taskScore * .45 + habitScore * .30 + cushionScore * .25);
+    const cushionScore = Math.max(0, Math.min(100, Math.round(finance.liquid / Math.max(1, state.profile.cushionTarget) * 100)));
+    return Math.round(taskScore * 0.4 + habitScore * 0.25 + cushionScore * 0.35);
   }
 
-  function financeInsight() {
-    const f = getFinanceSummary();
-    if (f.debt > 0 && f.liquid < state.profile.cushionTarget) {
-      return { cls: 'danger', text: `Сейчас нельзя разгонять крупные покупки. Ликвидные деньги ${money(f.liquid)}, долг ${money(f.debt)}, подушка ещё не сформирована.` };
-    }
-    if (f.liquid < state.profile.cushionTarget) {
-      return { cls: 'warning', text: `До целевой подушки не хватает ${money(state.profile.cushionTarget - f.liquid)}. Свободные поступления лучше направлять в фундамент, а не в импульсивные траты.` };
-    }
-    return { cls: '', text: `Подушка достигла целевого уровня. Следующий приоритет - рост капитала и дохода без повышения постоянных расходов.` };
+  function getMainTask() {
+    const priorities = { high: 0, medium: 1, low: 2 };
+    return state.tasks
+      .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
+      .sort((a, b) => (priorities[a.priority] ?? 1) - (priorities[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))[0];
   }
 
   function renderDashboard() {
-    const dueTasks = state.tasks.filter(t => !t.done && (!t.due || t.due <= todayISO())).slice(0, 4);
-    const f = getFinanceSummary();
+    const analytics = getFinanceAnalytics();
     const score = overallScore();
-    const insight = financeInsight();
-    const activeProjects = state.projects.filter(p => p.status !== 'paused').length;
+    const mainTask = getMainTask();
+    const overdue = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
+    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 7))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+    const capitalProgress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
 
     app.innerHTML = `
       <section class="hero">
         <div class="hero-top">
           <div>
-            <h2>${score >= 75 ? 'Держишь курс' : score >= 45 ? 'Нужно собраться' : 'Система проседает'}</h2>
-            <p>${score >= 75 ? 'Главное - не распыляться и закрыть ключевые действия дня.' : 'Не добавляй новые цели. Сначала верни контроль над текущими задачами и деньгами.'}</p>
+            <p class="eyebrow">${escapeHtml(state.profile.name || 'Пользователь')}</p>
+            <h2>${score >= 75 ? 'Держишь курс' : score >= 45 ? 'Нужно вернуть контроль' : 'Система проседает'}</h2>
+            <p>${mainTask ? `Главный фокус: ${escapeHtml(mainTask.title)}` : 'Главные задачи на сегодня закрыты.'}</p>
           </div>
           <div class="score-ring" style="--score:${score}"><span>${score}</span></div>
         </div>
       </section>
 
+      <section class="quick-actions">
+        <button class="quick-btn" type="button" id="quickTask"><span>＋</span>Задача</button>
+        <button class="quick-btn" type="button" id="quickExpense"><span>−</span>Расход</button>
+        <button class="quick-btn" type="button" id="quickIncome"><span>＋</span>Доход</button>
+      </section>
+
       <section class="stats grid two">
-        <div class="stat-card"><small>Деньги сейчас</small><strong>${money(f.liquid)}</strong></div>
-        <div class="stat-card"><small>Ожидается</small><strong>${money(f.expected)}</strong></div>
-        <div class="stat-card"><small>Задачи дня</small><strong>${taskCompletion()}%</strong></div>
-        <div class="stat-card"><small>Активные проекты</small><strong>${activeProjects}</strong></div>
+        <div class="stat-card"><small>Заработано за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong></div>
+        <div class="stat-card"><small>Расходы за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong></div>
+        <div class="stat-card"><small>Свободный остаток</small><strong>${money(analytics.monthBalance)}</strong></div>
+        <div class="stat-card"><small>Просроченные задачи</small><strong class="${overdue ? 'negative' : ''}">${overdue}</strong></div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Главное сегодня</h2><button class="link-btn" data-go="tasks">Все задачи</button></div>
-        <div class="list">
-          ${dueTasks.length ? dueTasks.map(taskItem).join('') : empty('Все задачи на сегодня закрыты.')}
+        <div class="section-head"><h2>Капитал</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
+        <div class="card">
+          <div class="metric-row"><strong>${money(analytics.capital)}</strong><span>${capitalProgress}% цели</span></div>
+          <div class="progress"><span style="width:${capitalProgress}%"></span></div>
+          <div class="item-meta" style="margin-top:9px">Цель: ${money(state.profile.capitalTarget)} · ликвидно ${money(analytics.liquid)} · долги ${money(analytics.debt)}</div>
         </div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Финансовый контроль</h2><button class="link-btn" data-go="finance">Открыть</button></div>
-        <div class="insight ${insight.cls}">${insight.text}</div>
+        <div class="section-head"><h2>Главное сегодня</h2><button class="link-btn" type="button" data-go="tasks">Все задачи</button></div>
+        <div class="list">${mainTask ? taskItem(mainTask) : empty('Все обязательные задачи на сегодня закрыты.')}</div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Привычки сегодня</h2><button class="link-btn" data-go="growth">Прогресс</button></div>
+        <div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
+        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 7 дней обязательств не записано.')}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Привычки сегодня</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
         <div class="grid two">
-          ${state.habits.map(h => `
-            <label class="card" style="display:flex;gap:10px;align-items:center;cursor:pointer">
-              <input class="check habit-check" type="checkbox" data-id="${h.id}" ${h.logs?.[todayISO()] ? 'checked' : ''}>
-              <span class="item-title" style="margin:0">${escapeHtml(h.title)}</span>
+          ${state.habits.map(habit => `
+            <label class="card habit-today">
+              <input class="check habit-check" type="checkbox" data-id="${habit.id}" ${habit.logs?.[todayISO()] ? 'checked' : ''}>
+              <span class="item-title">${escapeHtml(habit.title)}</span>
             </label>`).join('')}
         </div>
       </section>
     `;
     bindCommon();
+    $('#quickTask').addEventListener('click', () => openTaskModal());
+    $('#quickExpense').addEventListener('click', () => openTransactionModal(null, 'expense'));
+    $('#quickIncome').addEventListener('click', () => openTransactionModal(null, 'income'));
   }
 
-  function taskItem(t) {
+  function taskItem(task) {
+    const project = state.projects.find(item => item.id === task.projectId);
+    const projectName = project?.name || task.project || 'Без проекта';
+    const overdue = task.status !== 'done' && task.due && task.due < todayISO();
     return `
-      <div class="item ${t.done ? 'done' : ''}">
-        <input class="check task-check" type="checkbox" data-id="${t.id}" ${t.done ? 'checked' : ''}>
+      <div class="item ${task.status === 'done' ? 'done' : ''} ${overdue ? 'overdue' : ''}">
+        <input class="check task-check" type="checkbox" data-id="${task.id}" ${task.status === 'done' ? 'checked' : ''}>
         <div class="item-main">
-          <div class="item-title">${escapeHtml(t.title)}</div>
-          <div class="item-meta">${escapeHtml(t.project || 'Без проекта')} · ${dateText(t.due)}</div>
-          <div class="pill-row"><span class="badge ${t.priority}">${priorityText(t.priority)}</span></div>
+          <div class="item-title">${escapeHtml(task.title)}</div>
+          <div class="item-meta">${escapeHtml(projectName)} · ${dateText(task.due)}${task.dueTime ? `, ${escapeHtml(task.dueTime)}` : ''}</div>
+          <div class="pill-row">
+            <span class="badge ${task.priority}">${priorityText(task.priority)}</span>
+            <span class="badge status-${task.status}">${taskStatusText(task.status)}</span>
+            ${task.repeat !== 'none' ? `<span class="badge">↻ ${repeatText(task.repeat)}</span>` : ''}
+          </div>
         </div>
         <div class="item-actions">
-          <button class="mini-btn edit-task" data-id="${t.id}" aria-label="Редактировать">✎</button>
-          <button class="mini-btn delete-task" data-id="${t.id}" aria-label="Удалить">×</button>
+          <button class="mini-btn edit-task" type="button" data-id="${task.id}" aria-label="Редактировать">✎</button>
+          <button class="mini-btn delete-task" type="button" data-id="${task.id}" aria-label="Удалить">×</button>
         </div>
       </div>`;
   }
 
-  function priorityText(value) {
-    return ({ high: 'Высокий', medium: 'Средний', low: 'Низкий' })[value] || 'Средний';
-  }
-
   function renderTasks() {
-    const pending = state.tasks.filter(t => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
-    const done = state.tasks.filter(t => t.done).slice().reverse();
+    const today = todayISO();
+    const nextWeek = localISO(addDays(new Date(), 7));
+    const normalizedSearch = taskSearch.trim().toLowerCase();
+    let tasks = state.tasks.filter(task => {
+      if (normalizedSearch && !`${task.title} ${task.project} ${task.notes}`.toLowerCase().includes(normalizedSearch)) return false;
+      if (taskFilter === 'today') return task.due === today;
+      if (taskFilter === 'overdue') return task.status !== 'done' && task.due && task.due < today;
+      if (taskFilter === 'week') return task.due && task.due >= today && task.due <= nextWeek;
+      return true;
+    });
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    tasks = tasks.sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.due || '9999').localeCompare(b.due || '9999') || (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+    const active = tasks.filter(task => task.status !== 'done');
+    const completed = tasks.filter(task => task.status === 'done');
+
     app.innerHTML = `
-      <section class="section" style="margin-top:4px">
-        <div class="section-head"><h2>В работе</h2><span class="badge">${pending.length}</span></div>
-        <div class="list">${pending.length ? pending.map(taskItem).join('') : empty('Невыполненных задач нет.')}</div>
+      <section class="toolbar-card">
+        <div class="filter-row">
+          ${[['today', 'Сегодня'], ['overdue', 'Просрочено'], ['week', '7 дней'], ['all', 'Все']].map(([key, label]) => `<button class="chip ${taskFilter === key ? 'active' : ''}" type="button" data-task-filter="${key}">${label}</button>`).join('')}
+        </div>
+        <input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Поиск задач">
       </section>
       <section class="section">
-        <div class="section-head"><h2>Выполнено</h2><span class="badge">${done.length}</span></div>
-        <div class="list">${done.length ? done.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
+        <div class="section-head"><h2>Активные</h2><span class="badge">${active.length}</span></div>
+        <div class="list">${active.length ? active.map(taskItem).join('') : empty('В этом фильтре активных задач нет.')}</div>
       </section>
-      <button class="fab" id="addTask" aria-label="Добавить задачу">＋</button>`;
+      <section class="section">
+        <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
+        <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
+      </section>
+      <button class="fab" id="addTask" type="button" aria-label="Добавить задачу">＋</button>`;
+
     bindCommon();
     $('#addTask').addEventListener('click', () => openTaskModal());
+    $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
+    $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
+  }
+
+  function dailyExpenseSeries() {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(new Date(), index - 6);
+      const iso = localISO(date);
+      return { label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).slice(0, 2), value: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)) };
+    });
+  }
+
+  function monthlySalarySeries() {
+    return Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(new Date().getFullYear(), new Date().getMonth() - (5 - index), 1);
+      return { label: monthLabel(date), value: sumTransactions('income', startOfMonth(date), endOfMonth(date), true), salary: sum(transactionsInRange('income', startOfMonth(date), endOfMonth(date)).filter(tx => tx.category === 'salary').map(tx => tx.amount)) };
+    }).map(item => ({ label: item.label, value: item.salary }));
+  }
+
+  function barChart(series, formatter = money) {
+    const maximum = Math.max(1, ...series.map(item => Number(item.value || 0)));
+    return `<div class="bar-chart">${series.map(item => {
+      const height = item.value ? Math.max(8, Math.round(item.value / maximum * 100)) : 3;
+      return `<div class="bar-column" title="${escapeHtml(item.label)}: ${escapeHtml(formatter(item.value))}"><div class="bar-value">${item.value ? escapeHtml(shortMoney(item.value)) : ''}</div><div class="bar-track"><span style="height:${height}%"></span></div><small>${escapeHtml(item.label)}</small></div>`;
+    }).join('')}</div>`;
+  }
+
+  function shortMoney(value) {
+    const number = Number(value || 0);
+    if (Math.abs(number) >= 1000000) return `${numberText(number / 1000000)}м`;
+    if (Math.abs(number) >= 1000) return `${numberText(number / 1000)}к`;
+    return `${Math.round(number)}`;
   }
 
   function renderFinance() {
-    const f = getFinanceSummary();
-    const target = state.profile.capitalTarget;
-    const progress = Math.min(100, Math.round(f.capital / Math.max(1, target) * 100));
-    const insight = financeInsight();
-    const ordered = state.transactions.slice().sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    const analytics = getFinanceAnalytics();
+    const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     app.innerHTML = `
-      <section class="hero">
-        <p class="eyebrow">Чистый текущий капитал</p>
-        <div class="kpi">${money(f.capital)}</div>
-        <div class="metric-row"><span class="muted">Цель: ${money(target)}</span><strong>${progress}%</strong></div>
+      <section class="hero compact">
+        <p class="eyebrow">Чистый капитал</p>
+        <div class="kpi">${money(analytics.capital)}</div>
+        <div class="metric-row"><span class="muted">Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </section>
-
-      <section class="stats grid two">
-        <div class="stat-card"><small>Ликвидные деньги</small><strong>${money(f.liquid)}</strong></div>
-        <div class="stat-card"><small>Ожидаемые доходы</small><strong>${money(f.expected)}</strong></div>
-        <div class="stat-card"><small>Долги</small><strong class="${f.debt ? 'negative' : ''}">${money(f.debt)}</strong></div>
-        <div class="stat-card"><small>Расходы в учёте</small><strong>${money(f.expenses)}</strong></div>
+      <section class="tabs">
+        ${[['overview', 'Обзор'], ['operations', 'Операции'], ['accounts', 'Счета'], ['obligations', 'Платежи']].map(([key, label]) => `<button class="tab ${financeTab === key ? 'active' : ''}" type="button" data-finance-tab="${key}">${label}</button>`).join('')}
       </section>
-
-      <section class="section"><div class="insight ${insight.cls}">${insight.text}</div></section>
-
-      <section class="section">
-        <div class="section-head"><h2>Деньги и обязательства</h2><button class="link-btn" id="addFinance">Добавить</button></div>
-        <div class="list">
-          ${ordered.length ? ordered.map(x => `
-            <div class="item">
-              <div class="item-main">
-                <div class="item-title">${escapeHtml(x.title)}</div>
-                <div class="item-meta">${financeTypeText(x.type)} · ${dateText(x.date)}</div>
-              </div>
-              <div style="text-align:right">
-                <strong class="${x.type === 'debt' || x.type === 'expense' ? 'negative' : x.type === 'income' ? 'positive' : ''}">${money(x.amount)}</strong>
-                <div class="item-actions" style="margin-top:7px;justify-content:flex-end">
-                  <button class="mini-btn edit-finance" data-id="${x.id}">✎</button>
-                  <button class="mini-btn delete-finance" data-id="${x.id}">×</button>
-                </div>
-              </div>
-            </div>`).join('') : empty('Добавьте деньги, долги и ожидаемые поступления.')}
-        </div>
-      </section>`;
+      <div id="financeTabContent">${financeTabContent(financeTab, analytics)}</div>
+    `;
     bindCommon();
-    $('#addFinance').addEventListener('click', () => openFinanceModal());
+    $$('[data-finance-tab]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTab; renderFinance(); }));
+    bindFinanceActions();
   }
 
-  function financeTypeText(type) {
-    return ({ balance: 'На карте', cash: 'Наличные', income: 'Ожидаемый доход', debt: 'Долг', expense: 'Расход' })[type] || 'Запись';
+  function financeTabContent(tab, analytics) {
+    if (tab === 'operations') return renderFinanceOperations();
+    if (tab === 'accounts') return renderFinanceAccounts(analytics);
+    if (tab === 'obligations') return renderFinanceObligations(analytics);
+    return renderFinanceOverview(analytics);
+  }
+
+  function renderFinanceOverview(analytics) {
+    const insights = getFinanceInsights(analytics);
+    const maxCategory = Math.max(1, ...analytics.categoryRows.map(row => row.amount));
+    return `
+      <section class="stats grid two">
+        <div class="stat-card"><small>Заработано за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareBadge(analytics.monthIncome, analytics.previousMonthIncome)}</div>
+        <div class="stat-card"><small>Расходы за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareBadge(analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
+        <div class="stat-card"><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong>${compareBadge(analytics.weekExpense, analytics.previousWeekExpense, true)}</div>
+        <div class="stat-card"><small>Сбережено за месяц</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Расходы по дням</h2><button class="link-btn" type="button" data-add-transaction="expense">+ Расход</button></div>
+        <div class="card">${barChart(dailyExpenseSeries())}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Рост зарплаты</h2><button class="link-btn" type="button" data-add-transaction="income">+ Доход</button></div>
+        <div class="card">
+          <div class="metric-row"><span class="muted">Зарплата в этом месяце</span><strong>${money(analytics.monthSalary)}</strong></div>
+          ${barChart(monthlySalarySeries())}
+          <div class="item-meta">При добавлении дохода выбирай категорию «Зарплата» - график обновится автоматически.</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>На что уходят деньги</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все операции</button></div>
+        <div class="card category-list">
+          ${analytics.categoryRows.length ? analytics.categoryRows.map(row => `
+            <div class="category-row">
+              <div class="metric-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong></div>
+              <div class="progress thin"><span style="width:${Math.round(row.amount / maxCategory * 100)}%"></span></div>
+            </div>`).join('') : '<div class="item-meta">Расходов за текущий месяц пока нет.</div>'}
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Автоматический разбор</h2></div>
+        <div class="list">${insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('')}</div>
+      </section>
+    `;
+  }
+
+  function renderFinanceOperations() {
+    const ordered = state.transactions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.id).localeCompare(String(a.id)));
+    return `
+      <section class="quick-actions finance-actions">
+        <button class="quick-btn" type="button" data-add-transaction="expense"><span>−</span>Расход</button>
+        <button class="quick-btn" type="button" data-add-transaction="income"><span>＋</span>Доход</button>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>История операций</h2><span class="badge">${ordered.length}</span></div>
+        <div class="list">${ordered.length ? ordered.map(transactionItem).join('') : empty('Добавьте первый доход или расход.')}</div>
+      </section>`;
+  }
+
+  function transactionItem(tx) {
+    const account = state.accounts.find(item => item.id === tx.accountId);
+    const sign = tx.type === 'expense' ? '−' : '+';
+    return `
+      <div class="item">
+        <div class="category-icon ${tx.type}">${tx.type === 'expense' ? '−' : '+'}</div>
+        <div class="item-main">
+          <div class="item-title">${escapeHtml(tx.title)}</div>
+          <div class="item-meta">${escapeHtml(categoryLabel(tx.category))} · ${dateText(tx.date)}${account ? ` · ${escapeHtml(account.name)}` : ''}</div>
+          ${tx.notes ? `<div class="item-note">${escapeHtml(tx.notes)}</div>` : ''}
+        </div>
+        <div class="amount-block">
+          <strong class="${tx.type === 'expense' ? 'negative' : 'positive'}">${sign}${money(tx.amount)}</strong>
+          <div class="item-actions">
+            <button class="mini-btn edit-transaction" type="button" data-id="${tx.id}">✎</button>
+            <button class="mini-btn delete-transaction" type="button" data-id="${tx.id}">×</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderFinanceAccounts(analytics) {
+    return `
+      <section class="stats grid two">
+        <div class="stat-card"><small>Всего на счетах</small><strong>${money(analytics.liquid)}</strong></div>
+        <div class="stat-card"><small>Чистый капитал</small><strong>${money(analytics.capital)}</strong></div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Счета</h2><button class="link-btn" type="button" id="addAccount">Добавить</button></div>
+        <div class="list">${state.accounts.length ? state.accounts.map(accountItem).join('') : empty('Добавьте карту, наличные или накопительный счёт.')}</div>
+      </section>`;
+  }
+
+  function accountItem(account) {
+    return `<div class="item">
+      <div class="account-icon">${account.type === 'cash' ? '₽' : account.type === 'savings' ? '◆' : account.type === 'investment' ? '↗' : '▣'}</div>
+      <div class="item-main"><div class="item-title">${escapeHtml(account.name)}</div><div class="item-meta">${accountTypeText(account.type)}</div></div>
+      <div class="amount-block"><strong>${money(account.balance)}</strong><div class="item-actions"><button class="mini-btn edit-account" type="button" data-id="${account.id}">✎</button><button class="mini-btn delete-account" type="button" data-id="${account.id}">×</button></div></div>
+    </div>`;
+  }
+
+  function renderFinanceObligations(analytics) {
+    const open = state.obligations.filter(item => item.status === 'open').sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
+    const closed = state.obligations.filter(item => item.status !== 'open').sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || '')).slice(0, 10);
+    return `
+      <section class="stats grid two">
+        <div class="stat-card"><small>Ожидается</small><strong class="positive">${money(analytics.expected)}</strong></div>
+        <div class="stat-card"><small>Открытые долги</small><strong class="negative">${money(analytics.debt)}</strong></div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Открытые</h2><button class="link-btn" type="button" id="addObligation">Добавить</button></div>
+        <div class="list">${open.length ? open.map(obligationItem).join('') : empty('Открытых платежей и поступлений нет.')}</div>
+      </section>
+      ${closed.length ? `<section class="section"><div class="section-head"><h2>Закрытые</h2></div><div class="list">${closed.map(obligationItem).join('')}</div></section>` : ''}`;
+  }
+
+  function obligationItem(item) {
+    const overdue = item.status === 'open' && item.dueDate && item.dueDate < todayISO();
+    return `<div class="item ${overdue ? 'overdue' : ''}">
+      <div class="category-icon ${item.type === 'expected' ? 'income' : 'expense'}">${item.type === 'expected' ? '+' : '!'}</div>
+      <div class="item-main">
+        <div class="item-title">${escapeHtml(item.title)}</div>
+        <div class="item-meta">${obligationTypeText(item.type)} · ${dateText(item.dueDate)} · ${item.status === 'open' ? 'Открыто' : item.status === 'received' ? 'Получено' : 'Оплачено'}</div>
+      </div>
+      <div class="amount-block">
+        <strong class="${item.type === 'expected' ? 'positive' : 'negative'}">${money(item.amount)}</strong>
+        <div class="item-actions">
+          ${item.status === 'open' ? `<button class="mini-btn settle-obligation" type="button" data-id="${item.id}" title="Закрыть">✓</button>` : ''}
+          <button class="mini-btn edit-obligation" type="button" data-id="${item.id}">✎</button>
+          <button class="mini-btn delete-obligation" type="button" data-id="${item.id}">×</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function bindFinanceActions() {
+    $$('[data-add-transaction]').forEach(button => button.addEventListener('click', () => openTransactionModal(null, button.dataset.addTransaction)));
+    $$('[data-finance-tab-jump]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTabJump; renderFinance(); }));
+    $('#addAccount')?.addEventListener('click', () => openAccountModal());
+    $('#addObligation')?.addEventListener('click', () => openObligationModal());
+    $$('.edit-transaction').forEach(button => button.addEventListener('click', () => openTransactionModal(state.transactions.find(item => item.id === button.dataset.id))));
+    $$('.delete-transaction').forEach(button => button.addEventListener('click', () => deleteTransaction(button.dataset.id)));
+    $$('.edit-account').forEach(button => button.addEventListener('click', () => openAccountModal(state.accounts.find(item => item.id === button.dataset.id))));
+    $$('.delete-account').forEach(button => button.addEventListener('click', () => removeItem('accounts', button.dataset.id)));
+    $$('.edit-obligation').forEach(button => button.addEventListener('click', () => openObligationModal(state.obligations.find(item => item.id === button.dataset.id))));
+    $$('.delete-obligation').forEach(button => button.addEventListener('click', () => removeItem('obligations', button.dataset.id)));
+    $$('.settle-obligation').forEach(button => button.addEventListener('click', () => openSettlementModal(state.obligations.find(item => item.id === button.dataset.id))));
   }
 
   function renderProjects() {
-    const monthly = state.projects.filter(p => p.status === 'active').reduce((sum, p) => sum + Number(p.value || 0), 0);
+    const active = state.projects.filter(project => project.status === 'active' || project.status === 'growth');
+    const monthly = sum(active.map(project => project.value));
+    const unpaid = sum(state.projects.filter(project => project.paymentStatus === 'overdue' || project.paymentStatus === 'waiting').map(project => project.debt || project.value));
     app.innerHTML = `
-      <section class="hero">
-        <p class="eyebrow">Доход по активным проектам</p>
-        <div class="kpi">${money(monthly)} <span class="muted" style="font-size:14px">в месяц</span></div>
-        <p style="margin-top:9px">Цель: ${money(state.profile.monthlyIncomeTarget)}. Не хватает ${money(Math.max(0, state.profile.monthlyIncomeTarget - monthly))}.</p>
+      <section class="hero compact">
+        <p class="eyebrow">Плановый доход по проектам</p>
+        <div class="kpi">${money(monthly)}</div>
+        <p>Цель: ${money(state.profile.monthlyIncomeTarget)} · не хватает ${money(Math.max(0, state.profile.monthlyIncomeTarget - monthly))}</p>
+      </section>
+      <section class="stats grid two">
+        <div class="stat-card"><small>Активные проекты</small><strong>${active.length}</strong></div>
+        <div class="stat-card"><small>Ожидается от клиентов</small><strong class="${unpaid ? 'positive' : ''}">${money(unpaid)}</strong></div>
       </section>
       <section class="section">
-        <div class="section-head"><h2>Проекты и клиенты</h2><button class="link-btn" id="addProject">Добавить</button></div>
-        <div class="list">
-          ${state.projects.length ? state.projects.map(p => `
-            <div class="card">
-              <div class="metric-row"><div class="item-title">${escapeHtml(p.name)}</div><span class="badge ${p.status === 'active' ? 'low' : p.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(p.status)}</span></div>
-              <div class="metric-row"><span class="muted">Стоимость</span><strong>${money(p.value)}</strong></div>
-              <div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(p.next || 'Не указан')}</div>
-              <div class="item-actions" style="margin-top:12px;justify-content:flex-end">
-                <button class="mini-btn edit-project" data-id="${p.id}">✎</button>
-                <button class="mini-btn delete-project" data-id="${p.id}">×</button>
-              </div>
-            </div>`).join('') : empty('Добавьте первый проект или клиента.')}
-        </div>
-      </section>`;
+        <div class="section-head"><h2>Проекты и клиенты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
+        <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый проект или клиента.')}</div>
+      </section>
+      <button class="fab" id="addProjectFab" type="button" aria-label="Добавить проект">＋</button>`;
     bindCommon();
     $('#addProject').addEventListener('click', () => openProjectModal());
+    $('#addProjectFab').addEventListener('click', () => openProjectModal());
   }
 
-  function projectStatusText(status) {
-    return ({ active: 'Активен', growth: 'Развитие', paused: 'Пауза' })[status] || 'Активен';
+  function projectItem(project) {
+    const overdue = project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO());
+    const calculatedCpl = Number(project.leads || 0) > 0 ? Math.round(Number(project.adBudget || 0) / Number(project.leads || 1)) : Number(project.cpl || 0);
+    return `<div class="card project-card ${overdue ? 'overdue-card' : ''}">
+      <div class="metric-row"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${escapeHtml(project.service || projectTypeText(project.type))}</div></div><span class="badge ${project.status === 'active' ? 'low' : project.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(project.status)}</span></div>
+      <div class="project-metrics">
+        <div><small>Доход</small><strong>${money(project.value)}</strong></div>
+        <div><small>Оплата</small><strong class="${overdue ? 'negative' : ''}">${paymentStatusText(project.paymentStatus)}</strong></div>
+        <div><small>Лиды</small><strong>${Number(project.leads || 0)}</strong></div>
+        <div><small>CPL</small><strong>${calculatedCpl ? money(calculatedCpl) : '—'}</strong></div>
+      </div>
+      <div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(project.next || 'Не указан')}</div>
+      ${project.result ? `<div class="item-note">Результат: ${escapeHtml(project.result)}</div>` : ''}
+      <div class="project-footer">
+        <span class="item-meta">${project.paymentDate ? `Оплата ${dateText(project.paymentDate)}` : 'Дата оплаты не указана'}</span>
+        <div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}">×</button></div>
+      </div>
+    </div>`;
+  }
+
+  function projectTypeText(type) {
+    return ({ client: 'Клиент', job: 'Работа', personal: 'Личный проект' })[type] || 'Проект';
   }
 
   function getLast7Days() {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return { iso: d.toISOString().slice(0, 10), label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(d).slice(0,2) };
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(new Date(), index - 6);
+      return { iso: localISO(date), label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).slice(0, 2) };
     });
+  }
+
+  function habitStreak(habit) {
+    let streak = 0;
+    for (let index = 0; index < 365; index += 1) {
+      const iso = localISO(addDays(new Date(), -index));
+      if (habit.logs?.[iso]) streak += 1;
+      else if (index === 0) continue;
+      else break;
+    }
+    return streak;
+  }
+
+  function habitMonthPercent(habit) {
+    const now = new Date();
+    let planned = 0;
+    let completed = 0;
+    for (let day = 1; day <= now.getDate(); day += 1) {
+      const date = new Date(now.getFullYear(), now.getMonth(), day);
+      if ((habit.schedule || []).includes(date.getDay())) {
+        planned += 1;
+        if (habit.logs?.[localISO(date)]) completed += 1;
+      }
+    }
+    return planned ? Math.round(completed / planned * 100) : 100;
+  }
+
+  function goalCurrent(goal) {
+    const analytics = getFinanceAnalytics();
+    if (goal.autoSource === 'capital') return analytics.capital;
+    if (goal.autoSource === 'monthlyIncome') return analytics.monthIncome;
+    return Number(goal.current || 0);
   }
 
   function renderGrowth() {
     const days = getLast7Days();
+    const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
+    const currentWeek = localISO(startOfWeek(new Date()));
+    const currentReview = reviews.find(review => review.weekStart === currentWeek);
     app.innerHTML = `
       <section class="section" style="margin-top:4px">
-        <div class="section-head"><h2>Цели</h2><button class="link-btn" id="addGoal">Добавить</button></div>
-        <div class="list">
-          ${state.goals.length ? state.goals.map(g => {
-            const pct = Math.min(100, Math.round(Number(g.current || 0) / Math.max(1, Number(g.target || 1)) * 100));
-            return `<div class="card">
-              <div class="metric-row"><div class="item-title">${escapeHtml(g.title)}</div><strong>${pct}%</strong></div>
-              <div class="progress"><span style="width:${pct}%"></span></div>
-              <div class="item-meta" style="margin-top:9px">${escapeHtml(g.current)} из ${escapeHtml(g.target)} · срок ${dateText(g.deadline)}</div>
-              <div class="item-actions" style="margin-top:10px;justify-content:flex-end"><button class="mini-btn edit-goal" data-id="${g.id}">✎</button><button class="mini-btn delete-goal" data-id="${g.id}">×</button></div>
-            </div>`;
-          }).join('') : empty('Добавьте измеримую цель.')}
-        </div>
+        <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
+        <div class="list">${state.goals.length ? state.goals.map(goal => {
+          const current = goalCurrent(goal);
+          const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
+          return `<div class="card">
+            <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
+            <div class="progress"><span style="width:${percent}%"></span></div>
+            <div class="item-meta" style="margin-top:9px">${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} · срок ${dateText(goal.deadline)}</div>
+            ${goal.nextAction ? `<div class="insight" style="margin-top:12px">Следующее действие: ${escapeHtml(goal.nextAction)}</div>` : ''}
+            <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
+          </div>`;
+        }).join('') : empty('Добавьте измеримую цель.')}</div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Привычки за 7 дней</h2><button class="link-btn" id="addHabit">Добавить</button></div>
-        <div class="list">
-          ${state.habits.map(h => `
-            <div class="card">
-              <div class="metric-row"><div class="item-title">${escapeHtml(h.title)}</div><button class="mini-btn delete-habit" data-id="${h.id}">×</button></div>
-              <div class="week-grid">
-                ${days.map(d => `<button class="day-cell habit-day ${h.logs?.[d.iso] ? 'done' : ''}" data-id="${h.id}" data-date="${d.iso}">${d.label}</button>`).join('')}
-              </div>
-            </div>`).join('')}
-        </div>
+        <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
+        <div class="list">${state.habits.length ? state.habits.map(habit => `
+          <div class="card">
+            <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
+            <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
+          </div>`).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Недельный разбор</h2><button class="link-btn" id="saveReview">Сохранить</button></div>
-        <div class="field"><textarea id="weeklyNotes" placeholder="Что сделал, где просел, сколько заработал, что главное на следующей неделе...">${escapeHtml(state.weeklyNotes || '')}</textarea></div>
-        <div class="insight warning">Проверяй не занятость, а результат: деньги, клиенты, капитал, закрытые задачи и принятые решения.</div>
+        <div class="section-head"><h2>Недельные разборы</h2><button class="link-btn" type="button" id="addReview">${currentReview ? 'Изменить неделю' : 'Заполнить неделю'}</button></div>
+        <div class="list">${reviews.length ? reviews.slice(0, 6).map(reviewItem).join('') : empty('Первый разбор покажет, что реально двигает доход и капитал.')}</div>
       </section>`;
     bindCommon();
     $('#addGoal').addEventListener('click', () => openGoalModal());
     $('#addHabit').addEventListener('click', () => openHabitModal());
-    $('#saveReview').addEventListener('click', () => { state.weeklyNotes = $('#weeklyNotes').value.trim(); saveState(); toast('Недельный разбор сохранён'); });
+    $('#addReview').addEventListener('click', () => openReviewModal(currentReview));
+  }
+
+  function reviewItem(review) {
+    return `<div class="card">
+      <div class="metric-row"><div class="item-title">Неделя с ${dateText(review.weekStart)}</div><div class="item-actions"><button class="mini-btn edit-review" type="button" data-id="${review.id}">✎</button><button class="mini-btn delete-review" type="button" data-id="${review.id}">×</button></div></div>
+      <div class="project-metrics two-cols"><div><small>Заработано</small><strong>${money(review.income)}</strong></div><div><small>Отложено</small><strong>${money(review.saved)}</strong></div></div>
+      ${review.wins ? `<div class="item-note"><b>Результаты:</b> ${escapeHtml(review.wins)}</div>` : ''}
+      ${review.lesson ? `<div class="insight" style="margin-top:10px">Вывод: ${escapeHtml(review.lesson)}</div>` : ''}
+      ${review.priorities ? `<div class="item-note"><b>Следующая неделя:</b> ${escapeHtml(review.priorities)}</div>` : ''}
+    </div>`;
   }
 
   function empty(text) {
@@ -333,89 +821,270 @@
   }
 
   function bindCommon() {
-    $$('[data-go]').forEach(btn => btn.addEventListener('click', () => switchScreen(btn.dataset.go)));
-    $$('.task-check').forEach(el => el.addEventListener('change', () => {
-      const task = state.tasks.find(t => t.id === el.dataset.id); if (!task) return;
-      task.done = el.checked; saveState(); render();
+    $$('[data-go]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.go)));
+    $$('.task-check').forEach(input => input.addEventListener('change', () => toggleTask(input.dataset.id, input.checked)));
+    $$('.habit-check').forEach(input => input.addEventListener('change', () => {
+      const habit = state.habits.find(item => item.id === input.dataset.id);
+      if (!habit) return;
+      habit.logs ||= {};
+      habit.logs[todayISO()] = input.checked;
+      saveState();
+      render();
     }));
-    $$('.habit-check').forEach(el => el.addEventListener('change', () => {
-      const habit = state.habits.find(h => h.id === el.dataset.id); if (!habit) return;
-      habit.logs ||= {}; habit.logs[todayISO()] = el.checked; saveState(); render();
+    $$('.edit-task').forEach(button => button.addEventListener('click', () => openTaskModal(state.tasks.find(item => item.id === button.dataset.id))));
+    $$('.delete-task').forEach(button => button.addEventListener('click', () => removeItem('tasks', button.dataset.id)));
+    $$('.edit-project').forEach(button => button.addEventListener('click', () => openProjectModal(state.projects.find(item => item.id === button.dataset.id))));
+    $$('.delete-project').forEach(button => button.addEventListener('click', () => removeItem('projects', button.dataset.id)));
+    $$('.edit-goal').forEach(button => button.addEventListener('click', () => openGoalModal(state.goals.find(item => item.id === button.dataset.id))));
+    $$('.delete-goal').forEach(button => button.addEventListener('click', () => removeItem('goals', button.dataset.id)));
+    $$('.edit-habit').forEach(button => button.addEventListener('click', () => openHabitModal(state.habits.find(item => item.id === button.dataset.id))));
+    $$('.delete-habit').forEach(button => button.addEventListener('click', () => removeItem('habits', button.dataset.id)));
+    $$('.habit-day').forEach(button => button.addEventListener('click', () => {
+      const habit = state.habits.find(item => item.id === button.dataset.id);
+      if (!habit) return;
+      habit.logs ||= {};
+      habit.logs[button.dataset.date] = !habit.logs[button.dataset.date];
+      saveState();
+      render();
     }));
-    $$('.edit-task').forEach(btn => btn.addEventListener('click', () => openTaskModal(state.tasks.find(x => x.id === btn.dataset.id))));
-    $$('.delete-task').forEach(btn => btn.addEventListener('click', () => removeItem('tasks', btn.dataset.id)));
-    $$('.edit-finance').forEach(btn => btn.addEventListener('click', () => openFinanceModal(state.transactions.find(x => x.id === btn.dataset.id))));
-    $$('.delete-finance').forEach(btn => btn.addEventListener('click', () => removeItem('transactions', btn.dataset.id)));
-    $$('.edit-project').forEach(btn => btn.addEventListener('click', () => openProjectModal(state.projects.find(x => x.id === btn.dataset.id))));
-    $$('.delete-project').forEach(btn => btn.addEventListener('click', () => removeItem('projects', btn.dataset.id)));
-    $$('.edit-goal').forEach(btn => btn.addEventListener('click', () => openGoalModal(state.goals.find(x => x.id === btn.dataset.id))));
-    $$('.delete-goal').forEach(btn => btn.addEventListener('click', () => removeItem('goals', btn.dataset.id)));
-    $$('.delete-habit').forEach(btn => btn.addEventListener('click', () => removeItem('habits', btn.dataset.id)));
-    $$('.habit-day').forEach(btn => btn.addEventListener('click', () => {
-      const habit = state.habits.find(h => h.id === btn.dataset.id); if (!habit) return;
-      habit.logs ||= {}; habit.logs[btn.dataset.date] = !habit.logs[btn.dataset.date]; saveState(); render();
-    }));
+    $$('.edit-review').forEach(button => button.addEventListener('click', () => openReviewModal(state.weeklyReviews.find(item => item.id === button.dataset.id))));
+    $$('.delete-review').forEach(button => button.addEventListener('click', () => removeItem('weeklyReviews', button.dataset.id)));
+  }
+
+  function toggleTask(id, completed) {
+    const task = state.tasks.find(item => item.id === id);
+    if (!task) return;
+    task.status = completed ? 'done' : 'todo';
+    task.completedAt = completed ? new Date().toISOString() : null;
+    if (completed && task.repeat !== 'none' && task.due && task.repeatSpawnedFor !== task.due) {
+      const nextDate = parseISO(task.due);
+      if (task.repeat === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+      if (task.repeat === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+      if (task.repeat === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+      state.tasks.push({ ...clone(task), id: uid(), due: localISO(nextDate), status: 'todo', completedAt: null, reminderSentFor: null, repeatSpawnedFor: null, createdAt: new Date().toISOString() });
+      task.repeatSpawnedFor = task.due;
+    }
+    saveState();
+    render();
   }
 
   function removeItem(collection, id) {
     if (!confirm('Удалить запись?')) return;
-    state[collection] = state[collection].filter(x => x.id !== id);
-    saveState(); render();
+    state[collection] = state[collection].filter(item => item.id !== id);
+    saveState();
+    render();
   }
 
-  function openModal(title, body, action) {
+  function applyTransactionToAccount(transaction, direction = 1) {
+    if (!transaction.accountId) return;
+    const account = state.accounts.find(item => item.id === transaction.accountId);
+    if (!account) return;
+    const delta = Number(transaction.amount || 0) * (transaction.type === 'income' ? 1 : -1) * direction;
+    account.balance = Number(account.balance || 0) + delta;
+  }
+
+  function deleteTransaction(id) {
+    const transaction = state.transactions.find(item => item.id === id);
+    if (!transaction || !confirm('Удалить операцию? Баланс связанного счёта будет пересчитан.')) return;
+    applyTransactionToAccount(transaction, -1);
+    state.transactions = state.transactions.filter(item => item.id !== id);
+    saveState();
+    render();
+  }
+
+  function openModal(title, body, action, options = {}) {
     modalTitle.textContent = title;
     modalBody.innerHTML = body;
     modalAction = action;
-    modal.showModal();
+    modalActions.hidden = Boolean(options.hideActions);
+    modalSubmit.textContent = options.submitText || 'Сохранить';
+    if (!modal.open) modal.showModal();
+    setTimeout(() => modalBody.querySelector('input, select, textarea, button')?.focus(), 50);
+  }
+
+  function closeModal() {
+    modalAction = null;
+    modalForm.reset();
+    if (modal.open) modal.close();
+  }
+
+  function projectOptions(selectedId = '') {
+    return `<option value="">Без проекта</option>${state.projects.map(project => `<option value="${project.id}" ${selectedId === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}`;
+  }
+
+  function accountOptions(selectedId = '') {
+    return `<option value="">Не менять баланс счёта</option>${state.accounts.map(account => `<option value="${account.id}" ${selectedId === account.id ? 'selected' : ''}>${escapeHtml(account.name)} · ${money(account.balance)}</option>`).join('')}`;
   }
 
   function openTaskModal(item = null) {
     openModal(item ? 'Изменить задачу' : 'Новая задача', `
-      <div class="field"><label>Задача</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Что нужно сделать"></div>
-      <div class="field"><label>Проект</label><input name="project" value="${escapeHtml(item?.project || '')}" placeholder="SenyaMarketing, клиент, работа"></div>
+      <div class="field"><label>Задача</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Что конкретно нужно сделать"></div>
+      <div class="form-grid">
+        <div class="field"><label>Проект</label><select name="projectId">${projectOptions(item?.projectId || '')}</select></div>
+        <div class="field"><label>Статус</label><select name="status">${[['todo', 'К выполнению'], ['doing', 'В работе'], ['waiting', 'Жду'], ['deferred', 'Отложено'], ['done', 'Выполнено']].map(([value, label]) => `<option value="${value}" ${item?.status === value || (!item && value === 'todo') ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
+      </div>
       <div class="form-grid">
         <div class="field"><label>Приоритет</label><select name="priority"><option value="high" ${item?.priority === 'high' ? 'selected' : ''}>Высокий</option><option value="medium" ${!item || item?.priority === 'medium' ? 'selected' : ''}>Средний</option><option value="low" ${item?.priority === 'low' ? 'selected' : ''}>Низкий</option></select></div>
-        <div class="field"><label>Срок</label><input name="due" type="date" value="${item?.due || todayISO()}"></div>
-      </div>`, form => {
-        const data = Object.fromEntries(new FormData(form));
-        if (!data.title.trim()) return false;
-        if (item) Object.assign(item, data); else state.tasks.push({ id: uid(), ...data, done: false });
-        return true;
-      });
+        <div class="field"><label>Дата</label><input name="due" type="date" value="${item?.due || todayISO()}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Время</label><input name="dueTime" type="time" value="${item?.dueTime || ''}"></div>
+        <div class="field"><label>Напоминание</label><select name="reminder"><option value="none" ${!item || item?.reminder === 'none' ? 'selected' : ''}>Без напоминания</option><option value="at_time" ${item?.reminder === 'at_time' ? 'selected' : ''}>В указанное время</option><option value="1h" ${item?.reminder === '1h' ? 'selected' : ''}>За 1 час</option><option value="day_before" ${item?.reminder === 'day_before' ? 'selected' : ''}>За день</option></select></div>
+      </div>
+      <div class="field"><label>Повторение</label><select name="repeat"><option value="none" ${!item || item?.repeat === 'none' ? 'selected' : ''}>Не повторять</option><option value="daily" ${item?.repeat === 'daily' ? 'selected' : ''}>Каждый день</option><option value="weekly" ${item?.repeat === 'weekly' ? 'selected' : ''}>Каждую неделю</option><option value="monthly" ${item?.repeat === 'monthly' ? 'selected' : ''}>Каждый месяц</option></select></div>
+      <div class="field"><label>Комментарий</label><textarea name="notes" placeholder="Детали, ссылка или критерий выполнения">${escapeHtml(item?.notes || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.title.trim()) return false;
+      const project = state.projects.find(projectItem => projectItem.id === data.projectId);
+      data.project = project?.name || item?.project || '';
+      if (item) {
+        Object.assign(item, data, { completedAt: data.status === 'done' ? (item.completedAt || new Date().toISOString()) : null });
+      } else {
+        const task = { id: uid(), ...data, createdAt: new Date().toISOString(), completedAt: data.status === 'done' ? new Date().toISOString() : null, reminderSentFor: null };
+        state.tasks.push(task);
+        notifyTaskCreated(task);
+      }
+      return true;
+    });
   }
 
-  function openFinanceModal(item = null) {
-    openModal(item ? 'Изменить запись' : 'Новая финансовая запись', `
-      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Деньги на карте, кредит, доход"></div>
+  function categoryOptions(type, selected = '') {
+    const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    return list.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+  }
+
+  function openTransactionModal(item = null, presetType = 'expense') {
+    const type = item?.type || presetType;
+    openModal(item ? 'Изменить операцию' : type === 'income' ? 'Новый доход' : 'Новый расход', `
       <div class="form-grid">
-        <div class="field"><label>Тип</label><select name="type">
-          ${[['balance','На карте'],['cash','Наличные'],['income','Ожидаемый доход'],['debt','Долг'],['expense','Расход']].map(([v,t]) => `<option value="${v}" ${item?.type === v ? 'selected' : ''}>${t}</option>`).join('')}
-        </select></div>
-        <div class="field"><label>Сумма, ₽</label><input name="amount" type="number" min="0" step="1" required value="${item?.amount ?? ''}"></div>
+        <div class="field"><label>Тип</label><select name="type" id="transactionType"><option value="expense" ${type === 'expense' ? 'selected' : ''}>Расход</option><option value="income" ${type === 'income' ? 'selected' : ''}>Доход</option></select></div>
+        <div class="field"><label>Сумма, ₽</label><input name="amount" type="number" min="0.01" step="0.01" required value="${item?.amount ?? ''}" inputmode="decimal"></div>
       </div>
-      <div class="field"><label>Дата</label><input name="date" type="date" value="${item?.date || todayISO()}"></div>`, form => {
-        const data = Object.fromEntries(new FormData(form)); data.amount = Number(data.amount || 0);
-        if (!data.title.trim()) return false;
-        if (item) Object.assign(item, data); else state.transactions.push({ id: uid(), ...data });
-        return true;
-      });
+      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Например, продукты или зарплата"></div>
+      <div class="form-grid">
+        <div class="field"><label>Категория</label><select name="category" id="transactionCategory">${categoryOptions(type, item?.category || (type === 'income' ? 'salary' : 'groceries'))}</select></div>
+        <div class="field"><label>Дата</label><input name="date" type="date" value="${item?.date || todayISO()}"></div>
+      </div>
+      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(item?.accountId || '')}</select><small>Если выбрать счёт, его баланс изменится автоматически.</small></div>
+      <div class="field"><label>Комментарий</label><textarea name="notes" placeholder="На что именно или откуда доход">${escapeHtml(item?.notes || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.amount = Number(data.amount || 0);
+      if (!data.title.trim() || data.amount <= 0) return false;
+      if (item) {
+        applyTransactionToAccount(item, -1);
+        Object.assign(item, data);
+        applyTransactionToAccount(item, 1);
+      } else {
+        const transaction = { id: uid(), ...data };
+        state.transactions.push(transaction);
+        applyTransactionToAccount(transaction, 1);
+      }
+      return true;
+    });
+    $('#transactionType').addEventListener('change', event => {
+      const select = $('#transactionCategory');
+      select.innerHTML = categoryOptions(event.target.value, event.target.value === 'income' ? 'salary' : 'groceries');
+      modalTitle.textContent = event.target.value === 'income' ? 'Новый доход' : 'Новый расход';
+    });
+  }
+
+  function openAccountModal(item = null) {
+    openModal(item ? 'Изменить счёт' : 'Новый счёт', `
+      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Основная карта, наличные, вклад"></div>
+      <div class="form-grid">
+        <div class="field"><label>Тип</label><select name="type"><option value="card" ${!item || item?.type === 'card' ? 'selected' : ''}>Карта</option><option value="cash" ${item?.type === 'cash' ? 'selected' : ''}>Наличные</option><option value="savings" ${item?.type === 'savings' ? 'selected' : ''}>Накопительный счёт</option><option value="investment" ${item?.type === 'investment' ? 'selected' : ''}>Инвестиции</option></select></div>
+        <div class="field"><label>Текущий баланс, ₽</label><input name="balance" type="number" step="0.01" required value="${item?.balance ?? 0}"></div>
+      </div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.balance = Number(data.balance || 0);
+      if (!data.name.trim()) return false;
+      if (item) Object.assign(item, data); else state.accounts.push({ id: uid(), ...data });
+      return true;
+    });
+  }
+
+  function openObligationModal(item = null) {
+    openModal(item ? 'Изменить обязательство' : 'Новое обязательство', `
+      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Клиент должен оплатить, кредит, аренда"></div>
+      <div class="form-grid">
+        <div class="field"><label>Тип</label><select name="type"><option value="expected" ${item?.type === 'expected' ? 'selected' : ''}>Ожидаемый доход</option><option value="payment" ${!item || item?.type === 'payment' ? 'selected' : ''}>Обязательный платёж</option><option value="debt" ${item?.type === 'debt' ? 'selected' : ''}>Долг</option></select></div>
+        <div class="field"><label>Сумма, ₽</label><input name="amount" type="number" min="0.01" step="0.01" required value="${item?.amount ?? ''}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Дата</label><input name="dueDate" type="date" value="${item?.dueDate || todayISO()}"></div>
+        <div class="field"><label>Статус</label><select name="status"><option value="open" ${!item || item?.status === 'open' ? 'selected' : ''}>Открыто</option><option value="received" ${item?.status === 'received' ? 'selected' : ''}>Получено</option><option value="paid" ${item?.status === 'paid' ? 'selected' : ''}>Оплачено</option></select></div>
+      </div>
+      <div class="field"><label>Комментарий</label><textarea name="notes">${escapeHtml(item?.notes || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.amount = Number(data.amount || 0);
+      if (!data.title.trim() || data.amount <= 0) return false;
+      if (item) Object.assign(item, data); else state.obligations.push({ id: uid(), ...data });
+      return true;
+    });
+  }
+
+  function openSettlementModal(item) {
+    if (!item) return;
+    const isIncome = item.type === 'expected';
+    openModal(isIncome ? 'Получить доход' : 'Оплатить обязательство', `
+      <div class="insight ${isIncome ? '' : 'warning'}">Будет создана финансовая операция на ${money(item.amount)} и обязательство закроется.</div>
+      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions('')}</select></div>
+      <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
+      <div class="field"><label>Название операции</label><input name="title" required value="${escapeHtml(item.title)}"></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      const transaction = { id: uid(), title: data.title, type: isIncome ? 'income' : 'expense', amount: Number(item.amount || 0), date: data.date || todayISO(), category: isIncome ? 'other_income' : 'debt_payment', accountId: data.accountId || '', notes: `Закрытие: ${item.title}` };
+      state.transactions.push(transaction);
+      applyTransactionToAccount(transaction, 1);
+      item.status = isIncome ? 'received' : 'paid';
+      item.settledTransactionId = transaction.id;
+      return true;
+    }, { submitText: isIncome ? 'Получено' : 'Оплачено' });
   }
 
   function openProjectModal(item = null) {
     openModal(item ? 'Изменить проект' : 'Новый проект', `
       <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Клиент или проект"></div>
       <div class="form-grid">
-        <div class="field"><label>Доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
-        <div class="field"><label>Статус</label><select name="status"><option value="active" ${item?.status === 'active' ? 'selected' : ''}>Активен</option><option value="growth" ${item?.status === 'growth' ? 'selected' : ''}>Развитие</option><option value="paused" ${item?.status === 'paused' ? 'selected' : ''}>Пауза</option></select></div>
+        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Основная работа</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Личный проект</option></select></div>
+        <div class="field"><label>Статус</label><select name="status"><option value="active" ${!item || item?.status === 'active' ? 'selected' : ''}>Активен</option><option value="growth" ${item?.status === 'growth' ? 'selected' : ''}>Развитие</option><option value="paused" ${item?.status === 'paused' ? 'selected' : ''}>Пауза</option><option value="completed" ${item?.status === 'completed' ? 'selected' : ''}>Завершён</option></select></div>
       </div>
-      <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
-      <div class="field"><label>Дата оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>`, form => {
-        const data = Object.fromEntries(new FormData(form)); data.value = Number(data.value || 0);
-        if (!data.name.trim()) return false;
-        if (item) Object.assign(item, data); else state.projects.push({ id: uid(), ...data });
-        return true;
-      });
+      <div class="form-grid">
+        <div class="field"><label>Услуга / направление</label><input name="service" value="${escapeHtml(item?.service || '')}" placeholder="Яндекс.Директ, работа"></div>
+        <div class="field"><label>Контакт</label><input name="contact" value="${escapeHtml(item?.contact || '')}" placeholder="Телефон или Telegram"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
+        <div class="field"><label>Статус оплаты</label><select name="paymentStatus"><option value="not_due" ${!item || item?.paymentStatus === 'not_due' ? 'selected' : ''}>Не наступила</option><option value="waiting" ${item?.paymentStatus === 'waiting' ? 'selected' : ''}>Ожидается</option><option value="paid" ${item?.paymentStatus === 'paid' ? 'selected' : ''}>Оплачено</option><option value="overdue" ${item?.paymentStatus === 'overdue' ? 'selected' : ''}>Просрочено</option></select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Задолженность, ₽</label><input name="debt" type="number" min="0" value="${item?.debt ?? 0}"></div>
+        <div class="field"><label>Дата оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Рекламный бюджет, ₽</label><input name="adBudget" type="number" min="0" value="${item?.adBudget ?? 0}"></div>
+        <div class="field"><label>Количество лидов</label><input name="leads" type="number" min="0" value="${item?.leads ?? 0}"></div>
+      </div>
+      <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
+      <div class="form-grid">
+        <div class="field"><label>Следующий контакт</label><input name="nextContact" type="date" value="${item?.nextContact || ''}"></div>
+        <div class="field"><label>Дата начала</label><input name="startDate" type="date" value="${item?.startDate || ''}"></div>
+      </div>
+      <div class="field"><label>Сайт / ссылка</label><input name="site" type="url" value="${escapeHtml(item?.site || '')}" placeholder="https://"></div>
+      <div class="field"><label>Результат</label><textarea name="result" placeholder="Что удалось получить">${escapeHtml(item?.result || '')}</textarea></div>
+      <div class="field"><label>Заметки</label><textarea name="notes">${escapeHtml(item?.notes || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      ['value', 'debt', 'adBudget', 'leads'].forEach(key => { data[key] = Number(data[key] || 0); });
+      data.cpl = data.leads > 0 ? Math.round(data.adBudget / data.leads) : 0;
+      if (!data.name.trim()) return false;
+      if (item) Object.assign(item, data); else state.projects.push({ id: uid(), ...data });
+      return true;
+    });
   }
 
   function openGoalModal(item = null) {
@@ -425,19 +1094,105 @@
         <div class="field"><label>Сейчас</label><input name="current" type="number" min="0" step="any" value="${item?.current ?? 0}"></div>
         <div class="field"><label>Цель</label><input name="target" type="number" min="1" step="any" value="${item?.target ?? 100}"></div>
       </div>
-      <div class="field"><label>Срок</label><input name="deadline" type="date" value="${item?.deadline || ''}"></div>`, form => {
-        const data = Object.fromEntries(new FormData(form)); data.current = Number(data.current || 0); data.target = Number(data.target || 1);
-        if (!data.title.trim()) return false;
-        if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data });
-        return true;
-      });
+      <div class="form-grid">
+        <div class="field"><label>Единица</label><input name="unit" value="${escapeHtml(item?.unit || '')}" placeholder="₽, клиентов, книг"></div>
+        <div class="field"><label>План на месяц</label><input name="monthlyPlan" type="number" min="0" step="any" value="${item?.monthlyPlan ?? 0}"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Срок</label><input name="deadline" type="date" value="${item?.deadline || ''}"></div>
+        <div class="field"><label>Автоматически брать из</label><select name="autoSource"><option value="none" ${!item || item?.autoSource === 'none' ? 'selected' : ''}>Обновлять вручную</option><option value="capital" ${item?.autoSource === 'capital' ? 'selected' : ''}>Текущий капитал</option><option value="monthlyIncome" ${item?.autoSource === 'monthlyIncome' ? 'selected' : ''}>Доход за месяц</option></select></div>
+      </div>
+      <div class="field"><label>Следующее действие</label><textarea name="nextAction" placeholder="Что сделать дальше">${escapeHtml(item?.nextAction || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.current = Number(data.current || 0);
+      data.target = Number(data.target || 1);
+      data.monthlyPlan = Number(data.monthlyPlan || 0);
+      if (!data.title.trim()) return false;
+      if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data });
+      return true;
+    });
   }
 
-  function openHabitModal() {
-    openModal('Новая привычка', `<div class="field"><label>Название</label><input name="title" required placeholder="Полезное действие"></div>`, form => {
-      const title = new FormData(form).get('title').trim(); if (!title) return false;
-      state.habits.push({ id: uid(), title, logs: {} }); return true;
+  function openHabitModal(item = null) {
+    const days = [[1, 'Пн'], [2, 'Вт'], [3, 'Ср'], [4, 'Чт'], [5, 'Пт'], [6, 'Сб'], [0, 'Вс']];
+    openModal(item ? 'Изменить привычку' : 'Новая привычка', `
+      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Полезное действие"></div>
+      <div class="field"><label>Цель выполнений в неделю</label><input name="targetPerWeek" type="number" min="1" max="7" value="${item?.targetPerWeek ?? 5}"></div>
+      <div class="field"><label>Дни</label><div class="checkbox-row">${days.map(([value, label]) => `<label class="day-checkbox"><input type="checkbox" name="schedule" value="${value}" ${(item?.schedule || [1, 2, 3, 4, 5]).includes(value) ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div></div>
+    `, form => {
+      const formData = new FormData(form);
+      const title = String(formData.get('title') || '').trim();
+      const schedule = formData.getAll('schedule').map(Number);
+      if (!title || !schedule.length) return false;
+      const data = { title, targetPerWeek: Number(formData.get('targetPerWeek') || schedule.length), schedule };
+      if (item) Object.assign(item, data); else state.habits.push({ id: uid(), ...data, logs: {} });
+      return true;
     });
+  }
+
+  function openReviewModal(item = null) {
+    openModal(item ? 'Изменить недельный разбор' : 'Недельный разбор', `
+      <div class="field"><label>Неделя начинается</label><input name="weekStart" type="date" value="${item?.weekStart || localISO(startOfWeek(new Date()))}"></div>
+      <div class="form-grid">
+        <div class="field"><label>Заработано, ₽</label><input name="income" type="number" min="0" value="${item?.income ?? 0}"></div>
+        <div class="field"><label>Отложено, ₽</label><input name="saved" type="number" min="0" value="${item?.saved ?? 0}"></div>
+      </div>
+      <div class="field"><label>Что сделал и какой результат получил</label><textarea name="wins" placeholder="Не занятость, а фактический результат">${escapeHtml(item?.wins || '')}</textarea></div>
+      <div class="field"><label>Что провалил</label><textarea name="failures">${escapeHtml(item?.failures || '')}</textarea></div>
+      <div class="field"><label>Куда слил время</label><textarea name="timeLeaks">${escapeHtml(item?.timeLeaks || '')}</textarea></div>
+      <div class="field"><label>Главный вывод</label><textarea name="lesson">${escapeHtml(item?.lesson || '')}</textarea></div>
+      <div class="field"><label>3 приоритета следующей недели</label><textarea name="priorities">${escapeHtml(item?.priorities || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.income = Number(data.income || 0);
+      data.saved = Number(data.saved || 0);
+      if (item) Object.assign(item, data); else state.weeklyReviews.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
+      return true;
+    });
+  }
+
+  async function notifyTaskCreated(task) {
+    if (!('Notification' in window) || !state.profile.notificationsEnabled || Notification.permission !== 'granted') return;
+    const due = task.due ? `${dateText(task.due)}${task.dueTime ? ` в ${task.dueTime}` : ''}` : 'без срока';
+    await showNotification('Задача добавлена', `${task.title} · ${due}`, `task-created-${task.id}`);
+  }
+
+  async function showNotification(title, body, tag) {
+    try {
+      if (!('serviceWorker' in navigator) || Notification.permission !== 'granted') return;
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, { body, tag, icon: './icon-192.png', badge: './icon-192.png', data: { url: './' } });
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  function reminderDate(task) {
+    if (!task.due || task.reminder === 'none') return null;
+    const time = task.dueTime || '09:00';
+    const due = new Date(`${task.due}T${time}:00`);
+    if (task.reminder === '1h') due.setHours(due.getHours() - 1);
+    if (task.reminder === 'day_before') due.setDate(due.getDate() - 1);
+    return due;
+  }
+
+  async function checkTaskReminders() {
+    if (!('Notification' in window) || !state.profile.notificationsEnabled || Notification.permission !== 'granted') return;
+    const now = new Date();
+    let changed = false;
+    for (const task of state.tasks) {
+      if (task.status === 'done') continue;
+      const reminder = reminderDate(task);
+      if (!reminder) continue;
+      const key = `${task.due}-${task.dueTime}-${task.reminder}`;
+      if (now >= reminder && now <= addDays(reminder, 1) && task.reminderSentFor !== key) {
+        await showNotification('Напоминание о задаче', task.title, `task-reminder-${task.id}-${key}`);
+        task.reminderSentFor = key;
+        changed = true;
+      }
+    }
+    if (changed) saveState();
   }
 
   function switchScreen(screen) {
@@ -448,60 +1203,141 @@
 
   function toast(message) {
     const node = document.createElement('div');
+    node.className = 'toast';
     node.textContent = message;
-    Object.assign(node.style, { position:'fixed', left:'50%', bottom:'110px', transform:'translateX(-50%)', background:'#f7f9ff', color:'#0a0f1a', padding:'11px 15px', borderRadius:'12px', fontWeight:'700', zIndex:'100', boxShadow:'0 12px 30px rgba(0,0,0,.35)' });
     document.body.appendChild(node);
-    setTimeout(() => node.remove(), 1800);
+    setTimeout(() => node.remove(), 2200);
   }
 
-  $$('.nav-item').forEach(btn => btn.addEventListener('click', () => switchScreen(btn.dataset.screen)));
+  function renderSettings() {
+    const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
+    const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
+    settingsBody.innerHTML = `
+      <form id="profileForm">
+        <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
+        <div class="form-grid">
+          <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
+          <div class="field"><label>Цель дохода в месяц, ₽</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
+          <div class="field"><label>Лимит расходов в месяц, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
+        </div>
+        <div class="field"><label>Тема</label><select name="theme"><option value="dark" ${state.profile.theme === 'dark' ? 'selected' : ''}>Тёмная</option><option value="light" ${state.profile.theme === 'light' ? 'selected' : ''}>Светлая</option></select></div>
+        <button class="btn primary full" type="submit">Сохранить настройки</button>
+      </form>
+      <div class="settings-list">
+        <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
+        <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
+        <label class="settings-row file-row"><span>Импортировать резервную копию<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
+        <button class="settings-row" type="button" id="installHelp"><span>Как установить на iPhone<small>Добавить на экран Домой</small></span><b>›</b></button>
+        <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
+      </div>
+      <p class="privacy-note">Данные хранятся локально на устройстве. Пароли, реквизиты карт и документы сюда не добавляй.</p>`;
+
+    $('#profileForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(event.currentTarget));
+      state.profile = { ...state.profile, name: data.name.trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0), theme: data.theme || 'dark' };
+      saveState();
+      applyTheme();
+      render();
+      toast('Настройки сохранены');
+    });
+
+    $('#notificationSettings').addEventListener('click', requestNotifications);
+    $('#installHelp').addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить». Уведомления на iPhone доступны для установленного приложения.'));
+    $('#exportData').addEventListener('click', exportData);
+    $('#importData').addEventListener('change', importData);
+    $('#resetData').addEventListener('click', () => {
+      if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
+      state = freshState();
+      saveState();
+      settingsModal.close();
+      render();
+    });
+  }
+
+  async function requestNotifications() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      alert('Этот браузер не поддерживает уведомления. На iPhone сначала установи приложение на экран Домой и открой его оттуда.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    state.profile.notificationsEnabled = permission === 'granted';
+    saveState();
+    renderSettings();
+    if (permission === 'granted') {
+      await showNotification('Alexander OS', 'Уведомления включены. Новые задачи и напоминания будут показываться на устройстве.', 'notifications-enabled');
+    } else {
+      alert('Разрешение не выдано. Его можно изменить в настройках уведомлений iPhone или браузера.');
+    }
+  }
+
+  function exportData() {
+    state.profile.lastBackup = todayISO();
+    saveState();
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `alexander-os-backup-${todayISO()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    renderSettings();
+  }
+
+  async function importData(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      state = migrateState(parsed);
+      saveState();
+      settingsModal.close();
+      render();
+      toast('Данные восстановлены');
+    } catch (error) {
+      console.error(error);
+      alert('Файл резервной копии повреждён или имеет неверный формат.');
+    }
+    event.target.value = '';
+  }
+
+  $$('.nav-item').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
 
   modalForm.addEventListener('submit', event => {
-    const submitter = event.submitter;
-    if (!submitter || submitter.value === 'cancel') return;
     event.preventDefault();
+    if (!modalForm.reportValidity()) return;
     try {
       const ok = modalAction?.(modalForm);
       if (ok === false) return;
       saveState();
-      modal.close();
+      closeModal();
       render();
       toast('Сохранено');
     } catch (error) {
       console.error(error);
-      alert('Не удалось сохранить запись. Проверьте данные.');
+      alert('Не удалось сохранить запись. Проверь данные.');
     }
   });
 
-  $('#settingsButton').addEventListener('click', () => settingsModal.showModal());
+  $('#modalClose').addEventListener('click', closeModal);
+  $('#modalCancel').addEventListener('click', closeModal);
+  modal.addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
+  modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
+
+  $('#settingsButton').addEventListener('click', () => { renderSettings(); settingsModal.showModal(); });
   $('#closeSettings').addEventListener('click', () => settingsModal.close());
-  $('#installHelp').addEventListener('click', () => {
-    alert('На iPhone откройте приложение в Safari, нажмите кнопку «Поделиться», затем «На экран Домой» и «Добавить». Для установки сайт должен быть опубликован по HTTPS.');
-  });
-  $('#exportData').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `alexander-os-backup-${todayISO()}.json`; a.click();
-    URL.revokeObjectURL(url);
-  });
-  $('#importData').addEventListener('change', async event => {
-    const file = event.target.files?.[0]; if (!file) return;
-    try {
-      const parsed = JSON.parse(await file.text());
-      if (!parsed || typeof parsed !== 'object') throw new Error('bad');
-      state = { ...structuredClone(defaultState), ...parsed };
-      saveState(); settingsModal.close(); render(); toast('Данные восстановлены');
-    } catch { alert('Файл резервной копии повреждён или имеет неверный формат.'); }
-    event.target.value = '';
-  });
-  $('#resetData').addEventListener('click', () => {
-    if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
-    state = structuredClone(defaultState); saveState(); settingsModal.close(); render();
-  });
+  settingsModal.addEventListener('cancel', event => { event.preventDefault(); settingsModal.close(); });
+  settingsModal.addEventListener('click', event => { if (event.target === settingsModal) settingsModal.close(); });
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.error));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
   }
+  setInterval(checkTaskReminders, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkTaskReminders(); });
 
+  saveState();
   render();
 })();
