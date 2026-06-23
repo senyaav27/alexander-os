@@ -37,7 +37,7 @@
 
   function freshState() {
     return {
-      version: 6,
+      version: 7,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -110,7 +110,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 6,
+      version: 7,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -193,14 +193,14 @@
   const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 6;
+    state.version = 7;
     recordSnapshot();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
     document.documentElement.dataset.theme = state.profile.theme || 'dark';
-    const themeColor = state.profile.theme === 'light' ? '#eff5ee' : '#07150f';
+    const themeColor = state.profile.theme === 'light' ? '#eef6f0' : '#06140d';
     $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }
 
@@ -744,11 +744,9 @@
       <section class="section">
         <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
         <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
-      </section>
-      <button class="fab" id="addTask" type="button" aria-label="Добавить задачу">＋</button>`;
+      </section>`;
 
     bindCommon();
-    $('#addTask').addEventListener('click', () => openTaskModal());
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
     $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
@@ -1017,11 +1015,9 @@
       <section class="section">
         <div class="section-head"><h2>Проекты и клиенты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
         <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый проект или клиента.')}</div>
-      </section>
-      <button class="fab" id="addProjectFab" type="button" aria-label="Добавить проект">＋</button>`;
+      </section>`;
     bindCommon();
     $('#addProject').addEventListener('click', () => openProjectModal());
-    $('#addProjectFab').addEventListener('click', () => openProjectModal());
   }
 
   function projectItem(project) {
@@ -1864,7 +1860,20 @@ ${JSON.stringify(state, null, 2)}
     event.target.value = '';
   }
 
-  $$('.nav-item').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
+  $$('.nav-item[data-screen]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
+
+  function openSettingsPanel() {
+    renderSettings();
+    $$('.nav-item').forEach(button => button.classList.toggle('active', button.id === 'settingsNavButton'));
+    settingsModal.showModal();
+  }
+
+  function closeSettingsPanel() {
+    if (settingsModal.open) settingsModal.close();
+    render();
+  }
+
+  $('#settingsNavButton')?.addEventListener('click', openSettingsPanel);
 
   modalForm.addEventListener('submit', event => {
     event.preventDefault();
@@ -1887,11 +1896,11 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
-  $('#settingsButton').addEventListener('click', () => { renderSettings(); settingsModal.showModal(); });
+  $('#settingsButton')?.addEventListener('click', openSettingsPanel);
   $('#globalAdd').addEventListener('click', openGlobalAdd);
-  $('#closeSettings').addEventListener('click', () => settingsModal.close());
-  settingsModal.addEventListener('cancel', event => { event.preventDefault(); settingsModal.close(); });
-  settingsModal.addEventListener('click', event => { if (event.target === settingsModal) settingsModal.close(); });
+  $('#closeSettings').addEventListener('click', closeSettingsPanel);
+  settingsModal.addEventListener('cancel', event => { event.preventDefault(); closeSettingsPanel(); });
+  settingsModal.addEventListener('click', event => { if (event.target === settingsModal) closeSettingsPanel(); });
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
