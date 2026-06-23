@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#070c13" />
+  <meta name="theme-color" content="#07150f" />
   <meta name="description" content="Alexander OS - личная система финансов, задач, проектов и прогресса" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,22 +17,29 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow" id="todayLabel">Сегодня</p>
-        <h1 id="screenTitle">Главная</h1>
+      <div class="topbar-brand">
+        <div class="brand-mark" aria-hidden="true">S</div>
+        <div class="topbar-copy">
+          <p class="eyebrow" id="todayLabel">Сегодня</p>
+          <h1 id="screenTitle">Главная</h1>
+        </div>
       </div>
-      <button class="icon-btn" id="settingsButton" type="button" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.4h-3v-.18a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04H5.2v-3h.24A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.5h3v.2a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.24v3h-.24A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
+      <div class="topbar-actions">
+        <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="icon-btn" id="settingsButton" type="button" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.4h-3v-.18a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04H5.2v-3h.24A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.5h3v.2a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.24v3h-.24A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
+      </div>
     </header>
 
     <main id="app" class="content" aria-live="polite"></main>
 
-    <nav class="bottom-nav" aria-label="Навигация">
-      <button class="nav-item active" type="button" data-screen="dashboard"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3Z"/></svg><small>Сегодня</small></button>
-      <button class="nav-item" type="button" data-screen="tasks"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><small>Задачи</small></button>
-      <button class="nav-item" type="button" data-screen="finance"><svg viewBox="0 0 24 24"><path d="M7 5h7a4 4 0 0 1 0 8H7m0 0h8m-8 0v6m0-3h7"/></svg><small>Финансы</small></button>
-      <button class="nav-item" type="button" data-screen="projects"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 5V3m8 2V3M4 10h16"/></svg><small>Проекты</small></button>
-      <button class="nav-item" type="button" data-screen="growth"><svg viewBox="0 0 24 24"><path d="M4 18 10 12l4 4 6-8"/><path d="M15 8h5v5"/></svg><small>Прогресс</small></button>
-      <button class="global-add" id="globalAdd" type="button" aria-label="Быстро добавить">+</button>
+    <nav class="bottom-nav" aria-label="Основная навигация">
+      <button class="nav-item active" type="button" data-screen="dashboard" aria-label="Сегодня"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3Z"/></svg><small>Сегодня</small></button>
+      <button class="nav-item" type="button" data-screen="tasks" aria-label="Задачи"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><small>Задачи</small></button>
+      <button class="nav-item" type="button" data-screen="finance" aria-label="Финансы"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h7a3 3 0 0 1 0 6H8a3 3 0 0 0 0 6h9"/><path d="M12 4v16"/></svg><small>Финансы</small></button>
+      <button class="nav-item" type="button" data-screen="projects" aria-label="Проекты"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 5V3m8 2V3M4 10h16"/></svg><small>Проекты</small></button>
+      <button class="nav-item" type="button" data-screen="growth" aria-label="Прогресс"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18 10 12l4 4 6-8"/><path d="M15 8h5v5"/></svg><small>Прогресс</small></button>
     </nav>
   </div>
 

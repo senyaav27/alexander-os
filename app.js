@@ -37,7 +37,7 @@
 
   function freshState() {
     return {
-      version: 5,
+      version: 6,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -110,7 +110,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 5,
+      version: 6,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -193,14 +193,14 @@
   const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 5;
+    state.version = 6;
     recordSnapshot();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
     document.documentElement.dataset.theme = state.profile.theme || 'dark';
-    const themeColor = state.profile.theme === 'light' ? '#f3f6fb' : '#070c13';
+    const themeColor = state.profile.theme === 'light' ? '#eff5ee' : '#07150f';
     $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }
 
