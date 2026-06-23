@@ -786,7 +786,8 @@ body {
 .finance-hero .compare.good,
 .finance-hero .compare.bad,
 .finance-hero .compare.neutral { border-color: rgba(8,38,22,.12); background: rgba(255,255,255,.32); color: #103f24; }
-.finance-hero .capital-breakdown span { background: rgba(8,38,22,.09); color: #092617; }
+.finance-hero .capital-breakdown span { background: rgba(8,38,22,.14); color: #06190f; box-shadow: inset 0 1px 0 rgba(255,255,255,.16); }
+.finance-hero .capital-breakdown small { color: #092617; font-weight: 800; letter-spacing: .02em; }
 .finance-hero .progress { background: rgba(8,38,22,.14); }
 .finance-hero .progress > span { background: #0c4a28; }
 .finance-hero .kpi { color: #082518; }
@@ -1275,21 +1276,3 @@ body {
   }
   .modal-head { padding-top: 24px; }
 }
-
-/* Interaction guard for the top action button */
-.topbar-actions { position: relative; z-index: 3; }
-.top-add { position: relative; z-index: 1; pointer-events: auto; }
-.top-add svg, .top-add svg * { pointer-events: none; }
-
-/* Reset legacy centered FAB positioning for the header add button */
-.top-add {
-  left: auto;
-  top: auto;
-  right: auto;
-  bottom: auto;
-  margin: 0;
-  transform: none;
-  align-self: center;
-  justify-self: auto;
-}
-.top-add:active { transform: scale(.94); }
