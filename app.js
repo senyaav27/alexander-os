@@ -37,7 +37,7 @@
 
   function freshState() {
     return {
-      version: 4,
+      version: 5,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -47,6 +47,7 @@
         theme: 'dark',
         notificationsEnabled: false,
         lastBackup: null,
+        lastChatGPTExport: null,
         progressRange: '6m'
       },
       tasks: [
@@ -109,7 +110,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 4,
+      version: 5,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -192,14 +193,14 @@
   const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 4;
+    state.version = 5;
     recordSnapshot();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
     document.documentElement.dataset.theme = state.profile.theme || 'dark';
-    const themeColor = state.profile.theme === 'light' ? '#f3f6fb' : '#0b1020';
+    const themeColor = state.profile.theme === 'light' ? '#f3f6fb' : '#070c13';
     $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }
 
@@ -524,6 +525,23 @@
     });
   }
 
+  function heroSparkline(rows, key = 'capital') {
+    const values = rows.map(row => Number(row[key] || 0));
+    if (values.length < 2) return '<div class="hero-spark-empty">Динамика появится после операций</div>';
+    const width = 640;
+    const height = 110;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const spread = Math.max(1, max - min);
+    const points = values.map((value, index) => {
+      const x = (index / Math.max(1, values.length - 1)) * width;
+      const y = height - 10 - ((value - min) / spread) * (height - 22);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const area = `0,${height} ${points} ${width},${height}`;
+    return `<div class="hero-sparkline"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="heroArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".26"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><polygon points="${area}" fill="url(#heroArea)"/><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`;
+  }
+
   function compactMoneyChart(rows, key = 'capital') {
     const max = Math.max(1, ...rows.map(row => Math.abs(Number(row[key] || 0))));
     return `<div class="money-chart">${rows.map(row => `<div class="money-column"><div class="money-bar-track"><span style="height:${Math.max(4, Math.round(Math.abs(Number(row[key] || 0)) / max * 100))}%"></span></div><small>${escapeHtml(row.label)}</small></div>`).join('')}</div>`;
@@ -567,7 +585,7 @@
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
-    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
+    const titles = { dashboard: 'Сегодня', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
     $('#screenTitle').textContent = titles[currentScreen];
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
     ({ dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth })[currentScreen]();
@@ -610,55 +628,62 @@
     const overdueTasks = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
     const overdueMoney = openObligations().filter(item => item.dueDate && item.dueDate < todayISO()).length;
     const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 7))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-    const hasData = Boolean(state.accounts.length || state.transactions.length || state.projects.length || state.tasks.length > 2);
+    const hasData = Boolean(state.transactions.length || state.projects.length || state.accounts.some(account => Number(account.balance || 0) !== 0));
     const monthLimit = Number(state.profile.monthlyExpenseLimit || 0);
     const alertRows = [];
     if (overdueTasks) alertRows.push(`<div class="alert-row danger"><b>${overdueTasks}</b><span>просроченных задач</span><button data-go="tasks">Открыть</button></div>`);
     if (overdueMoney) alertRows.push(`<div class="alert-row danger"><b>${overdueMoney}</b><span>просроченных платежей</span><button data-go="finance">Открыть</button></div>`);
     if (monthLimit > 0 && analytics.projectedExpense > monthLimit) alertRows.push(`<div class="alert-row warning"><b>${money(analytics.projectedExpense - monthLimit)}</b><span>прогноз превышения бюджета</span><button data-go="finance">Разобрать</button></div>`);
+    const initials = (state.profile.name || 'А').split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
+    const mainFocus = mainTasks[0]?.title || 'Определи 3 главные задачи дня';
 
     app.innerHTML = `
-      <section class="hero">
-        <div class="hero-top">
-          <div>
-            <p class="eyebrow">${escapeHtml(state.profile.name || 'Пользователь')}</p>
-            <h2>${!hasData ? 'Система готова к работе' : score >= 75 ? 'Держишь курс' : score >= 45 ? 'Нужно вернуть контроль' : 'Система проседает'}</h2>
-            <p>${!hasData ? 'Добавь счета, реальные деньги и 3 приоритетные задачи.' : mainTasks[0] ? `Главный фокус: ${escapeHtml(mainTasks[0].title)}` : 'Критичных задач на сегодня нет.'}</p>
-          </div>
-          <div class="score-ring" style="--score:${hasData ? score : 0}"><span>${hasData ? score : '—'}</span></div>
+      <section class="hero home-hero">
+        <div class="profile-row">
+          <div class="profile-avatar">${escapeHtml(initials)}</div>
+          <div class="profile-copy"><small>Доброе утро</small><h2>${escapeHtml(state.profile.name || 'Пользователь')} <span>👋</span></h2></div>
+          <span class="status-dot" title="Система активна"></span>
+        </div>
+        <div class="focus-card">
+          <div><small>Фокус дня</small><strong>${escapeHtml(mainFocus)}</strong><span>${mainTasks.length ? `${mainTasks.length} приоритетные задачи` : 'Критичных задач нет'}</span></div>
+          <div class="score-ring" style="--score:${hasData ? score : 0}"><span>${hasData ? `${score}%` : '—'}</span></div>
         </div>
       </section>
 
-      <section class="quick-actions">
+      <section class="quick-actions premium-actions">
         <button class="quick-btn" type="button" id="quickTask"><span>＋</span>Задача</button>
-        <button class="quick-btn" type="button" id="quickExpense"><span>−</span>Расход</button>
+        <button class="quick-btn expense-action" type="button" id="quickExpense"><span>−</span>Расход</button>
         <button class="quick-btn" type="button" id="quickIncome"><span>＋</span>Доход</button>
       </section>
 
-      ${alertRows.length ? `<section class="section"><div class="section-head"><h2>Требует внимания</h2></div><div class="alert-list">${alertRows.join('')}</div></section>` : ''}
+      ${alertRows.length ? `<section class="section compact-section"><div class="section-head"><h2>Требует внимания</h2></div><div class="alert-list">${alertRows.join('')}</div></section>` : ''}
 
       <section class="section">
-        <div class="section-head"><h2>Финансовый пульс</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
-        <div class="card pulse-card">
-          <div class="pulse-main"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Свободно после платежей</small><strong class="${analytics.freeBalance < 0 ? 'negative' : ''}">${money(analytics.freeBalance)}</strong></div></div>
-          <div class="pulse-grid"><div><small>Сегодня</small><b>${money(analytics.todayExpense)}</b></div><div><small>Неделя</small><b>${money(analytics.weekExpense)}</b></div><div><small>Месяц</small><b>${money(analytics.monthExpense)}</b></div><div><small>До лимита</small><b class="${analytics.remainingLimit < 0 ? 'negative' : 'positive'}">${money(analytics.remainingLimit)}</b></div></div>
+        <div class="section-head"><h2>Финансовый пульс</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
+        <div class="card pulse-card premium-pulse">
+          <div class="pulse-main"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Свободный остаток</small><strong class="${analytics.freeBalance < 0 ? 'negative' : ''}">${money(analytics.freeBalance)}</strong></div></div>
+          <div class="pulse-grid"><div><small>Неделя</small><b>${money(analytics.weekExpense)}</b>${compareBadge(analytics.weekExpense, analytics.previousWeekExpense, true)}</div><div><small>Месяц</small><b>${money(analytics.monthExpense)}</b>${compareBadge(analytics.monthExpense, analytics.previousMonthExpense, true)}</div></div>
         </div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Главное сегодня</h2><button class="link-btn" type="button" data-go="tasks">Все задачи</button></div>
+        <div class="section-head"><h2>Сегодня - ${mainTasks.length} задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
         <div class="list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
       </section>
 
-      <section class="section">
-        <div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
-        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 7 дней платежей и поступлений нет.')}</div>
+      <section class="section money-strip-section">
+        <div class="money-mini-grid">
+          <button type="button" class="money-mini-card" data-go="finance"><small>Ожидаемые поступления</small><strong class="positive">+${money(analytics.expected)}</strong><span>${openObligations('expected').length} платежа</span></button>
+          <button type="button" class="money-mini-card" data-go="finance"><small>Платежи и списания</small><strong class="negative">−${money(analytics.upcomingPayments)}</strong><span>${openObligations().filter(item => item.type !== 'expected').length} платежа</span></button>
+        </div>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Дисциплина сегодня</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
-        <div class="discipline-strip"><strong>${habitCompletionToday()}%</strong><span>привычек выполнено сегодня</span></div>
+        <div class="section-head"><h2>Инсайт дня</h2><button class="link-btn" type="button" data-go="growth">Подробнее</button></div>
+        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и привычки - система начнёт находить точки роста.')}</div>
       </section>
+
+      ${upcoming.length ? `<section class="section"><div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Все</button></div><div class="list">${upcoming.map(obligationItem).join('')}</div></section>` : ''}
     `;
     bindCommon();
     $('#quickTask').addEventListener('click', () => openTaskModal());
@@ -761,15 +786,17 @@
   function renderFinance() {
     const analytics = getFinanceAnalytics();
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
+    const capitalSeries = estimatedCapitalSeries(6);
+    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
     app.innerHTML = `
-      <section class="hero compact">
-        <p class="eyebrow">Общий капитал</p>
-        <div class="kpi">${money(analytics.capital)}</div>
-        <div class="capital-breakdown"><span>Активы ${money(analytics.assets)}</span><span>Долги ${money(analytics.debt)}</span><span>Ликвидно ${money(analytics.liquid)}</span></div>
+      <section class="hero compact finance-hero">
+        <div class="finance-hero-head"><div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div><span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span></div>
+        ${heroSparkline(capitalSeries)}
+        <div class="capital-breakdown"><span><small>Активы</small>${money(analytics.assets)}</span><span><small>Долги</small>${money(analytics.debt)}</span><span><small>Ликвидно</small>${money(analytics.liquid)}</span></div>
         <div class="metric-row"><span class="muted">Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </section>
-      <section class="tabs">
+      <section class="tabs finance-tabs">
         ${[['overview', 'Обзор'], ['operations', 'Операции'], ['accounts', 'Счета'], ['obligations', 'Платежи']].map(([key, label]) => `<button class="tab ${financeTab === key ? 'active' : ''}" type="button" data-finance-tab="${key}">${label}</button>`).join('')}
       </section>
       <div id="financeTabContent">${financeTabContent(financeTab, analytics)}</div>
@@ -1081,9 +1108,16 @@
     const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
 
     app.innerHTML = `
-      <section class="progress-hero">
+      <section class="progress-hero" id="growthOverview">
         <div><p class="eyebrow">Индекс системы</p><h2>${score}%</h2><p>${score >= 75 ? 'Курс устойчивый. Не ослабляй дисциплину.' : score >= 45 ? 'Есть прогресс, но несколько зон тянут назад.' : 'Система теряет темп. Сначала деньги и ключевые задачи.'}</p></div>
         <div class="score-ring large" style="--score:${score}"><span>${score}</span></div>
+      </section>
+
+      <section class="tabs progress-tabs">
+        <button class="tab active" type="button" data-growth-scroll="growthOverview">Обзор</button>
+        <button class="tab" type="button" data-growth-scroll="growthGoals">Цели</button>
+        <button class="tab" type="button" data-growth-scroll="growthHabits">Привычки</button>
+        <button class="tab" type="button" data-growth-scroll="growthDynamics">Динамика</button>
       </section>
 
       <section class="growth-summary">
@@ -1093,7 +1127,7 @@
         <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
       </section>
 
-      <section class="section">
+      <section class="section" id="growthDynamics">
         <div class="section-head"><h2>Динамика капитала</h2><span class="badge">6 месяцев</span></div>
         <div class="card chart-card">${compactMoneyChart(capitalSeries)}<div class="metric-row trend-footer"><span>Сейчас</span><strong>${money(analytics.capital)}</strong></div></div>
       </section>
@@ -1113,7 +1147,7 @@
         <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Плановый доход</small><strong>${money(projectIncome)}</strong></div><div><small>Факт за месяц</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Просрочено оплат</small><strong class="${overduePayments ? 'negative' : ''}">${overduePayments}</strong></div></div>
       </section>
 
-      <section class="section">
+      <section class="section" id="growthGoals">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
         <div class="list">${state.goals.length ? state.goals.map(goal => {
           const current = goalCurrent(goal);
@@ -1129,7 +1163,7 @@
         }).join('') : empty('Добавьте измеримую цель.')}</div>
       </section>
 
-      <section class="section">
+      <section class="section" id="growthHabits">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
         <div class="list">${state.habits.length ? state.habits.map(habit => `
           <div class="card habit-card">
@@ -1143,6 +1177,7 @@
         <div class="list">${reviews.length ? reviews.slice(0, 4).map(reviewItem).join('') : empty('Разбор недели покажет, что реально двигает доход и капитал.')}</div>
       </section>`;
     bindCommon();
+    $$('[data-growth-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.growthScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
     $('#addGoal').addEventListener('click', () => openGoalModal());
     $('#addHabit').addEventListener('click', () => openHabitModal());
     $('#addReview').addEventListener('click', () => openReviewModal(currentReview));
@@ -1616,11 +1651,12 @@
       <div class="settings-list">
         <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
         <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
+        <button class="settings-row featured" type="button" id="exportChatGPT"><span>Выгрузить отчёт для ChatGPT<small>${state.profile.lastChatGPTExport ? `Последняя: ${longDateText(state.profile.lastChatGPTExport)}` : 'Финансы, задачи, проекты, цели и привычки в одном файле'}</small></span><b>↗</b></button>
         <label class="settings-row file-row"><span>Импортировать резервную копию<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
         <button class="settings-row" type="button" id="installHelp"><span>Как установить на iPhone<small>Добавить на экран Домой</small></span><b>›</b></button>
         <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
       </div>
-      <p class="privacy-note">Данные хранятся локально на устройстве. Пароли, реквизиты карт и документы сюда не добавляй.</p>`;
+      <p class="privacy-note"><b>Конфиденциальность:</b> отчёт для ChatGPT содержит твои суммы, задачи и проекты. Не добавляй пароли, номера карт, документы и другие секреты.</p>`;
 
     $('#profileForm').addEventListener('submit', event => {
       event.preventDefault();
@@ -1635,6 +1671,7 @@
     $('#notificationSettings').addEventListener('click', requestNotifications);
     $('#installHelp').addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить». Уведомления на iPhone доступны для установленного приложения.'));
     $('#exportData').addEventListener('click', exportData);
+    $('#exportChatGPT').addEventListener('click', exportChatGPTData);
     $('#importData').addEventListener('change', importData);
     $('#resetData').addEventListener('click', () => {
       if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
@@ -1661,17 +1698,153 @@
     }
   }
 
-  function exportData() {
-    state.profile.lastBackup = todayISO();
-    saveState();
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+  async function shareOrDownloadFile(filename, content, type = 'text/plain') {
+    const file = new File([content], filename, { type });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        return true;
+      } catch (error) {
+        if (error?.name === 'AbortError') return false;
+      }
+    }
+    const url = URL.createObjectURL(file);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `alexander-os-backup-${todayISO()}.json`;
+    link.download = filename;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  }
+
+  async function exportData() {
+    state.profile.lastBackup = todayISO();
+    saveState();
+    await shareOrDownloadFile(`alexander-os-backup-${todayISO()}.json`, JSON.stringify(state, null, 2), 'application/json');
     renderSettings();
+  }
+
+  function reportList(items, formatter, emptyText = 'Нет данных') {
+    return items.length ? items.map(formatter).join('\n') : `- ${emptyText}`;
+  }
+
+  function createChatGPTReport() {
+    const analytics = getFinanceAnalytics();
+    const currentTasks = taskWeekStats(new Date(), true);
+    const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
+    const currentHabits = habitWeekStats(new Date(), true);
+    const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
+    const insights = systemInsights();
+    const overdueTasks = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO());
+    const openTasks = state.tasks.filter(task => task.status !== 'done').sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+    const recentTransactions = state.transactions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 200);
+    const monthSeries = monthlyMoneySeries(6);
+    const generatedAt = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
+
+    return `# Alexander OS - данные для анализа в ChatGPT
+
+Сформировано: ${generatedAt}
+Период актуальности: данные на ${longDateText(todayISO())}
+
+## Задача для ChatGPT
+
+Проанализируй мои данные как персональный стратег по финансам, доходу, маркетингу, дисциплине и проектам. Не пересказывай цифры. Найди слабые места, противоречия, риски и точки роста. Дай:
+1. Главные 5 выводов.
+2. Где я теряю деньги и время.
+3. Какие решения принять на этой неделе.
+4. Какие расходы сократить без ущерба целям.
+5. Как увеличить доход и капитал.
+6. Какие задачи, проекты и привычки требуют внимания.
+7. Конкретный план на 7 и 30 дней.
+
+## Профиль и цели
+
+- Имя: ${state.profile.name || 'Не указано'}
+- Цель капитала: ${money(state.profile.capitalTarget)}
+- Цель дохода в месяц: ${money(state.profile.monthlyIncomeTarget)}
+- Цель подушки: ${money(state.profile.cushionTarget)}
+- Лимит расходов в месяц: ${money(state.profile.monthlyExpenseLimit)}
+
+## Финансовая сводка
+
+- Общий капитал: ${money(analytics.capital)}
+- Активы: ${money(analytics.assets)}
+- Долги: ${money(analytics.debt)}
+- Ликвидно: ${money(analytics.liquid)}
+- Свободный остаток после ближайших платежей: ${money(analytics.freeBalance)}
+- Доход за текущий месяц: ${money(analytics.monthIncome)}
+- Расход за текущий месяц: ${money(analytics.monthExpense)}
+- Чистый поток месяца: ${money(analytics.monthBalance)}
+- Процент сбережений: ${analytics.savingsRate}%
+- Расход за текущую неделю: ${money(analytics.weekExpense)}
+- Прогноз расходов до конца месяца: ${money(analytics.projectedExpense)}
+- Остаток лимита расходов: ${money(analytics.remainingLimit)}
+- Необязательные расходы месяца: ${money(analytics.optionalExpense)}
+
+### Динамика за 6 месяцев
+${reportList(monthSeries, row => `- ${row.label}: доход ${money(row.income)}, расход ${money(row.expense)}, чистый поток ${money(row.net)}`)}
+
+### Счета
+${reportList(state.accounts, account => `- ${account.name}: ${money(account.balance)} (${accountTypeText(account.type)})${account.isDefault ? ', основной' : ''}`)}
+
+### Категории расходов текущего месяца
+${reportList(analytics.categoryRows, row => `- ${row.label}: ${money(row.amount)} (${analytics.monthExpense ? Math.round(row.amount / analytics.monthExpense * 100) : 0}% расходов)`)}
+
+### Открытые обязательства
+${reportList(openObligations(), item => `- ${item.title}: ${money(item.amount)}, тип ${obligationTypeText(item.type)}, срок ${longDateText(item.dueDate)}, статус ${item.status}`)}
+
+### Последние операции (до 200)
+${reportList(recentTransactions, tx => `- ${tx.date}: ${tx.type === 'income' ? 'доход' : 'расход'} ${money(tx.amount)} - ${tx.title}; категория ${categoryLabel(tx.category)}; ${tx.notes || 'без комментария'}`)}
+
+## Задачи и исполнение
+
+- Выполнение задач текущей недели: ${currentTasks.rate}% (${currentTasks.completed} из ${currentTasks.total})
+- Выполнение прошлой недели: ${previousTasks.rate}%
+- Открытых задач: ${openTasks.length}
+- Просроченных задач: ${overdueTasks.length}
+
+### Открытые задачи
+${reportList(openTasks.slice(0, 100), task => `- [${task.priority}] ${task.title}; статус ${taskStatusText(task.status)}; срок ${longDateText(task.due)}${task.dueTime ? ` ${task.dueTime}` : ''}; проект ${state.projects.find(project => project.id === task.projectId)?.name || task.project || 'не указан'}; ${task.notes || 'без комментария'}`)}
+
+## Проекты и клиенты
+
+${reportList(state.projects, project => `- ${project.name}: тип ${projectTypeText(project.type)}, статус ${projectStatusText(project.status)}, плановый доход ${money(project.value)}, оплата ${paymentStatusText(project.paymentStatus)}, долг ${money(project.debt)}, лиды ${Number(project.leads || 0)}, CPL ${money(project.leads ? Number(project.adBudget || 0) / Number(project.leads || 1) : Number(project.cpl || 0))}, следующий шаг: ${project.next || 'не указан'}, результат: ${project.result || 'не указан'}`)}
+
+## Цели
+
+${reportList(state.goals, goal => { const current = goalCurrent(goal); const percent = Math.round(current / Math.max(1, Number(goal.target || 1)) * 100); return `- ${goal.title}: ${numberText(current)}${goal.unit ? ` ${goal.unit}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${goal.unit}` : ''} (${percent}%), срок ${longDateText(goal.deadline)}, следующий шаг: ${goal.nextAction || 'не указан'}`; })}
+
+## Привычки и дисциплина
+
+- Выполнение привычек текущей недели: ${currentHabits.rate}% (${currentHabits.completed} из ${currentHabits.planned})
+- Выполнение прошлой недели: ${previousHabits.rate}%
+${reportList(state.habits, habit => `- ${habit.title}: месяц ${habitMonthPercent(habit)}%, серия ${habitStreak(habit)} дней, цель ${habit.targetPerWeek} раз в неделю`)}
+
+## Автоматические выводы Alexander OS
+
+${reportList(insights, item => `- ${item.text}`)}
+
+## Недельные разборы
+
+${reportList(state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || '')).slice(0, 12), review => `- Неделя с ${longDateText(review.weekStart)}: заработано ${money(review.income)}, отложено ${money(review.saved)}; результаты: ${review.wins || 'не указаны'}; ошибки: ${review.failures || 'не указаны'}; потери времени: ${review.timeLeaks || 'не указаны'}; вывод: ${review.lesson || 'не указан'}; приоритеты: ${review.priorities || 'не указаны'}`)}
+
+## Полные данные приложения в JSON
+
+\`\`\`json
+${JSON.stringify(state, null, 2)}
+\`\`\`
+`;
+  }
+
+  async function exportChatGPTData() {
+    state.profile.lastChatGPTExport = todayISO();
+    saveState();
+    const report = createChatGPTReport();
+    await shareOrDownloadFile(`alexander-os-chatgpt-${todayISO()}.md`, report, 'text/markdown');
+    renderSettings();
+    toast('Отчёт для ChatGPT подготовлен');
   }
 
   async function importData(event) {

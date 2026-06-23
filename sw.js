@@ -1,4 +1,4 @@
-const CACHE = 'alexander-os-v4';
+const CACHE = 'alexander-os-v5';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
