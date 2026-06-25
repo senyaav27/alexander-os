@@ -27,7 +27,7 @@
   const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
 
   const INCOME_CATEGORIES = [
-    ['salary', 'Зарплата'], ['client', 'Клиенты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
+    ['salary', 'Зарплата'], ['client', 'Клиенты'], ['project_income', 'Свои проекты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
   ];
   const EXPENSE_CATEGORIES = [
     ['groceries', 'Продукты'], ['cafes', 'Кафе и доставка'], ['transport', 'Транспорт'], ['taxi', 'Такси'], ['housing', 'Жильё'], ['subscriptions', 'Подписки'], ['health', 'Здоровье'], ['clothing', 'Одежда'], ['entertainment', 'Развлечения'], ['education', 'Обучение'], ['business', 'Бизнес'], ['gifts', 'Подарки'], ['debt_payment', 'Долги и кредиты'], ['travel', 'Путешествия'], ['other_expense', 'Другое']
@@ -186,6 +186,7 @@
   let taskSearch = '';
   let financeCompareCurrent = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
   let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
+  let financeSelectedMonth = financeCompareCurrent;
   let modalAction = null;
 
   const app = $('#app');
@@ -199,7 +200,7 @@
   const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 7;
+    state.version = 8;
     recordSnapshot();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
@@ -222,18 +223,20 @@
     return state.obligations.filter(item => item.status === 'open' && (!type || item.type === type));
   }
 
-  function getFinanceAnalytics() {
+  function getFinanceAnalytics(monthKey = null) {
     const now = new Date();
-    const currentEnd = endOfToday(now);
+    const selectedKey = monthKey || monthKeyFromDate(now);
+    const { start: monthStart, end: monthEndRange } = monthRange(selectedKey);
+    const isCurrentMonth = selectedKey === monthKeyFromDate(now);
+    const currentEnd = isCurrentMonth ? endOfToday(now) : monthEndRange;
     const weekStart = startOfWeek(now);
     const weekDayIndex = (now.getDay() || 7) - 1;
     const previousWeekStart = addDays(weekStart, -7);
     const previousWeekEnd = endOfToday(addDays(previousWeekStart, weekDayIndex));
-    const monthStart = startOfMonth(now);
-    const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthDate = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1);
     const previousMonthStart = startOfMonth(previousMonthDate);
     const previousMonthLastDay = endOfMonth(previousMonthDate).getDate();
-    const comparableDay = Math.min(now.getDate(), previousMonthLastDay);
+    const comparableDay = isCurrentMonth ? Math.min(now.getDate(), previousMonthLastDay) : previousMonthLastDay;
     const previousMonthEnd = endOfToday(new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth(), comparableDay));
 
     const assets = sum(state.accounts.map(account => account.balance));
@@ -273,7 +276,7 @@
       monthIncome, previousMonthIncome,
       monthSalary, previousMonthSalary,
       todayExpense, monthBalance, savingsRate, optionalExpense, categoryRows, projectedExpense, remainingLimit,
-      weekStart, weekEnd: currentEnd, monthStart, monthEnd: currentEnd
+      weekStart, weekEnd: currentEnd, monthStart, monthEnd: currentEnd, selectedMonth: selectedKey, isCurrentMonth
     };
   }
 
@@ -456,7 +459,7 @@
 
   function recordSnapshot() {
     state.snapshots ||= [];
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const tasks = taskWeekStats(new Date(), true);
     const habits = habitWeekStats(new Date(), true);
     const snapshot = {
@@ -518,7 +521,7 @@
   }
 
   function estimatedCapitalSeries(count = 6) {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const now = new Date();
     return Array.from({ length: count }, (_, index) => {
       const date = new Date(now.getFullYear(), now.getMonth() - (count - 1 - index), 1);
@@ -566,7 +569,7 @@
   }
 
   function systemInsights() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
@@ -625,7 +628,7 @@
   }
 
   function renderDashboard() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const score = overallScore();
     const mainTasks = state.tasks
       .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
@@ -751,18 +754,45 @@
       <section class="section">
         <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
         <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
-      </section>`;
+      </section>
+      ${knowledgeSectionMarkup()}`;
 
     bindCommon();
+    bindKnowledgeInline();
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
     $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
-  function dailyExpenseSeries() {
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = addDays(new Date(), index - 6);
+  function knowledgeSectionMarkup(limit = 4) {
+    const folders = state.noteFolders;
+    const notes = state.notes.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, limit);
+    return `
+      <section class="section">
+        <div class="section-head"><h2>База мыслей и идей</h2><div class="action-inline"><button class="link-btn" type="button" id="openKnowledgeInline">Открыть</button><button class="link-btn" type="button" id="addKnowledgeInline">+ Запись</button></div></div>
+        <div class="card knowledge-preview-card">
+          <div class="folder-chip-row">${folders.map(folder => `<button type="button" class="chip knowledge-folder" data-folder="${folder.id}">${escapeHtml(folder.name)} <small>${state.notes.filter(note => note.folderId === folder.id).length}</small></button>`).join('')}</div>
+          <div class="list knowledge-list inline">${notes.length ? notes.map(note => `<div class="card knowledge-note inline-note" data-folder-id="${note.folderId}"><div class="metric-row"><div><div class="item-title">${escapeHtml(note.title)}</div><div class="item-meta">${escapeHtml(folders.find(folder => folder.id === note.folderId)?.name || 'Без папки')} · ${longDateText((note.updatedAt || note.createdAt).slice(0,10))}</div></div><div class="item-actions"><button class="mini-btn edit-note" type="button" data-id="${note.id}">✎</button></div></div><div class="item-note">${escapeHtml(note.body).split('\\n').join('<br>')}</div></div>`).join('') : empty('Записывай идеи, запуски, мысли и выводы прямо здесь.')}</div>
+        </div>
+      </section>`;
+  }
+
+  function bindKnowledgeInline() {
+    $('#openKnowledgeInline')?.addEventListener('click', () => renderKnowledgeBase());
+    $('#addKnowledgeInline')?.addEventListener('click', () => openKnowledgeNoteModal());
+    $$('.knowledge-folder').forEach(button => button.addEventListener('click', () => {
+      const folderId = button.dataset.folder;
+      $$('.inline-note').forEach(note => note.hidden = note.dataset.folderId !== folderId);
+    }));
+    $$('.edit-note').forEach(button => button.addEventListener('click', () => openKnowledgeNoteModal(state.notes.find(note => note.id === button.dataset.id))));
+  }
+
+  function dailyExpenseSeries(monthKey = financeSelectedMonth) {
+    const { start, end } = monthRange(monthKey);
+    const days = end.getDate();
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(start.getFullYear(), start.getMonth(), index + 1);
       const iso = localISO(date);
-      return { label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).slice(0, 2), value: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)) };
+      return { label: String(index + 1), value: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)) };
     });
   }
 
@@ -789,7 +819,7 @@
   }
 
   function renderFinance() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     const capitalSeries = estimatedCapitalSeries(6);
     const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
@@ -823,22 +853,21 @@
     const maxCategory = Math.max(1, ...analytics.categoryRows.map(row => row.amount));
     const moneySeries = monthlyMoneySeries(6);
     return `
-      <section class="finance-toolbar">
-        <button class="action-tile" type="button" id="openMonthCompare">
-          <span class="action-tile-icon">↗</span>
-          <span><b>Сравнить периоды</b><small>Месяцы, зарплата и категории</small></span>
-          <i>›</i>
-        </button>
-      </section>
-
-      <section class="stats grid two finance-kpis">
-        <div class="stat-card"><small>Доход за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareSentence('Доходы', analytics.monthIncome, analytics.previousMonthIncome)}</div>
-        <div class="stat-card"><small>Расход за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareSentence('Расходы', analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
-        <div class="stat-card"><small>Расход за неделю</small><strong>${money(analytics.weekExpense)}</strong>${compareSentence('Расходы', analytics.weekExpense, analytics.previousWeekExpense, true)}</div>
-        <div class="stat-card"><small>Сбережено</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
-      </section>
-
       ${incomeOverviewMarkup(analytics)}
+
+      <section class="stats grid two finance-kpis compact-kpis">
+        <div class="stat-card"><small>Расход за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareSentence('Расходы', analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
+        <div class="stat-card"><small>Чистый остаток</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
+        <div class="stat-card"><small>Общий капитал</small><strong>${money(analytics.capital)}</strong><span class="compare neutral">активы минус долги</span></div>
+        <div class="stat-card"><small>Свободно</small><strong>${money(analytics.freeBalance)}</strong><span class="compare neutral">после обязательных платежей</span></div>
+      </section>
+
+      <section class="section">
+        <details class="card details-card month-compare-card">
+          <summary><span>Сравнение месяцев</span><small>Доход, зарплата, сбережения и категории</small></summary>
+          <div class="details-body">${monthComparisonMarkup()}</div>
+        </details>
+      </section>
 
       <section class="section">
         <div class="section-head"><h2>Денежный поток</h2><span class="badge">6 месяцев</span></div>
@@ -847,7 +876,7 @@
 
       <section class="section">
         <div class="section-head"><h2>Расходы по дням</h2><button class="link-btn" type="button" data-add-transaction="expense">+ Расход</button></div>
-        <div class="card chart-card">${barChart(dailyExpenseSeries())}</div>
+        <div class="card chart-card">${barChart(dailyExpenseSeries(analytics.selectedMonth))}</div>
       </section>
 
       <section class="section">
@@ -857,7 +886,7 @@
             <div class="category-row">
               <div class="metric-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong></div>
               <div class="progress thin"><span style="width:${Math.round(row.amount / maxCategory * 100)}%"></span></div>
-            </div>`).join('') : '<div class="item-meta">Расходов за текущий месяц пока нет.</div>'}
+            </div>`).join('') : '<div class="item-meta">Расходов за выбранный месяц пока нет.</div>'}
         </div>
       </section>
 
@@ -877,12 +906,18 @@
     const percent = target > 0 ? Math.min(100, Math.round(analytics.monthIncome / target * 100)) : 0;
     const remain = Math.max(0, target - analytics.monthIncome);
     return `<section class="section">
-      <div class="section-head"><h2>Доход за месяц</h2><span class="badge">${monthName(`${new Date().getFullYear()}-${pad(new Date().getMonth()+1)}`)}</span></div>
-      <div class="card income-target-card">
-        <div class="metric-row"><div><small>Фактически заработано</small><strong class="positive">${money(analytics.monthIncome)}</strong></div><div class="target-percent">${percent}%</div></div>
+      <div class="section-head"><h2>Доход за месяц</h2><label class="month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label></div>
+      <div class="card income-target-card polished">
+        <div class="income-target-top">
+          <div><small>Фактически заработано</small><strong class="positive headline-amount">${money(analytics.monthIncome)}</strong></div>
+          <div class="target-percent">${percent}%</div>
+        </div>
         <div class="progress"><span style="width:${percent}%"></span></div>
-        <div class="metric-row"><span class="muted">Цель ${money(target)}</span><span class="muted">Осталось ${money(remain)}</span></div>
-        <div class="income-source-grid">${sourceRows.length ? sourceRows.map(row => `<div><small>${escapeHtml(row.label)}</small><strong>${money(row.amount)}</strong></div>`).join('') : '<div class="item-meta">Доходов за месяц пока нет.</div>'}</div>
+        <div class="income-target-meta">
+          <div><small>Цель</small><strong>${money(target)}</strong></div>
+          <div><small>Осталось</small><strong>${money(remain)}</strong></div>
+        </div>
+        <div class="income-source-grid">${sourceRows.length ? sourceRows.map(row => `<div><small>${escapeHtml(row.label)}</small><strong>${money(row.amount)}</strong></div>`).join('') : '<div class="item-meta">Доходов за выбранный месяц пока нет.</div>'}</div>
       </div>
     </section>`;
   }
@@ -1036,7 +1071,7 @@
       <section class="hero compact">
         <p class="eyebrow">Проекты</p>
         <div class="kpi">${active.length}</div>
-        <p>Здесь хранятся клиенты и собственные проекты. Фактический заработок считается только по операциям в «Финансах».</p>
+        <p>Здесь хранятся клиенты и собственные проекты. Если указать фактический доход проекта, он автоматически попадёт в «Финансы» и в общий баланс.</p>
       </section>
       <section class="stats grid two">
         <div class="stat-card"><small>Ожидаемый доход</small><strong>${money(expected)}</strong></div>
@@ -1107,14 +1142,14 @@
   }
 
   function goalCurrent(goal) {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     if (goal.autoSource === 'capital') return analytics.capital;
     if (goal.autoSource === 'monthlyIncome') return analytics.monthIncome;
     return Number(goal.current || 0);
   }
 
   function renderGrowth() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const days = getLast7Days();
     const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
     const currentWeek = localISO(startOfWeek(new Date()));
@@ -1273,6 +1308,10 @@
 
   function removeItem(collection, id) {
     if (!confirm('Удалить запись?')) return;
+    if (collection === 'projects') {
+      state.transactions.filter(item => item.projectId === id && item.autoProjectIncome).forEach(item => applyTransactionToAccount(item, -1));
+      state.transactions = state.transactions.filter(item => !(item.projectId === id && item.autoProjectIncome));
+    }
     state[collection] = state[collection].filter(item => item.id !== id);
     saveState();
     render();
@@ -1494,16 +1533,53 @@
     }, { submitText: isIncome ? 'Получено' : 'Оплачено' });
   }
 
+  function projectIncomeCategory(type) {
+    if (type === 'client') return 'client';
+    if (type === 'personal') return 'project_income';
+    if (type === 'job') return 'salary';
+    return 'other_income';
+  }
+
+  function syncProjectMonthlyIncome(project, amount, monthKey) {
+    if (!project?.id || !monthKey) return;
+    const start = `${monthKey}-01`;
+    let tx = state.transactions.find(item => item.type === 'income' && item.projectId === project.id && item.projectIncomeMonth === monthKey && item.autoProjectIncome);
+    if (tx) {
+      applyTransactionToAccount(tx, -1);
+      if (amount > 0) {
+        tx.title = `${project.name} - доход`;
+        tx.amount = amount;
+        tx.date = start;
+        tx.category = projectIncomeCategory(project.type);
+        applyTransactionToAccount(tx, 1);
+      } else {
+        state.transactions = state.transactions.filter(item => item.id !== tx.id);
+      }
+      return;
+    }
+    if (amount > 0) {
+      tx = { id: uid(), title: `${project.name} - доход`, type: 'income', amount, date: start, category: projectIncomeCategory(project.type), accountId: getDefaultAccount().id, notes: `Автосинхронизация проекта: ${project.name}`, projectId: project.id, autoProjectIncome: true, projectIncomeMonth: monthKey };
+      state.transactions.push(tx);
+      applyTransactionToAccount(tx, 1);
+    }
+  }
+
   function openProjectModal(item = null) {
+    const actualMonth = financeSelectedMonth || monthKeyFromDate(new Date());
+    const existingIncome = item ? (state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && tx.projectIncomeMonth === actualMonth) || state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && String(tx.date || '').slice(0,7) === actualMonth)) : null;
     openModal(item ? 'Изменить проект' : 'Новый проект', `
-      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Дмитрий Авто"></div>
+      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Dmitry Auto"></div>
       <div class="form-grid">
-        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Свой проект</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Рабочее направление</option></select></div>
+        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Свой проект</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Зарплата / работа</option></select></div>
         <div class="field"><label>Статус</label><select name="status"><option value="active" ${!item || item?.status === 'active' ? 'selected' : ''}>Активен</option><option value="growth" ${item?.status === 'growth' ? 'selected' : ''}>Развитие</option><option value="paused" ${item?.status === 'paused' ? 'selected' : ''}>Пауза</option><option value="completed" ${item?.status === 'completed' ? 'selected' : ''}>Завершён</option></select></div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>Ожидаемый доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
+        <div class="field"><label>План в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
         <div class="field"><label>Статус оплаты</label><select name="paymentStatus"><option value="not_due" ${!item || item?.paymentStatus === 'not_due' ? 'selected' : ''}>Не ожидается</option><option value="waiting" ${item?.paymentStatus === 'waiting' ? 'selected' : ''}>Ожидается</option><option value="paid" ${item?.paymentStatus === 'paid' ? 'selected' : ''}>Получено</option><option value="overdue" ${item?.paymentStatus === 'overdue' ? 'selected' : ''}>Просрочено</option></select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Месяц фактического дохода</label><input name="actualMonth" type="month" value="${actualMonth}"></div>
+        <div class="field"><label>Фактически пришло, ₽</label><input name="actualIncome" type="number" min="0" value="${existingIncome?.amount ?? 0}"></div>
       </div>
       <div class="field"><label>Дата следующей оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
       <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
@@ -1511,8 +1587,11 @@
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.value = Number(data.value || 0);
+      data.actualIncome = Number(data.actualIncome || 0);
       if (!data.name.trim()) return false;
-      if (item) Object.assign(item, data); else state.projects.push({ id: uid(), debt: 0, startDate: todayISO(), ...data });
+      let target = item;
+      if (item) Object.assign(item, data); else { target = { id: uid(), debt: 0, startDate: todayISO(), ...data }; state.projects.push(target); }
+      syncProjectMonthlyIncome(target, data.actualIncome, data.actualMonth || financeSelectedMonth);
       return true;
     });
   }
@@ -1783,7 +1862,7 @@
   }
 
   function createChatGPTReport() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
