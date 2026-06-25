@@ -1276,3 +1276,21 @@ body {
   }
   .modal-head { padding-top: 24px; }
 }
+
+/* v8 - income structure, simple projects and knowledge base */
+.income-target-card { display:grid; gap:14px; }
+.income-target-card .target-percent { min-width:58px; height:58px; border-radius:18px; display:grid; place-items:center; background:rgba(121,232,142,.13); color:var(--accent); font-weight:850; font-size:18px; }
+.income-source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.income-source-grid > div { padding:12px; border-radius:16px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.05); display:grid; gap:5px; }
+.income-source-grid small { color:var(--muted); }
+.income-source-grid strong { font-size:15px; }
+.knowledge-toolbar { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+.folder-chip-row { display:flex; gap:8px; overflow-x:auto; padding:2px 0 12px; scrollbar-width:none; }
+.folder-chip-row::-webkit-scrollbar { display:none; }
+.knowledge-folder { white-space:nowrap; }
+.knowledge-folder small { opacity:.65; margin-left:4px; }
+.knowledge-list { max-height:min(64vh,620px); overflow:auto; padding-right:2px; }
+.knowledge-note { display:grid; gap:10px; }
+.knowledge-note .item-note { line-height:1.5; white-space:normal; }
+.project-metrics.two-cols { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (max-width:360px){ .income-source-grid { grid-template-columns:1fr; } }

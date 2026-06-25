@@ -37,7 +37,7 @@
 
   function freshState() {
     return {
-      version: 7,
+      version: 8,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -70,6 +70,8 @@
         { id: uid(), title: 'Без импульсивных покупок', logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0] }
       ],
       weeklyReviews: [],
+      noteFolders: [{ id: 'inbox', name: 'Входящие', createdAt: new Date().toISOString() }],
+      notes: [],
       snapshots: []
     };
   }
@@ -110,7 +112,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 7,
+      version: 8,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -120,6 +122,8 @@
       goals: Array.isArray(raw.goals) ? raw.goals : [],
       habits: Array.isArray(raw.habits) ? raw.habits : [],
       weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : [],
+      noteFolders: Array.isArray(raw.noteFolders) && raw.noteFolders.length ? raw.noteFolders : clone(base.noteFolders),
+      notes: Array.isArray(raw.notes) ? raw.notes : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
@@ -131,7 +135,9 @@
     result.accounts = result.accounts.map(account => ({ type: 'card', balance: 0, ...account, balance: Number(account.balance || 0) }));
     result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', ...tx, amount: Number(tx.amount || 0) }));
     result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
-    result.projects = result.projects.map(project => ({ type: 'client', service: '', contact: '', value: 0, status: 'active', paymentStatus: 'not_due', debt: 0, paymentDate: '', nextContact: '', next: '', site: '', adBudget: 0, leads: 0, cpl: 0, result: '', notes: '', startDate: '', ...project }));
+    result.projects = result.projects.map(project => ({ type: 'client', value: 0, status: 'active', paymentStatus: 'not_due', paymentDate: '', next: '', notes: '', startDate: '', ...project, value: Number(project.value || 0) }));
+    result.noteFolders = result.noteFolders.map(folder => ({ id: folder.id || uid(), name: folder.name || 'Без названия', createdAt: folder.createdAt || new Date().toISOString() }));
+    result.notes = result.notes.map(note => ({ id: note.id || uid(), folderId: note.folderId || result.noteFolders[0]?.id || 'inbox', title: note.title || 'Без названия', body: note.body || '', tags: note.tags || '', projectId: note.projectId || '', createdAt: note.createdAt || new Date().toISOString(), updatedAt: note.updatedAt || note.createdAt || new Date().toISOString() }));
     result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', createdAt: new Date(new Date().getFullYear(), 0, 1).toISOString(), ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
     result.habits = result.habits.map(habit => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], ...habit }));
     return ensureAccountIntegrity(result);
@@ -686,6 +692,7 @@
       ${upcoming.length ? `<section class="section"><div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Все</button></div><div class="list">${upcoming.map(obligationItem).join('')}</div></section>` : ''}
     `;
     bindCommon();
+    bindFinanceActions();
     $('#quickTask').addEventListener('click', () => openTaskModal());
     $('#quickExpense').addEventListener('click', () => openTransactionModal(null, 'expense'));
     $('#quickIncome').addEventListener('click', () => openTransactionModal(null, 'income'));
@@ -831,6 +838,8 @@
         <div class="stat-card"><small>Сбережено</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
       </section>
 
+      ${incomeOverviewMarkup(analytics)}
+
       <section class="section">
         <div class="section-head"><h2>Денежный поток</h2><span class="badge">6 месяцев</span></div>
         <div class="card chart-card">${dualBarChart(moneySeries)}<div class="metric-row trend-footer"><span>Итог периода</span><strong>${money(sum(moneySeries.map(row => row.net)))}</strong></div></div>
@@ -857,6 +866,25 @@
         <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Заполняй операции, и здесь появятся выводы по расходам и сбережениям.</div>'}</div>
       </section>
     `;
+  }
+
+  function incomeOverviewMarkup(analytics) {
+    const monthStart = analytics.monthStart;
+    const monthEnd = analytics.monthEnd;
+    const incomes = transactionsInRange('income', monthStart, monthEnd);
+    const sourceRows = INCOME_CATEGORIES.map(([key, label]) => ({ key, label, amount: sum(incomes.filter(tx => tx.category === key).map(tx => tx.amount)) })).filter(row => row.amount > 0);
+    const target = Number(state.profile.monthlyIncomeTarget || 0);
+    const percent = target > 0 ? Math.min(100, Math.round(analytics.monthIncome / target * 100)) : 0;
+    const remain = Math.max(0, target - analytics.monthIncome);
+    return `<section class="section">
+      <div class="section-head"><h2>Доход за месяц</h2><span class="badge">${monthName(`${new Date().getFullYear()}-${pad(new Date().getMonth()+1)}`)}</span></div>
+      <div class="card income-target-card">
+        <div class="metric-row"><div><small>Фактически заработано</small><strong class="positive">${money(analytics.monthIncome)}</strong></div><div class="target-percent">${percent}%</div></div>
+        <div class="progress"><span style="width:${percent}%"></span></div>
+        <div class="metric-row"><span class="muted">Цель ${money(target)}</span><span class="muted">Осталось ${money(remain)}</span></div>
+        <div class="income-source-grid">${sourceRows.length ? sourceRows.map(row => `<div><small>${escapeHtml(row.label)}</small><strong>${money(row.amount)}</strong></div>`).join('') : '<div class="item-meta">Доходов за месяц пока нет.</div>'}</div>
+      </div>
+    </section>`;
   }
 
   function monthComparisonMarkup() {
@@ -1000,41 +1028,43 @@
 
   function renderProjects() {
     const active = state.projects.filter(project => project.status === 'active' || project.status === 'growth');
-    const monthly = sum(active.map(project => project.value));
-    const unpaid = sum(state.projects.filter(project => project.paymentStatus === 'overdue' || project.paymentStatus === 'waiting').map(project => project.debt || project.value));
+    const expected = sum(active.map(project => project.value));
+    const monthStart = startOfMonth(new Date());
+    const monthEnd = endOfMonth(new Date());
+    const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
     app.innerHTML = `
       <section class="hero compact">
-        <p class="eyebrow">Плановый доход по проектам</p>
-        <div class="kpi">${money(monthly)}</div>
-        <p>Цель: ${money(state.profile.monthlyIncomeTarget)} · не хватает ${money(Math.max(0, state.profile.monthlyIncomeTarget - monthly))}</p>
+        <p class="eyebrow">Проекты</p>
+        <div class="kpi">${active.length}</div>
+        <p>Здесь хранятся клиенты и собственные проекты. Фактический заработок считается только по операциям в «Финансах».</p>
       </section>
       <section class="stats grid two">
-        <div class="stat-card"><small>Активные проекты</small><strong>${active.length}</strong></div>
-        <div class="stat-card"><small>Ожидается от клиентов</small><strong class="${unpaid ? 'positive' : ''}">${money(unpaid)}</strong></div>
+        <div class="stat-card"><small>Ожидаемый доход</small><strong>${money(expected)}</strong></div>
+        <div class="stat-card"><small>Получено от проектов</small><strong class="positive">${money(actual)}</strong></div>
       </section>
       <section class="section">
-        <div class="section-head"><h2>Проекты и клиенты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
-        <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый проект или клиента.')}</div>
+        <div class="section-head"><h2>Все проекты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
+        <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый клиентский или собственный проект.')}</div>
       </section>`;
     bindCommon();
     $('#addProject').addEventListener('click', () => openProjectModal());
   }
 
   function projectItem(project) {
+    const monthStart = startOfMonth(new Date());
+    const monthEnd = endOfMonth(new Date());
+    const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId === project.id && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
     const overdue = project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO());
-    const calculatedCpl = Number(project.leads || 0) > 0 ? Math.round(Number(project.adBudget || 0) / Number(project.leads || 1)) : Number(project.cpl || 0);
     return `<div class="card project-card ${overdue ? 'overdue-card' : ''}">
-      <div class="metric-row"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${escapeHtml(project.service || projectTypeText(project.type))}</div></div><span class="badge ${project.status === 'active' ? 'low' : project.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(project.status)}</span></div>
-      <div class="project-metrics">
-        <div><small>Доход</small><strong>${money(project.value)}</strong></div>
-        <div><small>Оплата</small><strong class="${overdue ? 'negative' : ''}">${paymentStatusText(project.paymentStatus)}</strong></div>
-        <div><small>Лиды</small><strong>${Number(project.leads || 0)}</strong></div>
-        <div><small>CPL</small><strong>${calculatedCpl ? money(calculatedCpl) : '—'}</strong></div>
+      <div class="metric-row"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${projectTypeText(project.type)}</div></div><span class="badge ${project.status === 'active' ? 'low' : project.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(project.status)}</span></div>
+      <div class="project-metrics two-cols">
+        <div><small>Ожидается</small><strong>${money(project.value)}</strong></div>
+        <div><small>Получено за месяц</small><strong class="positive">${money(actual)}</strong></div>
       </div>
-      <div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(project.next || 'Не указан')}</div>
-      ${project.result ? `<div class="item-note">Результат: ${escapeHtml(project.result)}</div>` : ''}
+      ${project.next ? `<div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(project.next)}</div>` : ''}
+      ${project.notes ? `<div class="item-note">${escapeHtml(project.notes)}</div>` : ''}
       <div class="project-footer">
-        <span class="item-meta">${project.paymentDate ? `Оплата ${dateText(project.paymentDate)}` : 'Дата оплаты не указана'}</span>
+        <span class="item-meta">${project.paymentDate ? `Ближайшая оплата ${dateText(project.paymentDate)}` : paymentStatusText(project.paymentStatus)}</span>
         <div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}">×</button></div>
       </div>
     </div>`;
@@ -1140,7 +1170,7 @@
 
       <section class="section">
         <div class="section-head"><h2>Проекты</h2><button class="link-btn" type="button" data-go="projects">Открыть</button></div>
-        <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Плановый доход</small><strong>${money(projectIncome)}</strong></div><div><small>Факт за месяц</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Просрочено оплат</small><strong class="${overduePayments ? 'negative' : ''}">${overduePayments}</strong></div></div>
+        <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Ожидается</small><strong>${money(projectIncome)}</strong></div><div><small>Факт от проектов</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Весь доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong></div></div>
       </section>
 
       <section class="section" id="growthGoals">
@@ -1466,41 +1496,23 @@
 
   function openProjectModal(item = null) {
     openModal(item ? 'Изменить проект' : 'Новый проект', `
-      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Клиент или проект"></div>
+      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Дмитрий Авто"></div>
       <div class="form-grid">
-        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Основная работа</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Личный проект</option></select></div>
+        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Свой проект</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Рабочее направление</option></select></div>
         <div class="field"><label>Статус</label><select name="status"><option value="active" ${!item || item?.status === 'active' ? 'selected' : ''}>Активен</option><option value="growth" ${item?.status === 'growth' ? 'selected' : ''}>Развитие</option><option value="paused" ${item?.status === 'paused' ? 'selected' : ''}>Пауза</option><option value="completed" ${item?.status === 'completed' ? 'selected' : ''}>Завершён</option></select></div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>Услуга / направление</label><input name="service" value="${escapeHtml(item?.service || '')}" placeholder="Яндекс.Директ, работа"></div>
-        <div class="field"><label>Контакт</label><input name="contact" value="${escapeHtml(item?.contact || '')}" placeholder="Телефон или Telegram"></div>
+        <div class="field"><label>Ожидаемый доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
+        <div class="field"><label>Статус оплаты</label><select name="paymentStatus"><option value="not_due" ${!item || item?.paymentStatus === 'not_due' ? 'selected' : ''}>Не ожидается</option><option value="waiting" ${item?.paymentStatus === 'waiting' ? 'selected' : ''}>Ожидается</option><option value="paid" ${item?.paymentStatus === 'paid' ? 'selected' : ''}>Получено</option><option value="overdue" ${item?.paymentStatus === 'overdue' ? 'selected' : ''}>Просрочено</option></select></div>
       </div>
-      <div class="form-grid">
-        <div class="field"><label>Доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
-        <div class="field"><label>Статус оплаты</label><select name="paymentStatus"><option value="not_due" ${!item || item?.paymentStatus === 'not_due' ? 'selected' : ''}>Не наступила</option><option value="waiting" ${item?.paymentStatus === 'waiting' ? 'selected' : ''}>Ожидается</option><option value="paid" ${item?.paymentStatus === 'paid' ? 'selected' : ''}>Оплачено</option><option value="overdue" ${item?.paymentStatus === 'overdue' ? 'selected' : ''}>Просрочено</option></select></div>
-      </div>
-      <div class="form-grid">
-        <div class="field"><label>Задолженность, ₽</label><input name="debt" type="number" min="0" value="${item?.debt ?? 0}"></div>
-        <div class="field"><label>Дата оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
-      </div>
-      <div class="form-grid">
-        <div class="field"><label>Рекламный бюджет, ₽</label><input name="adBudget" type="number" min="0" value="${item?.adBudget ?? 0}"></div>
-        <div class="field"><label>Количество лидов</label><input name="leads" type="number" min="0" value="${item?.leads ?? 0}"></div>
-      </div>
+      <div class="field"><label>Дата следующей оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
       <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
-      <div class="form-grid">
-        <div class="field"><label>Следующий контакт</label><input name="nextContact" type="date" value="${item?.nextContact || ''}"></div>
-        <div class="field"><label>Дата начала</label><input name="startDate" type="date" value="${item?.startDate || ''}"></div>
-      </div>
-      <div class="field"><label>Сайт / ссылка</label><input name="site" type="url" value="${escapeHtml(item?.site || '')}" placeholder="https://"></div>
-      <div class="field"><label>Результат</label><textarea name="result" placeholder="Что удалось получить">${escapeHtml(item?.result || '')}</textarea></div>
-      <div class="field"><label>Заметки</label><textarea name="notes">${escapeHtml(item?.notes || '')}</textarea></div>
+      <div class="field"><label>Заметки</label><textarea name="notes" placeholder="Контекст, договорённости, идеи">${escapeHtml(item?.notes || '')}</textarea></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
-      ['value', 'debt', 'adBudget', 'leads'].forEach(key => { data[key] = Number(data[key] || 0); });
-      data.cpl = data.leads > 0 ? Math.round(data.adBudget / data.leads) : 0;
+      data.value = Number(data.value || 0);
       if (!data.name.trim()) return false;
-      if (item) Object.assign(item, data); else state.projects.push({ id: uid(), ...data });
+      if (item) Object.assign(item, data); else state.projects.push({ id: uid(), debt: 0, startDate: todayISO(), ...data });
       return true;
     });
   }
@@ -1627,6 +1639,48 @@
     setTimeout(() => node.remove(), 2200);
   }
 
+  function openKnowledgeBase() {
+    settingsModal.close();
+    renderKnowledgeBase();
+  }
+
+  function renderKnowledgeBase() {
+    const folders = state.noteFolders;
+    const notes = state.notes.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    openModal('База мыслей и идей', `
+      <div class="knowledge-toolbar"><button class="btn primary" type="button" id="addNoteFolder">+ Папка</button><button class="btn secondary" type="button" id="addKnowledgeNote">+ Запись</button></div>
+      <div class="folder-chip-row">${folders.map(folder => `<button type="button" class="chip knowledge-folder" data-folder="${folder.id}">${escapeHtml(folder.name)} <small>${notes.filter(note => note.folderId === folder.id).length}</small></button>`).join('')}</div>
+      <div class="list knowledge-list">${notes.length ? notes.map(note => `<div class="card knowledge-note" data-folder-id="${note.folderId}"><div class="metric-row"><div><div class="item-title">${escapeHtml(note.title)}</div><div class="item-meta">${escapeHtml(folders.find(folder => folder.id === note.folderId)?.name || 'Без папки')} · ${longDateText((note.updatedAt || note.createdAt).slice(0,10))}</div></div><div class="item-actions"><button class="mini-btn edit-note" type="button" data-id="${note.id}">✎</button><button class="mini-btn delete-note" type="button" data-id="${note.id}">×</button></div></div><div class="item-note">${escapeHtml(note.body).replace(/\n/g,'<br>')}</div>${note.tags ? `<div class="pill-row"><span class="badge">${escapeHtml(note.tags)}</span></div>` : ''}</div>`).join('') : empty('Создайте первую запись, идею или рабочую заметку.')}</div>
+    `, null, { hideActions: true });
+    $('#addNoteFolder')?.addEventListener('click', () => {
+      const name = prompt('Название папки');
+      if (!name?.trim()) return;
+      state.noteFolders.push({ id: uid(), name: name.trim(), createdAt: new Date().toISOString() }); saveState(); modal.close(); renderKnowledgeBase();
+    });
+    $('#addKnowledgeNote')?.addEventListener('click', () => openKnowledgeNoteModal());
+    $$('.knowledge-folder').forEach(button => button.addEventListener('click', () => {
+      $$('.knowledge-note').forEach(note => note.hidden = note.dataset.folderId !== button.dataset.folder);
+    }));
+    $$('.edit-note').forEach(button => button.addEventListener('click', () => openKnowledgeNoteModal(state.notes.find(note => note.id === button.dataset.id))));
+    $$('.delete-note').forEach(button => button.addEventListener('click', () => { if (!confirm('Удалить запись?')) return; state.notes = state.notes.filter(note => note.id !== button.dataset.id); saveState(); modal.close(); renderKnowledgeBase(); }));
+  }
+
+  function openKnowledgeNoteModal(item = null) {
+    const folderOptions = state.noteFolders.map(folder => `<option value="${folder.id}" ${item?.folderId === folder.id ? 'selected' : ''}>${escapeHtml(folder.name)}</option>`).join('');
+    openModal(item ? 'Изменить запись' : 'Новая запись', `
+      <div class="field"><label>Папка</label><select name="folderId">${folderOptions}</select></div>
+      <div class="field"><label>Заголовок</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Например, запуск новых кампаний"></div>
+      <div class="field"><label>Мысли, идеи, контекст</label><textarea name="body" rows="10" required>${escapeHtml(item?.body || '')}</textarea></div>
+      <div class="field"><label>Теги</label><input name="tags" value="${escapeHtml(item?.tags || '')}" placeholder="реклама, идея, SenyaMarketing"></div>
+      <div class="field"><label>Связать с проектом</label><select name="projectId">${projectOptions(item?.projectId || '')}</select></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.title.trim() || !data.body.trim()) return false;
+      if (item) Object.assign(item, data, { updatedAt: new Date().toISOString() }); else state.notes.push({ id: uid(), ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      return true;
+    });
+  }
+
   function renderSettings() {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
     const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
@@ -1645,6 +1699,7 @@
         <button class="btn primary full" type="submit">Сохранить настройки</button>
       </form>
       <div class="settings-list">
+        <button class="settings-row featured" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
         <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
         <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
         <button class="settings-row featured" type="button" id="exportChatGPT"><span>Выгрузить отчёт для ChatGPT<small>${state.profile.lastChatGPTExport ? `Последняя: ${longDateText(state.profile.lastChatGPTExport)}` : 'Финансы, задачи, проекты, цели и привычки в одном файле'}</small></span><b>↗</b></button>
@@ -1664,6 +1719,7 @@
       toast('Настройки сохранены');
     });
 
+    $('#openKnowledgeBase').addEventListener('click', openKnowledgeBase);
     $('#notificationSettings').addEventListener('click', requestNotifications);
     $('#installHelp').addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить». Уведомления на iPhone доступны для установленного приложения.'));
     $('#exportData').addEventListener('click', exportData);
@@ -1806,7 +1862,11 @@ ${reportList(openTasks.slice(0, 100), task => `- [${task.priority}] ${task.title
 
 ## Проекты и клиенты
 
-${reportList(state.projects, project => `- ${project.name}: тип ${projectTypeText(project.type)}, статус ${projectStatusText(project.status)}, плановый доход ${money(project.value)}, оплата ${paymentStatusText(project.paymentStatus)}, долг ${money(project.debt)}, лиды ${Number(project.leads || 0)}, CPL ${money(project.leads ? Number(project.adBudget || 0) / Number(project.leads || 1) : Number(project.cpl || 0))}, следующий шаг: ${project.next || 'не указан'}, результат: ${project.result || 'не указан'}`)}
+${reportList(state.projects, project => `- ${project.name}: тип ${projectTypeText(project.type)}, статус ${projectStatusText(project.status)}, ожидаемый доход ${money(project.value)}, оплата ${paymentStatusText(project.paymentStatus)}, следующий шаг: ${project.next || 'не указан'}, заметки: ${project.notes || 'нет'}`)}
+
+## База мыслей и идей
+
+${reportList(state.notes.slice().sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')), note => `- [${state.noteFolders.find(folder => folder.id === note.folderId)?.name || 'Без папки'}] ${note.title} (${longDateText((note.updatedAt || note.createdAt || '').slice(0,10))}): ${note.body || 'без текста'}${note.tags ? `; теги: ${note.tags}` : ''}`)}
 
 ## Цели
 
