@@ -2,6 +2,18 @@
   'use strict';
 
   const STORAGE_KEY = 'alexander_os_v1';
+  const memoryStorage = new Map();
+  const safeStorage = {
+    getItem(key) {
+      try { return window.localStorage.getItem(key); } catch (error) { return memoryStorage.has(key) ? memoryStorage.get(key) : null; }
+    },
+    setItem(key, value) {
+      try { window.localStorage.setItem(key, value); } catch (error) { memoryStorage.set(key, String(value)); }
+    },
+    removeItem(key) {
+      try { window.localStorage.removeItem(key); } catch (error) { memoryStorage.delete(key); }
+    }
+  };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -37,18 +49,20 @@
 
   function freshState() {
     return {
-      version: 8,
+      version: 9,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
         monthlyIncomeTarget: 200000,
         cushionTarget: 200000,
         monthlyExpenseLimit: 70000,
-        theme: 'dark',
+        theme: 'emerald',
         notificationsEnabled: false,
         lastBackup: null,
         lastChatGPTExport: null,
-        progressRange: '6m'
+        progressRange: '6m',
+        lastExpenseCategory: 'groceries',
+        lastExpenseAccountId: ''
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -112,7 +126,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 8,
+      version: 9,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -126,6 +140,8 @@
       notes: Array.isArray(raw.notes) ? raw.notes : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
+
+    if (!['emerald', 'graphite', 'light'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -170,7 +186,7 @@
 
   function loadState() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = safeStorage.getItem(STORAGE_KEY);
       return saved ? migrateState(JSON.parse(saved)) : freshState();
     } catch (error) {
       console.error(error);
@@ -179,7 +195,7 @@
   }
 
   let state = loadState();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   let currentScreen = 'dashboard';
   let financeTab = 'overview';
   let taskFilter = 'today';
@@ -196,18 +212,16 @@
   const modalForm = $('#modalForm');
   const modalActions = $('#modalActions');
   const modalSubmit = $('#modalSubmit');
-  const settingsModal = $('#settingsModal');
-  const settingsBody = $('#settingsBody');
 
   function saveState() {
-    state.version = 8;
+    state.version = 9;
     recordSnapshot();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
-    document.documentElement.dataset.theme = state.profile.theme || 'dark';
-    const themeColor = state.profile.theme === 'light' ? '#eef6f0' : '#06140d';
+    document.documentElement.dataset.theme = state.profile.theme || 'emerald';
+    const themeColor = state.profile.theme === 'light' ? '#edf5ef' : state.profile.theme === 'graphite' ? '#090d12' : '#03130b';
     $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }
 
@@ -594,10 +608,11 @@
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
-    const titles = { dashboard: 'Сегодня', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
-    $('#screenTitle').textContent = titles[currentScreen];
+    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс', settings: 'Настройки' };
+    $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
-    ({ dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth })[currentScreen]();
+    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth, settings: renderSettings }[currentScreen] || renderDashboard;
+    renderer();
   }
 
   function taskCompletionToday() {
@@ -697,7 +712,7 @@
     bindCommon();
     bindFinanceActions();
     $('#quickTask').addEventListener('click', () => openTaskModal());
-    $('#quickExpense').addEventListener('click', () => openTransactionModal(null, 'expense'));
+    $('#quickExpense').addEventListener('click', openQuickExpenseModal);
     $('#quickIncome').addEventListener('click', () => openTransactionModal(null, 'income'));
   }
 
@@ -818,17 +833,48 @@
     return `${Math.round(number)}`;
   }
 
+  function incomeSourceTotals(analytics) {
+    const incomes = transactionsInRange('income', analytics.monthStart, analytics.monthEnd);
+    const salary = sum(incomes.filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const clients = sum(incomes.filter(tx => tx.category === 'client').map(tx => tx.amount));
+    const ownProjects = sum(incomes.filter(tx => tx.category === 'project_income').map(tx => tx.amount));
+    const other = Math.max(0, analytics.monthIncome - salary - clients - ownProjects);
+    return { salary, clients, ownProjects, projectsTotal: clients + ownProjects, other };
+  }
+
   function renderFinance() {
     const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const sources = incomeSourceTotals(analytics);
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     const capitalSeries = estimatedCapitalSeries(6);
     const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
+    const monthIsCurrent = analytics.selectedMonth === monthKey(new Date());
     app.innerHTML = `
-      <section class="hero compact finance-hero">
-        <div class="finance-hero-head"><div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div><span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span></div>
+      <section class="hero compact finance-hero finance-master-card">
+        <div class="finance-hero-head">
+          <div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div>
+          <div class="finance-head-actions">
+            <label class="hero-month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label>
+            <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
+          </div>
+        </div>
         ${heroSparkline(capitalSeries)}
         <div class="capital-breakdown"><span><small>Активы</small>${money(analytics.assets)}</span><span><small>Долги</small>${money(analytics.debt)}</span><span><small>Ликвидно</small>${money(analytics.liquid)}</span></div>
-        <div class="metric-row"><span class="muted">Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
+        <div class="finance-master-grid">
+          <div><small>Заработано за месяц</small><strong>${money(analytics.monthIncome)}</strong></div>
+          <div><small>Зарплата</small><strong>${money(sources.salary)}</strong></div>
+          <div><small>Клиенты и проекты</small><strong>${money(sources.projectsTotal)}</strong></div>
+          <div><small>Расходы за месяц</small><strong>${money(analytics.monthExpense)}</strong></div>
+          <div><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong><em>${monthIsCurrent ? 'текущая неделя' : 'текущая неделя'}</em></div>
+          <div><small>Свободный остаток</small><strong>${money(analytics.freeBalance)}</strong></div>
+        </div>
+        <details class="finance-source-details">
+          <summary>Структура дохода</summary>
+          <div class="finance-source-row"><span>Клиенты</span><b>${money(sources.clients)}</b></div>
+          <div class="finance-source-row"><span>Свои проекты</span><b>${money(sources.ownProjects)}</b></div>
+          <div class="finance-source-row"><span>Другие доходы</span><b>${money(sources.other)}</b></div>
+        </details>
+        <div class="metric-row goal-row"><span>Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </section>
       <section class="tabs finance-tabs">
@@ -838,6 +884,7 @@
     `;
     bindCommon();
     $$('[data-finance-tab]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTab; renderFinance(); }));
+    $('#financeMonthPicker')?.addEventListener('change', event => { financeSelectedMonth = event.target.value || monthKey(new Date()); renderFinance(); });
     bindFinanceActions();
   }
 
@@ -852,74 +899,36 @@
     const insights = getFinanceInsights(analytics);
     const maxCategory = Math.max(1, ...analytics.categoryRows.map(row => row.amount));
     const moneySeries = monthlyMoneySeries(6);
+    const recent = state.transactions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.id).localeCompare(String(a.id))).slice(0, 5);
     return `
-      ${incomeOverviewMarkup(analytics)}
-
-      <section class="stats grid two finance-kpis compact-kpis">
-        <div class="stat-card"><small>Расход за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareSentence('Расходы', analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
-        <div class="stat-card"><small>Чистый остаток</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
-        <div class="stat-card"><small>Общий капитал</small><strong>${money(analytics.capital)}</strong><span class="compare neutral">активы минус долги</span></div>
-        <div class="stat-card"><small>Свободно</small><strong>${money(analytics.freeBalance)}</strong><span class="compare neutral">после обязательных платежей</span></div>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Динамика</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>
-
-      <section class="section">
-        <details class="card details-card month-compare-card">
-          <summary><span>Сравнение месяцев</span><small>Доход, зарплата, сбережения и категории</small></summary>
-          <div class="details-body">${monthComparisonMarkup()}</div>
-        </details>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Денежный поток</h2><span class="badge">6 месяцев</span></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}<div class="metric-row trend-footer"><span>Итог периода</span><strong>${money(sum(moneySeries.map(row => row.net)))}</strong></div></div>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Расходы по дням</h2><button class="link-btn" type="button" data-add-transaction="expense">+ Расход</button></div>
-        <div class="card chart-card">${barChart(dailyExpenseSeries(analytics.selectedMonth))}</div>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h2>На что уходят деньги</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Категории расходов</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
         <div class="card category-list">
-          ${analytics.categoryRows.length ? analytics.categoryRows.map(row => `
+          ${analytics.categoryRows.length ? analytics.categoryRows.slice(0, 6).map(row => `
             <div class="category-row">
               <div class="metric-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong></div>
               <div class="progress thin"><span style="width:${Math.round(row.amount / maxCategory * 100)}%"></span></div>
             </div>`).join('') : '<div class="item-meta">Расходов за выбранный месяц пока нет.</div>'}
         </div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Анализ</h2></div>
-        <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Заполняй операции, и здесь появятся выводы по расходам и сбережениям.</div>'}</div>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Последние операции</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
+        <div class="list">${recent.length ? recent.map(transactionItem).join('') : empty('Добавьте первый доход или расход.')}</div>
       </section>
-    `;
-  }
-
-  function incomeOverviewMarkup(analytics) {
-    const monthStart = analytics.monthStart;
-    const monthEnd = analytics.monthEnd;
-    const incomes = transactionsInRange('income', monthStart, monthEnd);
-    const sourceRows = INCOME_CATEGORIES.map(([key, label]) => ({ key, label, amount: sum(incomes.filter(tx => tx.category === key).map(tx => tx.amount)) })).filter(row => row.amount > 0);
-    const target = Number(state.profile.monthlyIncomeTarget || 0);
-    const percent = target > 0 ? Math.min(100, Math.round(analytics.monthIncome / target * 100)) : 0;
-    const remain = Math.max(0, target - analytics.monthIncome);
-    return `<section class="section">
-      <div class="section-head"><h2>Доход за месяц</h2><label class="month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label></div>
-      <div class="card income-target-card polished">
-        <div class="income-target-top">
-          <div><small>Фактически заработано</small><strong class="positive headline-amount">${money(analytics.monthIncome)}</strong></div>
-          <div class="target-percent">${percent}%</div>
-        </div>
-        <div class="progress"><span style="width:${percent}%"></span></div>
-        <div class="income-target-meta">
-          <div><small>Цель</small><strong>${money(target)}</strong></div>
-          <div><small>Осталось</small><strong>${money(remain)}</strong></div>
-        </div>
-        <div class="income-source-grid">${sourceRows.length ? sourceRows.map(row => `<div><small>${escapeHtml(row.label)}</small><strong>${money(row.amount)}</strong></div>`).join('') : '<div class="item-meta">Доходов за выбранный месяц пока нет.</div>'}</div>
-      </div>
-    </section>`;
+      <section class="section finance-support-section">
+        <details class="card details-card month-compare-card">
+          <summary><span>Сравнение месяцев</span><small>Доход, зарплата, расходы и категории</small></summary>
+          <div class="details-body">${monthComparisonMarkup()}</div>
+        </details>
+      </section>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Выводы</h2></div>
+        <div class="list">${insights.length ? insights.slice(0, 4).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Добавляй операции, и здесь появятся выводы.</div>'}</div>
+      </section>`;
   }
 
   function monthComparisonMarkup() {
@@ -1158,100 +1167,76 @@
     return Number(goal.current || 0);
   }
 
+  function goalItem(goal) {
+    const current = goalCurrent(goal);
+    const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
+    const pace = goalPace(goal, current, percent);
+    return `<div class="card goal-card">
+      <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
+      <div class="progress"><span style="width:${percent}%"></span></div>
+      <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
+      ${goal.nextAction ? `<div class="item-note"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
+      <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
+    </div>`;
+  }
+
+  function habitItem(habit) {
+    const days = getLast7Days();
+    return `<div class="card habit-card">
+      <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
+      <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
+    </div>`;
+  }
+
   function renderGrowth() {
     const analytics = getFinanceAnalytics();
-    const days = getLast7Days();
-    const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
-    const currentWeek = localISO(startOfWeek(new Date()));
-    const currentReview = reviews.find(review => review.weekStart === currentWeek);
+    const moneySeries = monthlyMoneySeries(6);
+    const capitalSeries = estimatedCapitalSeries(6);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
     const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
-    const moneySeries = monthlyMoneySeries(6);
-    const capitalSeries = estimatedCapitalSeries(6);
-    const activeProjects = state.projects.filter(project => ['active', 'growth'].includes(project.status));
-    const overduePayments = state.projects.filter(project => project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO())).length;
-    const projectIncome = sum(activeProjects.map(project => project.value));
-    const projectActualIncome = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, analytics.monthStart, analytics.monthEnd)).map(tx => tx.amount));
     const insights = systemInsights();
-    const score = overallScore();
-    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
-
+    const activeGoals = state.goals.slice(0, 4);
     app.innerHTML = `
-      <section class="progress-hero" id="growthOverview">
-        <div><p class="eyebrow">Индекс системы</p><h2>${score}%</h2><p>${score >= 75 ? 'Курс устойчивый. Не ослабляй дисциплину.' : score >= 45 ? 'Есть прогресс, но несколько зон тянут назад.' : 'Система теряет темп. Сначала деньги и ключевые задачи.'}</p></div>
-        <div class="score-ring large" style="--score:${score}"><span>${score}</span></div>
+      <section class="progress-hero dynamics-hero">
+        <div><p class="eyebrow">Динамика системы</p><h2>${money(analytics.capital)}</h2><p>Изменения денег, задач, целей и дисциплины за последние месяцы.</p></div>
+        <div class="score-ring large" style="--score:${overallScore()}"><span>${overallScore()}%</span></div>
       </section>
-
       <section class="tabs progress-tabs">
-        <button class="tab active" type="button" data-growth-scroll="growthOverview">Обзор</button>
-        <button class="tab" type="button" data-growth-scroll="growthGoals">Цели</button>
-        <button class="tab" type="button" data-growth-scroll="growthHabits">Привычки</button>
-        <button class="tab" type="button" data-growth-scroll="growthDynamics">Динамика</button>
+        <button class="tab active" type="button" data-growth-scroll="capitalDynamics">Капитал</button>
+        <button class="tab" type="button" data-growth-scroll="incomeDynamics">Деньги</button>
+        <button class="tab" type="button" data-growth-scroll="goalDynamics">Цели</button>
+        <button class="tab" type="button" data-growth-scroll="disciplineDynamics">Дисциплина</button>
       </section>
-
-      <section class="growth-summary">
-        <div class="stat-card"><small>Капитал</small><strong>${money(analytics.capital)}</strong><span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? 'рост' : 'снижение'} ${Math.abs(capitalChange)}%`}</span></div>
-        <div class="stat-card"><small>Чистый поток месяца</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">доход минус расход</span></div>
-        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
-        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
-      </section>
-
-      <section class="section" id="growthDynamics">
+      <section class="section" id="capitalDynamics">
         <div class="section-head"><h2>Динамика капитала</h2><span class="badge">6 месяцев</span></div>
         <div class="card chart-card">${compactMoneyChart(capitalSeries)}<div class="metric-row trend-footer"><span>Сейчас</span><strong>${money(analytics.capital)}</strong></div></div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Доходы и расходы</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}<div class="project-metrics two-cols"><div><small>Доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong></div><div><small>Расход месяца</small><strong class="negative">${money(analytics.monthExpense)}</strong></div></div></div>
+      <section class="section" id="incomeDynamics">
+        <div class="section-head"><h2>Доходы и расходы</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Где теряется прогресс</h2></div>
-        <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Критичных отклонений не найдено. Продолжай заполнять операции, задачи и привычки.</div>'}</div>
+      <section class="growth-summary dynamics-summary">
+        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
+        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Проекты</h2><button class="link-btn" type="button" data-go="projects">Открыть</button></div>
-        <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Ожидается</small><strong>${money(projectIncome)}</strong></div><div><small>Факт от проектов</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Весь доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong></div></div>
-      </section>
-
-      <section class="section" id="growthGoals">
+      <section class="section" id="goalDynamics">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
-        <div class="list">${state.goals.length ? state.goals.map(goal => {
-          const current = goalCurrent(goal);
-          const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
-          const pace = goalPace(goal, current, percent);
-          return `<div class="card goal-card">
-            <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
-            <div class="progress"><span style="width:${percent}%"></span></div>
-            <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
-            ${goal.nextAction ? `<div class="item-note"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
-            <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
-          </div>`;
-        }).join('') : empty('Добавьте измеримую цель.')}</div>
+        <div class="list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
       </section>
-
-      <section class="section" id="growthHabits">
+      <section class="section" id="disciplineDynamics">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
-        <div class="list">${state.habits.length ? state.habits.map(habit => `
-          <div class="card habit-card">
-            <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
-            <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
-          </div>`).join('') : empty('Добавьте полезную привычку.')}</div>
+        <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
-
       <section class="section">
-        <div class="section-head"><h2>Недельные разборы</h2><button class="link-btn" type="button" id="addReview">${currentReview ? 'Изменить' : 'Заполнить'}</button></div>
-        <div class="list">${reviews.length ? reviews.slice(0, 4).map(reviewItem).join('') : empty('Разбор недели покажет, что реально двигает доход и капитал.')}</div>
+        <div class="section-head"><h2>Сигналы</h2></div>
+        <div class="list">${insights.length ? insights.slice(0, 5).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Данных пока недостаточно для выводов.</div>'}</div>
       </section>`;
     bindCommon();
     $$('[data-growth-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.growthScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
-    $('#addGoal').addEventListener('click', () => openGoalModal());
-    $('#addHabit').addEventListener('click', () => openHabitModal());
-    $('#addReview').addEventListener('click', () => openReviewModal(currentReview));
+    $('#addGoal')?.addEventListener('click', () => openGoalModal());
+    $('#addHabit')?.addEventListener('click', () => openHabitModal());
   }
 
   function reviewItem(review) {
@@ -1362,10 +1347,55 @@
   }
 
   function openGlobalAdd() {
-    openModal('Быстрое добавление', `
+    openQuickExpenseModal();
+  }
+
+  function openQuickExpenseModal() {
+    const categoryButtons = EXPENSE_CATEGORIES.slice(0, 8).map(([value, label], index) => `<button type="button" class="expense-category-chip ${value === (state.profile.lastExpenseCategory || 'groceries') ? 'active' : ''}" data-expense-category="${value}">${escapeHtml(label)}</button>`).join('');
+    openModal('Быстрый расход', `
+      <div class="quick-expense-form">
+        <div class="quick-amount-wrap"><span>−</span><input id="quickExpenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"><b>₽</b></div>
+        <div class="quick-amounts"><button type="button" data-add-amount="100">+100</button><button type="button" data-add-amount="500">+500</button><button type="button" data-add-amount="1000">+1 000</button></div>
+        <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(state.profile.lastExpenseCategory || 'groceries')}">
+        <div class="field"><label>Категория</label><div class="expense-category-grid">${categoryButtons}</div></div>
+        <div class="form-grid">
+          <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(state.profile.lastExpenseAccountId || '')}</select></div>
+          <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
+        </div>
+        <div class="field"><label>Комментарий <small>необязательно</small></label><input name="title" placeholder="Например, обед или такси"></div>
+        <button class="quick-more-actions" type="button" id="openOtherActions">Доход, задача или счёт</button>
+      </div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      const amount = Number(data.amount || 0);
+      if (amount <= 0) return false;
+      const category = data.category || 'other_expense';
+      const transaction = { id: uid(), title: String(data.title || '').trim() || categoryLabel(category), type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '' };
+      state.transactions.push(transaction);
+      applyTransactionToAccount(transaction, 1);
+      state.profile.lastExpenseCategory = category;
+      state.profile.lastExpenseAccountId = transaction.accountId;
+      return true;
+    }, { submitText: 'Сохранить расход' });
+    setTimeout(() => $('#quickExpenseAmount')?.focus(), 80);
+    $$('[data-expense-category]', modalBody).forEach(button => button.addEventListener('click', () => {
+      $$('[data-expense-category]', modalBody).forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      $('#quickExpenseCategory').value = button.dataset.expenseCategory;
+    }));
+    $$('[data-add-amount]', modalBody).forEach(button => button.addEventListener('click', () => {
+      const input = $('#quickExpenseAmount');
+      input.value = Number(input.value || 0) + Number(button.dataset.addAmount || 0);
+      input.focus();
+    }));
+    $('#openOtherActions')?.addEventListener('click', () => { closeModal(); openOtherActionsMenu(); });
+  }
+
+  function openOtherActionsMenu() {
+    openModal('Добавить', `
       <div class="quick-sheet">
-        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Пополнить общий баланс</small></button>
-        <button type="button" data-quick="expense"><span>−</span><b>Расход</b><small>Списать со счёта</small></button>
+        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
+        <button type="button" data-quick="expense"><span>−</span><b>Расход</b><small>Быстрый ввод расхода</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
         <button type="button" data-quick="account"><span>▣</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
@@ -1373,7 +1403,7 @@
       const action = button.dataset.quick;
       closeModal();
       if (action === 'income') openTransactionModal(null, 'income');
-      if (action === 'expense') openTransactionModal(null, 'expense');
+      if (action === 'expense') openQuickExpenseModal();
       if (action === 'task') openTaskModal();
       if (action === 'account') openAccountModal();
     }));
@@ -1732,7 +1762,6 @@
   }
 
   function openKnowledgeBase() {
-    settingsModal.close();
     renderKnowledgeBase();
   }
 
@@ -1776,51 +1805,71 @@
   function renderSettings() {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
     const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
-    settingsBody.innerHTML = `
-      <form id="profileForm">
-        <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
-        <div class="form-grid">
-          <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
-          <div class="field"><label>Цель дохода в месяц, ₽</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
-        </div>
-        <div class="form-grid">
-          <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
-          <div class="field"><label>Лимит расходов в месяц, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
-        </div>
-        <div class="field"><label>Тема</label><select name="theme"><option value="dark" ${state.profile.theme === 'dark' ? 'selected' : ''}>Тёмная</option><option value="light" ${state.profile.theme === 'light' ? 'selected' : ''}>Светлая</option></select></div>
-        <button class="btn primary full" type="submit">Сохранить настройки</button>
-      </form>
-      <div class="settings-list">
-        <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
-        <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
-        <button class="settings-row featured" type="button" id="exportChatGPT"><span>Выгрузить отчёт для ChatGPT<small>${state.profile.lastChatGPTExport ? `Последняя: ${longDateText(state.profile.lastChatGPTExport)}` : 'Финансы, задачи, проекты, цели и привычки в одном файле'}</small></span><b>↗</b></button>
-        <label class="settings-row file-row"><span>Импортировать резервную копию<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
-        <button class="settings-row" type="button" id="installHelp"><span>Как установить на iPhone<small>Добавить на экран Домой</small></span><b>›</b></button>
-        <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
-      </div>
-      <p class="privacy-note"><b>Конфиденциальность:</b> отчёт для ChatGPT содержит твои суммы, задачи и проекты. Не добавляй пароли, номера карт, документы и другие секреты.</p>`;
+    app.innerHTML = `
+      <section class="settings-screen">
+        <section class="card settings-profile-card">
+          <div class="settings-avatar">S</div>
+          <div><small>Alexander OS</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Личная система капитала, задач и роста</p></div>
+        </section>
+        <section class="settings-group">
+          <h3>Цели и внешний вид</h3>
+          <form id="profileForm" class="card settings-form">
+            <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
+            <div class="form-grid">
+              <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
+              <div class="field"><label>Цель дохода в месяц, ₽</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
+              <div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
+            </div>
+            <div class="field"><label>Тема</label><select name="theme"><option value="emerald" ${state.profile.theme === 'emerald' ? 'selected' : ''}>Изумрудная</option><option value="graphite" ${state.profile.theme === 'graphite' ? 'selected' : ''}>Графитовая</option><option value="light" ${state.profile.theme === 'light' ? 'selected' : ''}>Светлая</option></select></div>
+            <button class="btn primary full" type="submit">Сохранить настройки</button>
+          </form>
+        </section>
+        <section class="settings-group">
+          <h3>Данные</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row" type="button" id="exportData"><span>Экспорт данных<small>${state.profile.lastBackup ? `Последняя копия: ${longDateText(state.profile.lastBackup)}` : 'Скачать резервную копию JSON'}</small></span><b>›</b></button>
+            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
+            <button class="settings-row featured" type="button" id="exportChatGPT"><span>Экспорт для ChatGPT<small>Финансы, задачи, проекты, цели, привычки и заметки</small></span><b>↗</b></button>
+          </div>
+        </section>
+        <section class="settings-group">
+          <h3>Приложение</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="installHelp"><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
+          </div>
+        </section>
+        <section class="settings-group">
+          <h3>Конфиденциальность</h3>
+          <div class="card privacy-card"><p>Все данные хранятся локально в браузере устройства. Не записывай пароли, номера карт и документы.</p></div>
+          <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
+        </section>
+        <p class="app-version">Alexander OS · версия 9.0</p>
+      </section>`;
 
-    $('#profileForm').addEventListener('submit', event => {
+    $('#profileForm')?.addEventListener('submit', event => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.currentTarget));
-      state.profile = { ...state.profile, name: data.name.trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0), theme: data.theme || 'dark' };
+      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0), theme: data.theme || 'emerald' };
       saveState();
       applyTheme();
       render();
       toast('Настройки сохранены');
     });
-
-    $('#openKnowledgeBase').addEventListener('click', openKnowledgeBase);
-    $('#notificationSettings').addEventListener('click', requestNotifications);
-    $('#installHelp').addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить». Уведомления на iPhone доступны для установленного приложения.'));
-    $('#exportData').addEventListener('click', exportData);
-    $('#exportChatGPT').addEventListener('click', exportChatGPTData);
-    $('#importData').addEventListener('change', importData);
-    $('#resetData').addEventListener('click', () => {
+    $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
+    $('#notificationSettings')?.addEventListener('click', requestNotifications);
+    $('#installHelp')?.addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить».'));
+    $('#exportData')?.addEventListener('click', exportData);
+    $('#exportChatGPT')?.addEventListener('click', exportChatGPTData);
+    $('#importData')?.addEventListener('change', importData);
+    $('#resetData')?.addEventListener('click', () => {
       if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
       state = freshState();
       saveState();
-      settingsModal.close();
       render();
     });
   }
@@ -1833,7 +1882,7 @@
     const permission = await Notification.requestPermission();
     state.profile.notificationsEnabled = permission === 'granted';
     saveState();
-    renderSettings();
+    if (currentScreen === 'settings') renderSettings();
     if (permission === 'granted') {
       await showNotification('Alexander OS', 'Уведомления включены. Новые задачи и напоминания будут показываться на устройстве.', 'notifications-enabled');
     } else {
@@ -1866,7 +1915,7 @@
     state.profile.lastBackup = todayISO();
     saveState();
     await shareOrDownloadFile(`alexander-os-backup-${todayISO()}.json`, JSON.stringify(state, null, 2), 'application/json');
-    renderSettings();
+    if (currentScreen === 'settings') renderSettings();
   }
 
   function reportList(items, formatter, emptyText = 'Нет данных') {
@@ -1990,7 +2039,7 @@ ${JSON.stringify(state, null, 2)}
     saveState();
     const report = createChatGPTReport();
     await shareOrDownloadFile(`alexander-os-chatgpt-${todayISO()}.md`, report, 'text/markdown');
-    renderSettings();
+    if (currentScreen === 'settings') renderSettings();
     toast('Отчёт для ChatGPT подготовлен');
   }
 
@@ -2001,7 +2050,6 @@ ${JSON.stringify(state, null, 2)}
       const parsed = JSON.parse(await file.text());
       state = migrateState(parsed);
       saveState();
-      settingsModal.close();
       render();
       toast('Данные восстановлены');
     } catch (error) {
@@ -2012,19 +2060,6 @@ ${JSON.stringify(state, null, 2)}
   }
 
   $$('.nav-item[data-screen]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
-
-  function openSettingsPanel() {
-    renderSettings();
-    $$('.nav-item').forEach(button => button.classList.toggle('active', button.id === 'settingsNavButton'));
-    settingsModal.showModal();
-  }
-
-  function closeSettingsPanel() {
-    if (settingsModal.open) settingsModal.close();
-    render();
-  }
-
-  $('#settingsNavButton')?.addEventListener('click', openSettingsPanel);
 
   modalForm.addEventListener('submit', event => {
     event.preventDefault();
@@ -2047,11 +2082,7 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
-  $('#settingsButton')?.addEventListener('click', openSettingsPanel);
   $('#globalAdd').addEventListener('click', openGlobalAdd);
-  $('#closeSettings').addEventListener('click', closeSettingsPanel);
-  settingsModal.addEventListener('cancel', event => { event.preventDefault(); closeSettingsPanel(); });
-  settingsModal.addEventListener('click', event => { if (event.target === settingsModal) closeSettingsPanel(); });
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
