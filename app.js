@@ -49,7 +49,7 @@
 
   function freshState() {
     return {
-      version: 9,
+      version: 9.2,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -126,7 +126,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 9,
+      version: 9.2,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -213,9 +213,9 @@
   const modalActions = $('#modalActions');
   const modalSubmit = $('#modalSubmit');
 
-  function saveState() {
-    state.version = 9;
-    recordSnapshot();
+  function saveState(options = {}) {
+    state.version = 9.2;
+    if (options.snapshot !== false) recordSnapshot();
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
@@ -1197,7 +1197,7 @@
     const currentHabits = habitWeekStats(new Date(), true);
     const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
     const insights = systemInsights();
-    const activeGoals = state.goals.slice(0, 4);
+    const activeGoals = state.goals.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     app.innerHTML = `
       <section class="progress-hero dynamics-hero">
         <div><p class="eyebrow">Динамика системы</p><h2>${money(analytics.capital)}</h2><p>Изменения денег, задач, целей и дисциплины за последние месяцы.</p></div>
@@ -1660,8 +1660,15 @@
       data.current = Number(data.current || 0);
       data.target = Number(data.target || 1);
       data.monthlyPlan = Number(data.monthlyPlan || 0);
-      if (!data.title.trim()) return false;
-      if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
+      data.title = String(data.title || '').trim();
+      data.unit = String(data.unit || '').trim();
+      data.nextAction = String(data.nextAction || '').trim();
+      if (!data.title) return false;
+      if (item) {
+        Object.assign(item, data, { updatedAt: new Date().toISOString() });
+      } else {
+        state.goals = [{ id: uid(), ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...state.goals];
+      }
       return true;
     });
   }
@@ -1830,8 +1837,8 @@
         <section class="settings-group">
           <h3>Данные</h3>
           <div class="settings-list card settings-list-card">
-            <button class="settings-row" type="button" id="exportData"><span>Экспорт данных<small>${state.profile.lastBackup ? `Последняя копия: ${longDateText(state.profile.lastBackup)}` : 'Скачать резервную копию JSON'}</small></span><b>›</b></button>
-            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
+            <button class="settings-row" type="button" id="exportData"><span>Экспорт данных<small>${state.profile.lastBackup ? `Последняя копия: ${longDateText(state.profile.lastBackup)}` : 'Скачать полную резервную копию JSON'}</small></span><b>›</b></button>
+            <label class="settings-row file-row"><span>Импорт данных<small>Полностью заменить данные из резервной копии</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
             <button class="settings-row featured" type="button" id="exportChatGPT"><span>Экспорт для ChatGPT<small>Финансы, задачи, проекты, цели, привычки и заметки</small></span><b>↗</b></button>
           </div>
         </section>
@@ -1848,7 +1855,7 @@
           <div class="card privacy-card"><p>Все данные хранятся локально в браузере устройства. Не записывай пароли, номера карт и документы.</p></div>
           <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
         </section>
-        <p class="app-version">Alexander OS · версия 9.0</p>
+        <p class="app-version">Alexander OS · версия 9.2</p>
       </section>`;
 
     $('#profileForm')?.addEventListener('submit', event => {
@@ -1911,11 +1918,40 @@
     return true;
   }
 
+  function createBackupPayload(sourceState = state) {
+    return {
+      format: 'AlexanderOSBackup',
+      schemaVersion: 1,
+      appVersion: '9.2',
+      exportedAt: new Date().toISOString(),
+      data: clone(sourceState)
+    };
+  }
+
+  function extractBackupData(parsed) {
+    if (parsed?.format === 'AlexanderOSBackup' && parsed?.data && typeof parsed.data === 'object') return parsed.data;
+    if (parsed && typeof parsed === 'object' && (parsed.profile || parsed.tasks || parsed.transactions)) return parsed;
+    throw new Error('Unsupported backup format');
+  }
+
+  function validateBackupData(data) {
+    if (!data || typeof data !== 'object') return false;
+    const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
+    if (!data.profile || typeof data.profile !== 'object') return false;
+    return requiredArrays.every(key => Array.isArray(data[key]));
+  }
+
+  function backupSummary(data) {
+    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок`;
+  }
+
   async function exportData() {
     state.profile.lastBackup = todayISO();
-    saveState();
-    await shareOrDownloadFile(`alexander-os-backup-${todayISO()}.json`, JSON.stringify(state, null, 2), 'application/json');
+    saveState({ snapshot: false });
+    const payload = createBackupPayload(state);
+    await shareOrDownloadFile(`alexander-os-full-backup-${todayISO()}.json`, JSON.stringify(payload, null, 2), 'application/json');
     if (currentScreen === 'settings') renderSettings();
+    toast('Полная резервная копия создана');
   }
 
   function reportList(items, formatter, emptyText = 'Нет данных') {
@@ -2044,19 +2080,31 @@ ${JSON.stringify(state, null, 2)}
   }
 
   async function importData(event) {
-    const file = event.target.files?.[0];
+    const input = event.target;
+    const file = input.files?.[0];
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      state = migrateState(parsed);
-      saveState();
+      const backupData = extractBackupData(parsed);
+      if (!validateBackupData(backupData)) throw new Error('Backup validation failed');
+      const summary = backupSummary(backupData);
+      const confirmed = confirm(`Импорт полностью заменит текущие данные приложения.\n\nВ файле: ${summary}.\n\nПродолжить?`);
+      if (!confirmed) return;
+
+      safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
+      state = normalizeState(clone(backupData));
+      state.version = 9.2;
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
+      applyTheme();
       render();
-      toast('Данные восстановлены');
+      toast(`Восстановлено: ${summary}`);
     } catch (error) {
       console.error(error);
-      alert('Файл резервной копии повреждён или имеет неверный формат.');
+      alert('Не удалось импортировать файл. Выбери JSON, скачанный через «Экспорт данных» в Alexander OS.');
+    } finally {
+      input.value = '';
     }
-    event.target.value = '';
   }
 
   $$('.nav-item[data-screen]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
