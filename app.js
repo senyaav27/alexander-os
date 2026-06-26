@@ -223,11 +223,11 @@
     return state.obligations.filter(item => item.status === 'open' && (!type || item.type === type));
   }
 
-  function getFinanceAnalytics(monthKey = null) {
+  function getFinanceAnalytics(selectedMonthKey = null) {
     const now = new Date();
-    const selectedKey = monthKey || monthKeyFromDate(now);
+    const selectedKey = selectedMonthKey || monthKey(now);
     const { start: monthStart, end: monthEndRange } = monthRange(selectedKey);
-    const isCurrentMonth = selectedKey === monthKeyFromDate(now);
+    const isCurrentMonth = selectedKey === monthKey(now);
     const currentEnd = isCurrentMonth ? endOfToday(now) : monthEndRange;
     const weekStart = startOfWeek(now);
     const weekDayIndex = (now.getDay() || 7) - 1;
@@ -264,9 +264,9 @@
     transactionsInRange('expense', monthStart, currentEnd).forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
     const categoryRows = [...categories.entries()].map(([key, amount]) => ({ key, label: categoryLabel(key), amount })).sort((a, b) => b.amount - a.amount);
 
-    const daysElapsed = now.getDate();
-    const daysInMonth = endOfMonth(now).getDate();
-    const projectedExpense = daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
+    const daysInMonth = endOfMonth(monthStart).getDate();
+    const daysElapsed = isCurrentMonth ? now.getDate() : daysInMonth;
+    const projectedExpense = isCurrentMonth && daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
     const remainingLimit = Number(state.profile.monthlyExpenseLimit || 0) - monthExpense;
 
     return {
@@ -300,7 +300,7 @@
       return [{ cls: 'warning', text: 'Добавляй каждый доход и расход. Без фактических операций приложение не сможет показать реальную динамику.' }];
     }
 
-    const weekChange = percentageChange(analytics.weekExpense, analytics.previousWeekExpense);
+    const weekChange = analytics.isCurrentMonth ? percentageChange(analytics.weekExpense, analytics.previousWeekExpense) : null;
     if (weekChange !== null) {
       if (weekChange > 15) insights.push({ cls: 'danger', text: `Расходы этой недели выросли на ${weekChange}% к прошлой. Проверь ежедневные траты, пока рост не стал новой нормой.` });
       if (weekChange < -10) insights.push({ cls: '', text: `Расходы этой недели снизились на ${Math.abs(weekChange)}%. Зафиксируй, от каких трат отказался, чтобы сохранить результат.` });
@@ -459,7 +459,7 @@
 
   function recordSnapshot() {
     state.snapshots ||= [];
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const tasks = taskWeekStats(new Date(), true);
     const habits = habitWeekStats(new Date(), true);
     const snapshot = {
@@ -521,7 +521,7 @@
   }
 
   function estimatedCapitalSeries(count = 6) {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const now = new Date();
     return Array.from({ length: count }, (_, index) => {
       const date = new Date(now.getFullYear(), now.getMonth() - (count - 1 - index), 1);
@@ -569,7 +569,7 @@
   }
 
   function systemInsights() {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
@@ -628,7 +628,7 @@
   }
 
   function renderDashboard() {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const score = overallScore();
     const mainTasks = state.tasks
       .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
@@ -925,7 +925,8 @@
   function monthComparisonMarkup() {
     const currentMetrics = monthMetrics(financeCompareCurrent);
     const baseMetrics = monthMetrics(financeCompareBase);
-    const monthOptions = monthsForSelect().map(key => `<option value="${key}">${escapeHtml(monthName(key))}</option>`).join('');
+    const currentMonthOptions = monthsForSelect().map(key => `<option value="${key}" ${key === financeCompareCurrent ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('');
+    const baseMonthOptions = monthsForSelect().map(key => `<option value="${key}" ${key === financeCompareBase ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('');
     const categoryKeys = new Set([...currentMetrics.categories.keys(), ...baseMetrics.categories.keys()]);
     const categoryCompare = [...categoryKeys].map(key => {
       const current = Number(currentMetrics.categories.get(key) || 0);
@@ -933,7 +934,7 @@
       return { key, label: categoryLabel(key), current, base, delta: current - base, percent: percentageChange(current, base) };
     }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 8);
     return `<div class="compare-panel compact-compare">
-      <div class="compare-selects"><label>Текущий<select id="compareCurrent">${monthOptions}</select></label><span>к</span><label>База<select id="compareBase">${monthOptions}</select></label></div>
+      <div class="compare-selects"><label>Текущий<select id="compareCurrent">${currentMonthOptions}</select></label><span>к</span><label>База<select id="compareBase">${baseMonthOptions}</select></label></div>
       <div class="comparison-grid">
         <div><small>Доход</small><strong>${money(currentMetrics.income)}</strong>${compareSentence('Доходы', currentMetrics.income, baseMetrics.income)}</div>
         <div><small>Расход</small><strong>${money(currentMetrics.expense)}</strong>${compareSentence('Расходы', currentMetrics.expense, baseMetrics.expense, true)}</div>
@@ -1047,6 +1048,15 @@
   }
 
   function bindFinanceActions() {
+    $('#financeMonthPicker')?.addEventListener('change', event => { financeSelectedMonth = event.target.value || financeSelectedMonth; renderFinance(); });
+    const refreshInlineCompare = () => {
+      const container = $('.month-compare-card .details-body');
+      if (!container) return;
+      container.innerHTML = monthComparisonMarkup();
+      bindFinanceActions();
+    };
+    $('#compareCurrent')?.addEventListener('change', event => { financeCompareCurrent = event.target.value; refreshInlineCompare(); });
+    $('#compareBase')?.addEventListener('change', event => { financeCompareBase = event.target.value; refreshInlineCompare(); });
     $('#openMonthCompare')?.addEventListener('click', openMonthComparisonModal);
     $$('[data-add-transaction]').forEach(button => button.addEventListener('click', () => openTransactionModal(null, button.dataset.addTransaction)));
     $$('[data-finance-tab-jump]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTabJump; renderFinance(); }));
@@ -1142,14 +1152,14 @@
   }
 
   function goalCurrent(goal) {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     if (goal.autoSource === 'capital') return analytics.capital;
     if (goal.autoSource === 'monthlyIncome') return analytics.monthIncome;
     return Number(goal.current || 0);
   }
 
   function renderGrowth() {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const days = getLast7Days();
     const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
     const currentWeek = localISO(startOfWeek(new Date()));
@@ -1565,8 +1575,8 @@
   }
 
   function openProjectModal(item = null) {
-    const actualMonth = financeSelectedMonth || monthKeyFromDate(new Date());
-    const existingIncome = item ? (state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && tx.projectIncomeMonth === actualMonth) || state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && String(tx.date || '').slice(0,7) === actualMonth)) : null;
+    const actualMonth = monthKey(new Date());
+    const existingIncome = item ? state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && tx.projectIncomeMonth === actualMonth && tx.autoProjectIncome) : null;
     openModal(item ? 'Изменить проект' : 'Новый проект', `
       <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Dmitry Auto"></div>
       <div class="form-grid">
@@ -1587,11 +1597,14 @@
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.value = Number(data.value || 0);
-      data.actualIncome = Number(data.actualIncome || 0);
+      const actualIncome = Number(data.actualIncome || 0);
+      const actualMonth = data.actualMonth || monthKey(new Date());
+      delete data.actualIncome;
+      delete data.actualMonth;
       if (!data.name.trim()) return false;
       let target = item;
       if (item) Object.assign(item, data); else { target = { id: uid(), debt: 0, startDate: todayISO(), ...data }; state.projects.push(target); }
-      syncProjectMonthlyIncome(target, data.actualIncome, data.actualMonth || financeSelectedMonth);
+      syncProjectMonthlyIncome(target, actualIncome, actualMonth);
       return true;
     });
   }
@@ -1778,7 +1791,6 @@
         <button class="btn primary full" type="submit">Сохранить настройки</button>
       </form>
       <div class="settings-list">
-        <button class="settings-row featured" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
         <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
         <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
         <button class="settings-row featured" type="button" id="exportChatGPT"><span>Выгрузить отчёт для ChatGPT<small>${state.profile.lastChatGPTExport ? `Последняя: ${longDateText(state.profile.lastChatGPTExport)}` : 'Финансы, задачи, проекты, цели и привычки в одном файле'}</small></span><b>↗</b></button>
@@ -1862,7 +1874,7 @@
   }
 
   function createChatGPTReport() {
-    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const analytics = getFinanceAnalytics();
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
