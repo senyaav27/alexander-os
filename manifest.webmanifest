@@ -1,12 +1,12 @@
 {
-  "name": "Alexander OS v10",
+  "name": "Alexander OS",
   "short_name": "Alexander OS",
-  "description": "Личная система капитала, задач, проектов и прогресса.",
+  "description": "Личная система контроля финансов, задач, проектов, целей и прогресса в стиле Liquid Glass.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#03130b",
-  "theme_color": "#03130b",
+  "background_color": "#06140d",
+  "theme_color": "#06140d",
   "lang": "ru",
   "icons": [
     {

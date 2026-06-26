@@ -11,8 +11,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=10.0" />
-  <title>Alexander OS v10</title>
+  <link rel="stylesheet" href="styles.css" />
+  <title>Alexander OS</title>
 </head>
 <body>
   <div class="app-shell">
@@ -20,44 +20,28 @@
       <div class="topbar-brand">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="topbar-copy">
-          <div class="brand-line">Alexander OS <span>v10</span></div>
           <p class="eyebrow" id="todayLabel">Сегодня</p>
           <h1 id="screenTitle">Главная</h1>
         </div>
       </div>
-      <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
+      <div class="topbar-actions">
+        <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
     </header>
 
     <main id="app" class="content" aria-live="polite"></main>
 
     <nav class="bottom-nav" aria-label="Основная навигация">
-      <button class="nav-item active" type="button" data-screen="dashboard" aria-label="Главная"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3Z"/></svg><small>Главная</small></button>
-      <button class="nav-item" type="button" data-screen="finance" aria-label="Финансы"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h7a3 3 0 0 1 0 6H8a3 3 0 0 0 0 6h9"/><path d="M12 4v16"/></svg><small>Финансы</small></button>
+      <button class="nav-item active" type="button" data-screen="dashboard" aria-label="Сегодня"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V21h-6v-6H9v6H3Z"/></svg><small>Сегодня</small></button>
       <button class="nav-item" type="button" data-screen="tasks" aria-label="Задачи"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><small>Задачи</small></button>
+      <button class="nav-item" type="button" data-screen="finance" aria-label="Финансы"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h7a3 3 0 0 1 0 6H8a3 3 0 0 0 0 6h9"/><path d="M12 4v16"/></svg><small>Финансы</small></button>
       <button class="nav-item" type="button" data-screen="projects" aria-label="Проекты"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 5V3m8 2V3M4 10h16"/></svg><small>Проекты</small></button>
       <button class="nav-item" type="button" data-screen="growth" aria-label="Прогресс"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18 10 12l4 4 6-8"/><path d="M15 8h5v5"/></svg><small>Прогресс</small></button>
-      <button class="nav-item settings-nav" id="settingsNavButton" type="button" data-screen="settings" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.4h-3v-.18a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04H5.2v-3h.24A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.5h3v.2a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.24v3h-.24A1.7 1.7 0 0 0 19.4 15Z"/></svg><small>Настройки</small></button>
+      <button class="nav-item settings-nav" id="settingsNavButton" type="button" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.4h-3v-.18a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04H5.2v-3h.24A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.5h3v.2a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.24v3h-.24A1.7 1.7 0 0 0 19.4 15Z"/></svg><small>Настройки</small></button>
     </nav>
   </div>
-
-
-  <section id="lockScreen" class="lock-screen" hidden aria-live="polite">
-    <div class="lock-card">
-      <div class="lock-logo">S</div>
-      <p class="eyebrow">Alexander OS v10</p>
-      <h2>Приложение заблокировано</h2>
-      <p id="lockHint">Используй Face ID или PIN-код.</p>
-      <button class="btn primary full" type="button" id="unlockFaceId">Разблокировать через Face ID</button>
-      <div class="lock-divider"><span>или</span></div>
-      <form id="unlockPinForm" class="lock-pin-form">
-        <input id="unlockPin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="PIN-код" aria-label="PIN-код">
-        <button class="btn secondary" type="submit">Открыть</button>
-      </form>
-      <p class="lock-error" id="lockError" role="alert"></p>
-    </div>
-  </section>
 
   <dialog id="modal" class="modal">
     <form class="modal-card" id="modalForm" novalidate>
@@ -73,7 +57,16 @@
     </form>
   </dialog>
 
+  <dialog id="settingsModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Настройки</h2>
+        <button class="icon-btn" id="closeSettings" type="button" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="settingsBody"></div>
+    </div>
+  </dialog>
 
-  <script src="app.js?v=10.0"></script>
+  <script src="app.js"></script>
 </body>
 </html>

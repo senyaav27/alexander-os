@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-v10-design-security';
-const ASSETS = ['./', './index.html', './styles.css?v=10.0', './app.js?v=10.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v8-liquid-glass';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
