@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'alexander_os_v1';
-  const SECURITY_KEY = 'alexander_os_security_v10';
+  const SECURITY_KEY = 'alexander_os_security_v11';
   const memoryStorage = new Map();
   const safeStorage = {
     getItem(key) {
@@ -55,6 +55,8 @@
   let security = loadSecurity();
   let lastActivityAt = Date.now();
   let appLocked = false;
+  let faceUnlockPending = false;
+  let faceAutoTimer = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -91,7 +93,7 @@
 
   function freshState() {
     return {
-      version: 10,
+      version: 11,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -127,6 +129,16 @@
         { id: uid(), title: 'Спорт', logs: {}, targetPerWeek: 2, schedule: [4, 5] },
         { id: uid(), title: 'Без импульсивных покупок', logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0] }
       ],
+      workoutProfile: {
+        height: 177,
+        age: 27,
+        weight: 78,
+        goal: 'health',
+        level: 'beginner',
+        days: 3,
+        equipment: 'mixed',
+        savedAt: null
+      },
       weeklyReviews: [],
       noteFolders: [{ id: 'inbox', name: 'Входящие', createdAt: new Date().toISOString() }],
       notes: [],
@@ -170,7 +182,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 10,
+      version: 11,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -179,13 +191,14 @@
       projects: Array.isArray(raw.projects) ? raw.projects : [],
       goals: Array.isArray(raw.goals) ? raw.goals : [],
       habits: Array.isArray(raw.habits) ? raw.habits : [],
+      workoutProfile: { ...base.workoutProfile, ...(raw.workoutProfile || {}) },
       weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : [],
       noteFolders: Array.isArray(raw.noteFolders) && raw.noteFolders.length ? raw.noteFolders : clone(base.noteFolders),
       notes: Array.isArray(raw.notes) ? raw.notes : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
-    if (!['emerald', 'graphite', 'light'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
+    if (!['emerald', 'graphite', 'light', 'future'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -244,6 +257,8 @@
   let financeTab = 'overview';
   let taskFilter = 'today';
   let taskSearch = '';
+  let projectFilter = 'active';
+  let growthRange = 'month';
   let financeCompareCurrent = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
   let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
   let financeSelectedMonth = financeCompareCurrent;
@@ -259,21 +274,23 @@
   const lockScreen = $('#lockScreen');
   const lockHint = $('#lockHint');
   const lockError = $('#lockError');
+  const faceStatus = $('#faceStatus');
   const unlockFaceIdButton = $('#unlockFaceId');
   const unlockPinForm = $('#unlockPinForm');
   const unlockPinInput = $('#unlockPin');
 
 
   function saveState(options = {}) {
-    state.version = 10;
+    state.version = 11;
     if (options.snapshot !== false) recordSnapshot();
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
+    if (state.profile.theme === 'future') state.profile.theme = 'emerald';
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
-    const themeColor = state.profile.theme === 'light' ? '#edf5ef' : state.profile.theme === 'graphite' ? '#090d12' : '#03130b';
-    $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
+    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4' };
+    $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
   }
 
   function transactionsInRange(type, start, end) {
@@ -662,6 +679,7 @@
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
+    document.body.dataset.screen = currentScreen;
     const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс', settings: 'Настройки' };
     $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
@@ -773,41 +791,56 @@
 
   function renderTasks() {
     const today = todayISO();
-    const nextWeek = localISO(addDays(new Date(), 7));
+    const tomorrow = localISO(addDays(new Date(), 1));
     const normalizedSearch = taskSearch.trim().toLowerCase();
-    let tasks = state.tasks.filter(task => {
-      if (normalizedSearch && !`${task.title} ${task.project} ${task.notes}`.toLowerCase().includes(normalizedSearch)) return false;
-      if (taskFilter === 'today') return task.due === today;
-      if (taskFilter === 'overdue') return task.status !== 'done' && task.due && task.due < today;
-      if (taskFilter === 'week') return task.due && task.due >= today && task.due <= nextWeek;
-      return true;
-    });
+    const baseTasks = state.tasks.filter(task => !normalizedSearch || `${task.title} ${task.project} ${task.notes}`.toLowerCase().includes(normalizedSearch));
     const priorityOrder = { high: 0, medium: 1, low: 2 };
-    tasks = tasks.sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.due || '9999').localeCompare(b.due || '9999') || (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
-    const active = tasks.filter(task => task.status !== 'done');
-    const completed = tasks.filter(task => task.status === 'done');
+    const sorted = baseTasks.slice().sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.due || '9999').localeCompare(b.due || '9999') || (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+    const todayTasks = sorted.filter(task => task.due === today && task.status !== 'done');
+    const tomorrowTasks = sorted.filter(task => task.due === tomorrow && task.status !== 'done');
+    const planTasks = sorted.filter(task => task.status !== 'done');
+    const completed = sorted.filter(task => task.status === 'done').slice(0, 8);
+
+    const tabBar = `<section class="tabs task-view-tabs">
+      ${[['today','Сегодня'],['plan','План'],['notes','Заметки']].map(([key,label]) => `<button class="tab ${taskFilter === key ? 'active' : ''}" type="button" data-task-filter="${key}">${label}</button>`).join('')}
+    </section>`;
+
+    if (taskFilter === 'notes') {
+      app.innerHTML = `${tabBar}${knowledgeSectionMarkup(12)}`;
+      bindCommon();
+      bindKnowledgeInline();
+      $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
+      return;
+    }
 
     app.innerHTML = `
-      <section class="toolbar-card">
-        <div class="filter-row">
-          ${[['today', 'Сегодня'], ['overdue', 'Просрочено'], ['week', '7 дней'], ['all', 'Все']].map(([key, label]) => `<button class="chip ${taskFilter === key ? 'active' : ''}" type="button" data-task-filter="${key}">${label}</button>`).join('')}
-        </div>
-        <input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Поиск задач">
-      </section>
-      <section class="section">
-        <div class="section-head"><h2>Активные</h2><span class="badge">${active.length}</span></div>
-        <div class="list">${active.length ? active.map(taskItem).join('') : empty('В этом фильтре активных задач нет.')}</div>
-      </section>
-      <section class="section">
-        <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
-        <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
-      </section>
-      ${knowledgeSectionMarkup()}`;
+      ${tabBar}
+      <section class="task-search-row"><input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Найти задачу"></section>
+      ${taskFilter === 'today' ? `
+        <section class="section compact-section">
+          <div class="section-head"><h2>Сегодня, ${dateText(today)}</h2><span class="badge">${todayTasks.length}</span></div>
+          <div class="list compact-list">${todayTasks.length ? todayTasks.map(taskItem).join('') : empty('На сегодня задач нет.')}</div>
+        </section>
+        <section class="section compact-section">
+          <div class="section-head"><h2>Завтра, ${dateText(tomorrow)}</h2><span class="badge">${tomorrowTasks.length}</span></div>
+          <div class="list compact-list">${tomorrowTasks.length ? tomorrowTasks.map(taskItem).join('') : empty('На завтра задач нет.')}</div>
+        </section>` : `
+        <section class="section compact-section">
+          <div class="section-head"><h2>План</h2><span class="badge">${planTasks.length}</span></div>
+          <div class="list compact-list">${planTasks.length ? planTasks.map(taskItem).join('') : empty('Активных задач нет.')}</div>
+        </section>
+        <section class="section compact-section">
+          <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
+          <div class="list compact-list">${completed.length ? completed.map(taskItem).join('') : empty('Выполненных задач пока нет.')}</div>
+        </section>`}
+      <section class="task-ideas-link card" data-task-filter-jump="notes">
+        <div><small>Идеи и заметки</small><strong>${state.notes.length} записей в ${state.noteFolders.length} папках</strong></div><span>›</span>
+      </section>`;
 
     bindCommon();
-    bindKnowledgeInline();
-    $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
-    $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
+    $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
+    $('[data-task-filter-jump]')?.addEventListener('click', () => { taskFilter = 'notes'; renderTasks(); });
+    $('#taskSearch')?.addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
   function knowledgeSectionMarkup(limit = 4) {
@@ -886,7 +919,7 @@
         <div class="finance-hero-head">
           <div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div>
           <div class="finance-head-actions">
-            <label class="hero-month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label>
+            <label class="hero-month-picker"><span>Месяц</span><select id="financeMonthPicker">${monthsForSelect().map(key => `<option value="${key}" ${key === analytics.selectedMonth ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('')}</select></label>
             <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
           </div>
         </div>
@@ -1113,27 +1146,21 @@
   }
 
   function renderProjects() {
-    const active = state.projects.filter(project => project.status === 'active' || project.status === 'growth');
-    const expected = sum(active.map(project => project.value));
-    const monthStart = startOfMonth(new Date());
-    const monthEnd = endOfMonth(new Date());
-    const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
+    const visible = state.projects.filter(project => projectFilter === 'archive' ? project.status === 'completed' : project.status !== 'completed');
+    const activeClients = visible.filter(project => project.type === 'client');
+    const ownProjects = visible.filter(project => project.type !== 'client');
     app.innerHTML = `
-      <section class="hero compact">
-        <p class="eyebrow">Проекты</p>
-        <div class="kpi">${active.length}</div>
-        <p>Здесь хранятся клиенты и собственные проекты. Если указать фактический доход проекта, он автоматически попадёт в «Финансы» и в общий баланс.</p>
+      <section class="tabs project-tabs">
+        <button class="tab ${projectFilter === 'active' ? 'active' : ''}" type="button" data-project-filter="active">Активные</button>
+        <button class="tab ${projectFilter === 'archive' ? 'active' : ''}" type="button" data-project-filter="archive">Архив</button>
       </section>
-      <section class="stats grid two">
-        <div class="stat-card"><small>Ожидаемый доход</small><strong>${money(expected)}</strong></div>
-        <div class="stat-card"><small>Получено от проектов</small><strong class="positive">${money(actual)}</strong></div>
-      </section>
-      <section class="section">
-        <div class="section-head"><h2>Все проекты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
-        <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый клиентский или собственный проект.')}</div>
-      </section>`;
+      ${activeClients.length ? `<section class="section compact-section"><div class="section-head"><h2>Клиенты</h2><span class="badge">${activeClients.length}</span></div><div class="list project-list">${activeClients.map(projectItem).join('')}</div></section>` : ''}
+      ${ownProjects.length ? `<section class="section compact-section"><div class="section-head"><h2>Собственные проекты</h2><span class="badge">${ownProjects.length}</span></div><div class="list project-list">${ownProjects.map(projectItem).join('')}</div></section>` : ''}
+      ${!visible.length ? empty(projectFilter === 'archive' ? 'В архиве пока нет проектов.' : 'Добавьте первый клиентский или собственный проект.') : ''}
+      <button class="btn primary full add-project-button" type="button" id="addProject">＋ Новый проект</button>`;
     bindCommon();
-    $('#addProject').addEventListener('click', () => openProjectModal());
+    $$('[data-project-filter]').forEach(button => button.addEventListener('click', () => { projectFilter = button.dataset.projectFilter; renderProjects(); }));
+    $('#addProject')?.addEventListener('click', () => openProjectModal());
   }
 
   function projectItem(project) {
@@ -1141,18 +1168,17 @@
     const monthEnd = endOfMonth(new Date());
     const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId === project.id && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
     const overdue = project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO());
-    return `<div class="card project-card ${overdue ? 'overdue-card' : ''}">
-      <div class="metric-row"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${projectTypeText(project.type)}</div></div><span class="badge ${project.status === 'active' ? 'low' : project.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(project.status)}</span></div>
-      <div class="project-metrics two-cols">
-        <div><small>Ожидается</small><strong>${money(project.value)}</strong></div>
-        <div><small>Получено за месяц</small><strong class="positive">${money(actual)}</strong></div>
+    const projectPercent = project.value > 0 ? Math.max(0, Math.min(100, Math.round(actual / project.value * 100))) : 0;
+    return `<div class="card project-card ${overdue ? 'overdue-card' : ''}" style="--project-progress:${projectPercent}%">
+      <div class="project-card-head"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${projectTypeText(project.type)}</div></div><strong>${money(project.value)}</strong></div>
+      <div class="project-compact-stats">
+        <span><small>Получено</small><b>${money(actual)}</b></span>
+        <span><small>Ожидается</small><b>${money(project.value)}</b></span>
+        <span><small>Статус</small><b>${projectStatusText(project.status)}</b></span>
       </div>
-      ${project.next ? `<div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(project.next)}</div>` : ''}
-      ${project.notes ? `<div class="item-note">${escapeHtml(project.notes)}</div>` : ''}
-      <div class="project-footer">
-        <span class="item-meta">${project.paymentDate ? `Ближайшая оплата ${dateText(project.paymentDate)}` : paymentStatusText(project.paymentStatus)}</span>
-        <div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}">×</button></div>
-      </div>
+      ${project.paymentDate ? `<div class="project-date-row"><span>Следующая оплата</span><b>${dateText(project.paymentDate)}</b></div>` : ''}
+      ${project.next ? `<div class="project-next">${escapeHtml(project.next)}</div>` : ''}
+      <div class="project-footer"><span class="item-meta">${paymentStatusText(project.paymentStatus)}</span><div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}" aria-label="Редактировать">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}" aria-label="Удалить">×</button></div></div>
     </div>`;
   }
 
@@ -1222,53 +1248,65 @@
 
   function renderGrowth() {
     const analytics = getFinanceAnalytics();
-    const moneySeries = monthlyMoneySeries(6);
-    const capitalSeries = estimatedCapitalSeries(6);
+    const months = growthRange === 'year' ? 12 : growthRange === 'week' ? 3 : 6;
+    const moneySeries = monthlyMoneySeries(months);
+    const capitalSeries = estimatedCapitalSeries(months);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
     const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
-    const insights = systemInsights();
     const activeGoals = state.goals.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const profile = state.workoutProfile || freshState().workoutProfile;
+    const workoutHabit = state.habits.find(habit => /спорт|трен/i.test(habit.title));
+    const workoutRate = workoutHabit ? habitMonthPercent(workoutHabit) : 0;
+    const projectRate = state.projects.length ? Math.round(state.projects.filter(project => ['active','growth'].includes(project.status)).length / state.projects.length * 100) : 0;
+    const goalRate = activeGoals.length ? Math.round(sum(activeGoals.map(goal => Math.min(100, goalCurrent(goal) / Math.max(1, goal.target) * 100))) / activeGoals.length) : 0;
+
     app.innerHTML = `
-      <section class="progress-hero dynamics-hero">
-        <div><p class="eyebrow">Динамика системы</p><h2>${money(analytics.capital)}</h2><p>Изменения денег, задач, целей и дисциплины за последние месяцы.</p></div>
-        <div class="score-ring large" style="--score:${overallScore()}"><span>${overallScore()}%</span></div>
+      <section class="tabs progress-period-tabs v11-tabs">
+        ${[['week','Неделя'],['month','Месяц'],['year','Год']].map(([key,label]) => `<button class="tab ${growthRange === key ? 'active' : ''}" type="button" data-growth-range="${key}">${label}</button>`).join('')}
       </section>
-      <section class="tabs progress-tabs">
-        <button class="tab active" type="button" data-growth-scroll="capitalDynamics">Капитал</button>
-        <button class="tab" type="button" data-growth-scroll="incomeDynamics">Деньги</button>
-        <button class="tab" type="button" data-growth-scroll="goalDynamics">Цели</button>
-        <button class="tab" type="button" data-growth-scroll="disciplineDynamics">Дисциплина</button>
+
+      <section class="card v11-progress-overview">
+        <div class="section-head"><div><small>Общий прогресс</small><h2>Все сферы жизни</h2></div><strong class="positive">+${Math.max(0, percentageChange(analytics.capital, Math.max(1, analytics.capital - analytics.monthBalance)) || 0)}%</strong></div>
+        ${compactMoneyChart(capitalSeries)}
       </section>
-      <section class="section" id="capitalDynamics">
-        <div class="section-head"><h2>Динамика капитала</h2><span class="badge">6 месяцев</span></div>
-        <div class="card chart-card">${compactMoneyChart(capitalSeries)}<div class="metric-row trend-footer"><span>Сейчас</span><strong>${money(analytics.capital)}</strong></div></div>
+
+      <section class="v11-progress-grid">
+        <button class="card v11-progress-tile" type="button" id="jumpGoals"><span class="tile-icon">◎</span><small>Цели</small><strong>${goalRate}%</strong><em>${activeGoals.length} активных</em></button>
+        <button class="card v11-progress-tile" type="button" data-go="finance"><span class="tile-icon">₽</span><small>Финансы</small><strong>${money(analytics.monthBalance)}</strong><em>${analytics.monthBalance >= 0 ? 'рост капитала' : 'нужно сократить расходы'}</em></button>
+        <button class="card v11-progress-tile" type="button" id="jumpHabits"><span class="tile-icon">◌</span><small>Привычки</small><strong>${currentHabits.rate}%</strong><em>${currentHabits.rate >= previousHabits.rate ? 'стабильный ритм' : 'ниже прошлой недели'}</em></button>
+        <button class="card v11-progress-tile" type="button" data-go="projects"><span class="tile-icon">▣</span><small>Проекты</small><strong>${projectRate}%</strong><em>${state.projects.filter(project => ['active','growth'].includes(project.status)).length} в работе</em></button>
       </section>
-      <section class="section" id="incomeDynamics">
-        <div class="section-head"><h2>Доходы и расходы</h2><span class="badge">6 месяцев</span></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
+
+      <section class="card v11-workout-card">
+        <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
+        <div class="workout-card-stats"><span><b>${profile.days}</b><small>раза в неделю</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
+        <button class="btn primary full" type="button" id="openWorkouts">Открыть план тренировок</button>
       </section>
-      <section class="growth-summary dynamics-summary">
-        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
-        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
-      </section>
-      <section class="section" id="goalDynamics">
+
+      <section class="section compact-section" id="goalDynamics">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
-        <div class="list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
+        <div class="list goal-list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
       </section>
-      <section class="section" id="disciplineDynamics">
+
+      <section class="section compact-section" id="habitDynamics">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
         <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
-      <section class="section">
-        <div class="section-head"><h2>Сигналы</h2></div>
-        <div class="list">${insights.length ? insights.slice(0, 5).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Данных пока недостаточно для выводов.</div>'}</div>
+
+      <section class="section compact-section">
+        <div class="section-head"><h2>Динамика денег</h2><span class="badge">${growthRange === 'year' ? '12 месяцев' : growthRange === 'week' ? 'короткий период' : '6 месяцев'}</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>`;
+
     bindCommon();
-    $$('[data-growth-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.growthScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+    $$('[data-growth-range]').forEach(button => button.addEventListener('click', () => { growthRange = button.dataset.growthRange; renderGrowth(); }));
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
+    $('#openWorkouts')?.addEventListener('click', openWorkoutModal);
+    $('#jumpGoals')?.addEventListener('click', () => $('#goalDynamics')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    $('#jumpHabits')?.addEventListener('click', () => $('#habitDynamics')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   function reviewItem(review) {
@@ -1379,7 +1417,7 @@
   }
 
   function openGlobalAdd() {
-    openQuickExpenseModal();
+    openOtherActionsMenu();
   }
 
   function openQuickExpenseModal() {
@@ -1425,11 +1463,13 @@
 
   function openOtherActionsMenu() {
     openModal('Добавить', `
-      <div class="quick-sheet">
+      <div class="quick-sheet vnext-quick-sheet">
+        <button type="button" class="primary-action" data-quick="expense"><span>−</span><b>Расход</b><small>Внести за несколько секунд</small></button>
         <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
-        <button type="button" data-quick="expense"><span>−</span><b>Расход</b><small>Быстрый ввод расхода</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
-        <button type="button" data-quick="account"><span>▣</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
+        <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
+        <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
+        <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
     $$('[data-quick]', modalBody).forEach(button => button.addEventListener('click', () => {
       const action = button.dataset.quick;
@@ -1438,6 +1478,8 @@
       if (action === 'expense') openQuickExpenseModal();
       if (action === 'task') openTaskModal();
       if (action === 'account') openAccountModal();
+      if (action === 'project') openProjectModal();
+      if (action === 'note') openKnowledgeNoteModal();
     }));
   }
 
@@ -1454,6 +1496,7 @@
   function closeModal() {
     modalAction = null;
     modalForm.reset();
+    modal.classList.remove('workout-dialog');
     if (modal.open) modal.close();
   }
 
@@ -1859,27 +1902,53 @@
     lockScreen.hidden = false;
     unlockFaceIdButton.hidden = !security.faceIdEnabled;
     unlockPinForm.hidden = !security.pinEnabled;
-    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход через Face ID или введи PIN-код.' : 'Введи PIN-код для доступа к данным.');
+    const faceOrb = $('.face-orb');
+    if (faceOrb) faceOrb.hidden = !security.faceIdEnabled;
+    $('.lock-divider')?.toggleAttribute('hidden', !security.pinEnabled || !security.faceIdEnabled);
+    $('.lock-card h2').textContent = security.faceIdEnabled ? 'Разблокировка Face ID' : 'Введите PIN-код';
+    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход, чтобы открыть личные данные.' : 'Введи PIN-код для доступа к данным.');
     lockError.textContent = '';
     unlockPinInput.value = '';
-    setTimeout(() => unlockPinInput?.focus(), 120);
+    if (faceStatus) {
+      faceStatus.hidden = !security.faceIdEnabled;
+      faceStatus.className = 'face-status waiting';
+      faceStatus.innerHTML = '<span></span> Ожидание Face ID';
+    }
+    clearTimeout(faceAutoTimer);
+    if (security.faceIdEnabled && document.visibilityState !== 'hidden') {
+      faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
+    } else if (security.pinEnabled && document.visibilityState !== 'hidden') {
+      setTimeout(() => unlockPinInput?.focus(), 120);
+    }
   }
 
   function unlockApp() {
     appLocked = false;
+    faceUnlockPending = false;
+    clearTimeout(faceAutoTimer);
     document.body.classList.remove('app-locked');
     if (lockScreen) lockScreen.hidden = true;
     if (lockError) lockError.textContent = '';
     lastActivityAt = Date.now();
   }
 
-  async function unlockWithFaceId() {
+  async function unlockWithFaceId(options = {}) {
+    if (faceUnlockPending) return false;
     if (!security.faceIdEnabled || !security.faceCredentialId || !securityAvailable()) {
-      lockError.textContent = 'Face ID недоступен. Используй PIN-код.';
+      lockError.textContent = 'Face ID недоступен на этом устройстве.';
+      if (faceStatus) {
+        faceStatus.className = 'face-status error';
+        faceStatus.innerHTML = '<span></span> Face ID недоступен';
+      }
       return false;
     }
+    faceUnlockPending = true;
     try {
-      lockError.textContent = 'Ожидаю подтверждение Face ID…';
+      lockError.textContent = '';
+      if (faceStatus) {
+        faceStatus.className = 'face-status scanning';
+        faceStatus.innerHTML = '<span></span> Проверка Face ID';
+      }
       const challenge = crypto.getRandomValues(new Uint8Array(32));
       await navigator.credentials.get({
         publicKey: {
@@ -1887,14 +1956,24 @@
           timeout: 60000,
           userVerification: 'required',
           allowCredentials: [{ type: 'public-key', id: base64ToBytes(security.faceCredentialId), transports: ['internal'] }]
-        }
+        },
+        mediation: 'optional'
       });
       security.failedAttempts = 0;
-      unlockApp();
+      if (faceStatus) {
+        faceStatus.className = 'face-status success';
+        faceStatus.innerHTML = '<span></span> Успешно';
+      }
+      setTimeout(unlockApp, 160);
       return true;
     } catch (error) {
       console.error(error);
-      lockError.textContent = error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID. Используй PIN.';
+      faceUnlockPending = false;
+      if (faceStatus) {
+        faceStatus.className = 'face-status error';
+        faceStatus.innerHTML = '<span></span> Повтори Face ID';
+      }
+      lockError.textContent = options.automatic ? 'Не удалось запустить Face ID автоматически. Нажми «Повторить Face ID».' : error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID.';
       return false;
     }
   }
@@ -1949,11 +2028,7 @@
 
   function disablePin() {
     if (!security.pinEnabled) return;
-    if (security.faceIdEnabled) {
-      alert('Сначала отключи Face ID. PIN остаётся резервным способом входа.');
-      return;
-    }
-    if (!confirm('Отключить PIN-код? Защита приложения станет слабее.')) return;
+    if (!confirm(security.faceIdEnabled ? 'Отключить PIN-код? Face ID останется единственным способом входа.' : 'Отключить PIN-код? Защита приложения будет выключена.')) return;
     security.pinEnabled = false;
     security.pinHash = '';
     security.pinSalt = '';
@@ -1969,10 +2044,6 @@
       alert('Face ID для веб-приложения доступен только на поддерживаемом устройстве через HTTPS. Открой установленный Alexander OS на iPhone.');
       return;
     }
-    if (!security.pinEnabled) {
-      alert('Сначала создай резервный PIN-код. Он нужен, если Face ID временно недоступен.');
-      return;
-    }
     try {
       const credential = await navigator.credentials.create({
         publicKey: {
@@ -1986,7 +2057,7 @@
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
           timeout: 60000,
           attestation: 'none',
-          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' }
+          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'discouraged', userVerification: 'required' }
         }
       });
       if (!credential) throw new Error('Credential was not created');
@@ -2020,13 +2091,13 @@
         <div><strong>${security.pinEnabled || security.faceIdEnabled ? 'Защита включена' : 'Защита выключена'}</strong><small>Локальная блокировка приложения на этом устройстве</small></div>
       </div>
       <div class="settings-list card security-list">
-        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Резервный способ входа'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
-        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID может остаться без резервного входа</small></span><b>›</b></button>' : ''}
-        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Включён на этом устройстве' : securityAvailable() ? 'Быстрая разблокировка' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
+        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Можно использовать отдельно или вместе с Face ID'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
+        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID останется единственным способом входа</small></span><b>›</b></button>' : ''}
+        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Автоматически при открытии' : securityAvailable() ? 'Можно включить без PIN' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
         <label class="settings-row select-row"><span>Автоблокировка<small>При бездействии</small></span><select id="autoLockMinutes"><option value="0" ${Number(state.profile.autoLockMinutes || 0) === 0 ? 'selected' : ''}>Никогда</option><option value="1" ${Number(state.profile.autoLockMinutes || 0) === 1 ? 'selected' : ''}>Через 1 минуту</option><option value="5" ${Number(state.profile.autoLockMinutes || 0) === 5 ? 'selected' : ''}>Через 5 минут</option><option value="15" ${Number(state.profile.autoLockMinutes || 0) === 15 ? 'selected' : ''}>Через 15 минут</option></select></label>
         <label class="settings-row switch-row"><span>Блокировать при сворачивании<small>Рекомендуется для финансовых данных</small></span><input id="lockOnBackground" type="checkbox" ${state.profile.lockOnBackground !== false ? 'checked' : ''}></label>
       </div>
-      <div class="privacy-note"><b>Важно:</b> Face ID здесь защищает вход в локальное приложение. Для полной серверной авторизации и облачной синхронизации потребуется отдельный backend.</div>
+      <div class="privacy-note"><b>Важно:</b> Face ID запускается автоматически при открытии, если он включён. Приложение не блокируется, пока ты сам не включишь Face ID или PIN-код.</div>
     `, null, { hideActions: true });
     $('#securityPin')?.addEventListener('click', setupPin);
     $('#disablePin')?.addEventListener('click', disablePin);
@@ -2035,99 +2106,221 @@
     $('#lockOnBackground')?.addEventListener('change', event => { state.profile.lockOnBackground = event.target.checked; saveState({ snapshot: false }); toast('Настройка сохранена'); });
   }
 
-  function renderSettings() {
-    const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
-    const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
-    const securityStatus = security.faceIdEnabled ? 'Face ID + PIN' : security.pinEnabled ? 'PIN-код' : 'Не включена';
-    app.innerHTML = `
-      <section class="settings-screen v10-settings">
-        <section class="card settings-profile-card v10-profile-card">
-          <div class="settings-avatar">S</div>
-          <div><small>Alexander OS v10</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Финансы, цели, задачи и прогресс в одной системе</p></div>
-          <span class="security-status ${security.pinEnabled || security.faceIdEnabled ? 'active' : ''}">${security.pinEnabled || security.faceIdEnabled ? 'Защищено' : 'Без защиты'}</span>
-        </section>
-
-        <section class="settings-group">
-          <h3>Профиль и цели</h3>
-          <form id="profileForm" class="card settings-form">
-            <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
-            <div class="form-grid">
-              <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
-              <div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
-            </div>
-            <div class="form-grid">
-              <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
-              <div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
-            </div>
-            <button class="btn primary full" type="submit">Сохранить профиль</button>
-          </form>
-        </section>
-
-        <section class="settings-group">
-          <h3>Темы</h3>
-          <div class="card theme-picker" role="radiogroup" aria-label="Тема приложения">
-            ${[
-              ['emerald', 'Изумрудная', '#20c66f'],
-              ['graphite', 'Графитовая', '#606a76'],
-              ['light', 'Светлая', '#f4f7f5']
-            ].map(([key, label, color]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-choice="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${key === 'emerald' ? 'Основная' : key === 'graphite' ? 'Строгая' : 'Дневная'}</small></button>`).join('')}
-          </div>
-        </section>
-
-        <section class="settings-group">
-          <h3>Безопасность</h3>
-          <div class="settings-list card settings-list-card">
-            <button class="settings-row featured" type="button" id="securitySettings"><span>Защита приложения<small>${securityStatus} · автоблокировка ${Number(state.profile.autoLockMinutes || 0) ? `${state.profile.autoLockMinutes} мин.` : 'выключена'}</small></span><b>›</b></button>
-            <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><span>Заблокировать сейчас<small>Проверить экран входа</small></span><b>⌾</b></button>
-          </div>
-        </section>
-
-        <section class="settings-group">
-          <h3>Данные и резервные копии</h3>
-          <div class="settings-list card settings-list-card">
-            <button class="settings-row featured" type="button" id="exportEncryptedData"><span>Защищённая копия<small>Файл .aos с паролем и AES-GCM</small></span><b>↗</b></button>
-            <button class="settings-row" type="button" id="exportData"><span>Обычная копия JSON<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Полное резервное копирование'}</small></span><b>›</b></button>
-            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить JSON или защищённый .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
-            <button class="settings-row" type="button" id="exportChatGPT"><span>Отчёт для ChatGPT<small>Финансы, задачи, проекты, цели и заметки</small></span><b>↗</b></button>
-          </div>
-        </section>
-
-        <section class="settings-group">
-          <h3>Приложение</h3>
-          <div class="settings-list card settings-list-card">
-            <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
-            <button class="settings-row" type="button" id="installHelp"><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
-            <button class="settings-row" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
-          </div>
-        </section>
-
-        <section class="settings-group">
-          <h3>Конфиденциальность</h3>
-          <div class="card privacy-card v10-privacy-card">
-            <div class="privacy-icon">⌾</div>
-            <div><b>Данные остаются на устройстве</b><p>Обычная база хранится локально в браузере. Для передачи используй защищённую резервную копию .aos.</p></div>
-          </div>
-          <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
-        </section>
-        <p class="app-version">Alexander OS · версия 10.0</p>
-      </section>`;
-
-    $('#profileForm')?.addEventListener('submit', event => {
-      event.preventDefault();
-      const data = Object.fromEntries(new FormData(event.currentTarget));
-      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0) };
-      saveState();
-      render();
-      toast('Профиль сохранён');
+  function openProfileSettings() {
+    openModal('Профиль', `
+      <div class="profile-editor-head"><div class="settings-avatar">S</div><div><b>Alexander OS</b><small>Персональные настройки</small></div></div>
+      <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}" required></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      state.profile.name = String(data.name || '').trim() || 'Пользователь';
+      return true;
     });
-    $$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
-      state.profile.theme = button.dataset.themeChoice;
+  }
+
+  function openFinancePreferences() {
+    openModal('Финансы и цели', `
+      <div class="form-grid"><div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div><div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div></div>
+      <div class="form-grid"><div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div><div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      state.profile.capitalTarget = Number(data.capitalTarget || 0);
+      state.profile.monthlyIncomeTarget = Number(data.monthlyIncomeTarget || 0);
+      state.profile.cushionTarget = Number(data.cushionTarget || 0);
+      state.profile.monthlyExpenseLimit = Number(data.monthlyExpenseLimit || 0);
+      return true;
+    });
+  }
+
+  function openAppearanceSettings() {
+    openModal('Внешний вид', `
+      <p class="modal-description">Три темы используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
+      <div class="theme-picker exact-theme-picker" role="radiogroup">
+        ${[['emerald','Изумрудная','#42e778','Основная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
+      </div>`, null, { hideActions: true });
+    $$('[data-theme-modal]', modalBody).forEach(button => button.addEventListener('click', () => {
+      state.profile.theme = button.dataset.themeModal;
       saveState({ snapshot: false });
       applyTheme();
+      closeModal();
       renderSettings();
       toast('Тема изменена');
     }));
+  }
+
+
+  const WORKOUT_EXERCISES = [
+    { id:'squat', group:'legs', title:'Приседания', sets:'3 подхода', reps:'8–12 повторений', note:'Стопы на ширине плеч. Колени движутся по направлению носков. Спина остаётся нейтральной.', icon:'squat' },
+    { id:'pushup', group:'chest', title:'Отжимания', sets:'3 подхода', reps:'6–15 повторений', note:'Корпус держи прямой линией. Локти направляй назад под комфортным углом. Не проваливай поясницу.', icon:'pushup' },
+    { id:'row', group:'back', title:'Тяга в наклоне', sets:'3 подхода', reps:'8–12 повторений', note:'Отведи таз назад, сохрани прямую спину и тяни вес к нижним рёбрам. Не поднимай плечи к ушам.', icon:'row' },
+    { id:'lunge', group:'legs', title:'Выпады назад', sets:'3 подхода', reps:'8–10 на ногу', note:'Шагай назад достаточно далеко, чтобы передняя стопа полностью оставалась на полу. Двигайся плавно.', icon:'lunge' },
+    { id:'plank', group:'core', title:'Планка', sets:'3 подхода', reps:'20–45 секунд', note:'Локти под плечами. Напряги живот и ягодицы. Заверши подход, если поясница начинает прогибаться.', icon:'plank' },
+    { id:'press', group:'shoulders', title:'Жим над головой', sets:'3 подхода', reps:'8–12 повторений', note:'Не прогибайся в пояснице. Поднимай вес вертикально и контролируй возвращение.', icon:'press' },
+    { id:'curl', group:'arms', title:'Сгибание рук', sets:'2–3 подхода', reps:'10–15 повторений', note:'Локти держи рядом с корпусом. Не раскачивайся и не бросай вес вниз.', icon:'curl' },
+    { id:'bridge', group:'glutes', title:'Ягодичный мост', sets:'3 подхода', reps:'12–15 повторений', note:'Толкайся пятками, поднимай таз до прямой линии корпуса и не переразгибай поясницу.', icon:'bridge' }
+  ];
+
+  function workoutGoalLabel(value) {
+    return ({ health:'Общее здоровье', strength:'Сила', endurance:'Выносливость', mobility:'Подвижность' })[value] || 'Общее здоровье';
+  }
+
+  function workoutLevelLabel(value) {
+    return ({ beginner:'Начальный', intermediate:'Средний', advanced:'Опытный' })[value] || 'Начальный';
+  }
+
+  function workoutIconSvg(type) {
+    const paths = {
+      squat:'<path d="M28 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"/><path d="m27 16-7 10 8 7 11-2 7 11M20 26 10 37l9 13M39 31l-2 18M11 37H3M37 49h9"/>',
+      pushup:'<circle cx="49" cy="19" r="5"/><path d="m44 23-17 4-11 13 22 1 12 8M27 27l-8 12M16 40 5 48M38 41l-7 9"/>',
+      row:'<circle cx="22" cy="13" r="5"/><path d="m19 18 12 9 13 2M31 27l-10 8-4 15M31 27l8 21M44 29l10-5M51 21l6 6"/>',
+      lunge:'<circle cx="26" cy="11" r="5"/><path d="m25 16-2 17 15 5 11 12M23 33 10 43 4 51M38 38l9-3"/>',
+      plank:'<circle cx="52" cy="24" r="4"/><path d="m47 27-20 4-13 13M27 31 8 34M14 44 5 50M27 31l20 13M47 44h10"/>',
+      press:'<circle cx="31" cy="15" r="5"/><path d="M31 20v20M20 30h22M22 29 16 9M40 29l6-20M12 9h8M42 9h8M25 40l-5 14M37 40l5 14"/>',
+      curl:'<circle cx="30" cy="13" r="5"/><path d="M30 18v20M22 24l-7 13M38 24l8 13M13 36h7M42 36h8M25 38l-4 15M35 38l4 15"/>',
+      bridge:'<circle cx="50" cy="34" r="4"/><path d="M46 36 31 29 18 35 8 48M31 29l8 20M18 35l-5 14M8 48H3M39 49h8"/>'
+    };
+    return `<svg class="exercise-svg" viewBox="0 0 64 64" aria-hidden="true">${paths[type] || paths.squat}</svg>`;
+  }
+
+  function workoutPlan(profile) {
+    const days = Math.max(2, Math.min(5, Number(profile.days || 3)));
+    const templates = [
+      { title:'Full body A', subtitle:'Ноги, грудь, спина и корпус', ids:['squat','pushup','row','plank'] },
+      { title:'Full body B', subtitle:'Ноги, плечи, ягодицы и руки', ids:['lunge','press','bridge','curl'] },
+      { title:'Мобильность и кардио', subtitle:'Ходьба, лёгкая подвижность и восстановление', ids:['plank','bridge'] },
+      { title:'Сила всего тела', subtitle:'Контролируемая техника без отказа', ids:['squat','row','pushup','press'] },
+      { title:'Функциональная тренировка', subtitle:'Выносливость и координация', ids:['lunge','pushup','plank','bridge'] }
+    ];
+    return templates.slice(0, days);
+  }
+
+  function workoutNutritionMarkup(profile) {
+    const goal = workoutGoalLabel(profile.goal);
+    return `<div class="nutrition-grid">
+      <article><span>🥗</span><b>Основа тарелки</b><small>Овощи или фрукты, источник белка и сложные углеводы.</small></article>
+      <article><span>🥚</span><b>Белок регулярно</b><small>Добавляй яйца, рыбу, птицу, бобовые, творог или другой удобный источник.</small></article>
+      <article><span>💧</span><b>Вода</b><small>Пей в течение дня и дополнительно после активной тренировки.</small></article>
+      <article><span>🍚</span><b>Энергия для занятий</b><small>Перед тренировкой подойдёт обычный приём пищи без переедания.</small></article>
+    </div><p class="workout-disclaimer">Цель: ${escapeHtml(goal)}. План не назначает жёстких диет и не заменяет врача или тренера. При боли, травме или хроническом заболевании остановись и обратись к специалисту.</p>`;
+  }
+
+  function workoutExerciseCards(group = 'all') {
+    return WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group).map(item => `
+      <details class="exercise-card" data-exercise-group="${item.group}">
+        <summary><span class="exercise-thumb">${workoutIconSvg(item.icon)}</span><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.sets)} · ${escapeHtml(item.reps)}</small></span><i>⌄</i></summary>
+        <div class="exercise-details"><p>${escapeHtml(item.note)}</p><div class="exercise-safety">Начинай с комфортной нагрузки. Техника важнее веса и скорости.</div></div>
+      </details>`).join('');
+  }
+
+  function openWorkoutModal() {
+    const profile = { ...freshState().workoutProfile, ...(state.workoutProfile || {}) };
+    const plan = workoutPlan(profile);
+    openModal('Тренировки', `
+      <section class="workout-profile-grid">
+        <label><span>Рост, см</span><input name="height" type="number" min="100" max="230" value="${profile.height}"></label>
+        <label><span>Возраст</span><input name="age" type="number" min="12" max="90" value="${profile.age}"></label>
+        <label><span>Вес, кг</span><input name="weight" type="number" min="30" max="250" step="0.1" value="${profile.weight}"></label>
+        <label><span>Цель</span><select name="goal"><option value="health" ${profile.goal==='health'?'selected':''}>Общее здоровье</option><option value="strength" ${profile.goal==='strength'?'selected':''}>Сила</option><option value="endurance" ${profile.goal==='endurance'?'selected':''}>Выносливость</option><option value="mobility" ${profile.goal==='mobility'?'selected':''}>Подвижность</option></select></label>
+        <label><span>Уровень</span><select name="level"><option value="beginner" ${profile.level==='beginner'?'selected':''}>Начальный</option><option value="intermediate" ${profile.level==='intermediate'?'selected':''}>Средний</option><option value="advanced" ${profile.level==='advanced'?'selected':''}>Опытный</option></select></label>
+        <label><span>Тренировок в неделю</span><select name="days">${[2,3,4,5].map(day => `<option value="${day}" ${Number(profile.days)===day?'selected':''}>${day}</option>`).join('')}</select></label>
+      </section>
+
+      <section class="workout-recommendation" id="workoutRecommendation">
+        <div><small>Рекомендация</small><strong>${profile.days} тренировки в неделю</strong><p>${workoutLevelLabel(profile.level)} уровень · ${workoutGoalLabel(profile.goal)} · 40–60 минут.</p></div>
+        <span class="workout-ring">${profile.days}</span>
+      </section>
+
+      <section class="workout-section">
+        <div class="section-head"><h3>План на неделю</h3><span class="badge">гибкий</span></div>
+        <div class="workout-week" id="workoutWeek">${plan.map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<span>${escapeHtml(exercise.title)} · ${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</span>`; }).join('')}</div></details>`).join('')}</div>
+      </section>
+
+      <section class="workout-section">
+        <div class="section-head"><h3>База упражнений</h3><small>Нажми для инструкции</small></div>
+        <div class="exercise-filters">${[['all','Все'],['chest','Грудь'],['back','Спина'],['legs','Ноги'],['shoulders','Плечи'],['arms','Руки'],['core','Корпус'],['glutes','Ягодицы']].map(([key,label],index)=>`<button type="button" class="chip ${index===0?'active':''}" data-exercise-filter="${key}">${label}</button>`).join('')}</div>
+        <div id="exerciseCards">${workoutExerciseCards()}</div>
+      </section>
+
+      <section class="workout-section"><div class="section-head"><h3>Питание и восстановление</h3></div>${workoutNutritionMarkup(profile)}</section>
+
+      <section class="workout-section faq-section"><div class="section-head"><h3>Часто задаваемые вопросы</h3></div>
+        <details><summary>Как часто тренироваться?<i>⌄</i></summary><p>Начни с 2–3 тренировок в неделю. Добавляй день только после того, как восстановление и техника остаются стабильными.</p></details>
+        <details><summary>Что делать, если пропустил занятие?<i>⌄</i></summary><p>Продолжи со следующего запланированного дня. Не нужно выполнять две тяжёлые тренировки подряд, чтобы «догнать» график.</p></details>
+        <details><summary>Когда увеличивать нагрузку?<i>⌄</i></summary><p>Когда все повторения выполняются уверенно и с одинаковой техникой, добавь 1–2 повторения или небольшой вес.</p></details>
+        <details><summary>Нужна ли разминка?<i>⌄</i></summary><p>Да. 5–10 минут лёгкого движения и несколько подготовительных повторений перед первым тяжёлым упражнением.</p></details>
+      </section>`, form => {
+        const data = Object.fromEntries(new FormData(form));
+        state.workoutProfile = {
+          height: Math.max(100, Math.min(230, Number(data.height || 177))),
+          age: Math.max(12, Math.min(90, Number(data.age || 18))),
+          weight: Math.max(30, Math.min(250, Number(data.weight || 70))),
+          goal: data.goal || 'health',
+          level: data.level || 'beginner',
+          days: Math.max(2, Math.min(5, Number(data.days || 3))),
+          equipment: 'mixed',
+          savedAt: new Date().toISOString()
+        };
+        return true;
+      }, { submitText: 'Сохранить план' });
+
+    modal.classList.add('workout-dialog');
+    const refreshPreview = () => {
+      const formData = Object.fromEntries(new FormData(modalForm));
+      const live = { ...profile, ...formData, days:Number(formData.days || profile.days) };
+      const recommendation = $('#workoutRecommendation');
+      if (recommendation) recommendation.innerHTML = `<div><small>Рекомендация</small><strong>${live.days} тренировки в неделю</strong><p>${workoutLevelLabel(live.level)} уровень · ${workoutGoalLabel(live.goal)} · 40–60 минут.</p></div><span class="workout-ring">${live.days}</span>`;
+      const week = $('#workoutWeek');
+      if (week) week.innerHTML = workoutPlan(live).map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<span>${escapeHtml(exercise.title)} · ${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</span>`; }).join('')}</div></details>`).join('');
+    };
+    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
+    $$('[data-exercise-filter]', modalBody).forEach(button => button.addEventListener('click', () => {
+      $$('[data-exercise-filter]', modalBody).forEach(item => item.classList.toggle('active', item === button));
+      const container = $('#exerciseCards');
+      if (container) container.innerHTML = workoutExerciseCards(button.dataset.exerciseFilter);
+    }));
+  }
+
+  function renderSettings() {
+    const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
+    const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены' : 'Выключены';
+    const securityStatus = security.faceIdEnabled && security.pinEnabled ? 'Face ID + PIN' : security.faceIdEnabled ? 'Face ID' : security.pinEnabled ? 'PIN-код' : 'Не настроена';
+    app.innerHTML = `
+      <section class="settings-screen v11-settings">
+        <button class="card settings-profile-card" type="button" id="profileSettings">
+          <div class="settings-avatar">S</div><div><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Твоя система. Твой прогресс. Твоя жизнь.</p></div><span>›</span>
+        </button>
+
+        <section class="card v11-theme-card">
+          <div class="section-head"><div><h2>Внешний вид</h2><small>Тема меняется мгновенно</small></div></div>
+          <div class="v11-theme-picker">
+            ${[['emerald','Изумрудная','#33e36d'],['graphite','Графитовая','#364149'],['light','Светлая','#f2efe5']].map(([key,label,color]) => `<button type="button" class="v11-theme-choice ${state.profile.theme===key?'active':''}" data-theme-inline="${key}"><span style="--theme-swatch:${color}"></span><b>${label}</b></button>`).join('')}
+          </div>
+        </section>
+
+        <section class="settings-list card exact-settings-list">
+          <button class="settings-row" type="button" id="securitySettings"><i class="settings-icon">◇</i><span>Безопасность<small>${securityStatus} · автоблокировка</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="financePreferences"><i class="settings-icon">▥</i><span>Финансы<small>Валюта, категории и цели</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="notificationSettings"><i class="settings-icon">♢</i><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
+        </section>
+
+        <section class="settings-list card exact-settings-list">
+          <button class="settings-row featured" type="button" id="exportEncryptedData"><i class="settings-icon">⇧</i><span>Резервное копирование<small>Защищённая копия .aos</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="exportData"><i class="settings-icon">⇩</i><span>Экспорт JSON<small>Полная копия всех данных</small></span><b>›</b></button>
+          <label class="settings-row file-row"><i class="settings-icon">↺</i><span>Импорт данных<small>Точное восстановление JSON или .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
+          <button class="settings-row" type="button" id="exportChatGPT"><i class="settings-icon">✦</i><span>Отчёт для ChatGPT<small>Финансы, задачи, цели, тренировки и заметки</small></span><b>›</b></button>
+        </section>
+
+        <section class="settings-list card exact-settings-list">
+          <button class="settings-row" type="button" id="openKnowledgeBase"><i class="settings-icon">◫</i><span>База мыслей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="installHelp"><i class="settings-icon">▯</i><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
+        </section>
+        <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
+        <p class="app-version">Alexander OS V11</p>
+      </section>`;
+
+    $('#profileSettings')?.addEventListener('click', openProfileSettings);
     $('#securitySettings')?.addEventListener('click', openSecuritySettings);
+    $('#financePreferences')?.addEventListener('click', openFinancePreferences);
     $('#lockNow')?.addEventListener('click', () => lockApp());
     $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
     $('#notificationSettings')?.addEventListener('click', requestNotifications);
@@ -2136,6 +2329,13 @@
     $('#exportEncryptedData')?.addEventListener('click', exportEncryptedData);
     $('#exportChatGPT')?.addEventListener('click', exportChatGPTData);
     $('#importData')?.addEventListener('change', importData);
+    $$('[data-theme-inline]').forEach(button => button.addEventListener('click', () => {
+      state.profile.theme = button.dataset.themeInline;
+      saveState({ snapshot:false });
+      applyTheme();
+      renderSettings();
+      toast('Тема изменена');
+    }));
     $('#resetData')?.addEventListener('click', () => {
       if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
       state = freshState();
@@ -2195,7 +2395,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '10.0',
+      appVersion: '10.4',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -2242,7 +2442,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '10.0',
+      appVersion: '10.4',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -2374,6 +2574,15 @@ ${reportList(state.goals, goal => { const current = goalCurrent(goal); const per
 - Выполнение прошлой недели: ${previousHabits.rate}%
 ${reportList(state.habits, habit => `- ${habit.title}: месяц ${habitMonthPercent(habit)}%, серия ${habitStreak(habit)} дней, цель ${habit.targetPerWeek} раз в неделю`)}
 
+## Тренировки и восстановление
+
+- Рост: ${state.workoutProfile?.height || 'не указан'} см
+- Возраст: ${state.workoutProfile?.age || 'не указан'}
+- Вес: ${state.workoutProfile?.weight || 'не указан'} кг
+- Цель: ${workoutGoalLabel(state.workoutProfile?.goal || 'health')}
+- Уровень: ${workoutLevelLabel(state.workoutProfile?.level || 'beginner')}
+- План: ${state.workoutProfile?.days || 3} тренировок в неделю
+
 ## Автоматические выводы Alexander OS
 
 ${reportList(insights, item => `- ${item.text}`)}
@@ -2422,7 +2631,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 10;
+      state.version = 11;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -2460,6 +2669,7 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
   $('#globalAdd').addEventListener('click', openGlobalAdd);
+  $('#floatingAdd')?.addEventListener('click', openGlobalAdd);
 
   unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
   unlockPinForm?.addEventListener('submit', event => {
@@ -2481,6 +2691,12 @@ ${JSON.stringify(state, null, 2)}
       if (state.profile.lockOnBackground !== false && (security.pinEnabled || security.faceIdEnabled)) lockApp('Приложение заблокировано после сворачивания.');
     } else {
       checkTaskReminders();
+      if (appLocked && security.faceIdEnabled) {
+        clearTimeout(faceAutoTimer);
+        faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
+      } else if (appLocked && security.pinEnabled) {
+        setTimeout(() => unlockPinInput?.focus(), 120);
+      }
     }
   });
 
