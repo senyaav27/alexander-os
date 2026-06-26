@@ -55,8 +55,6 @@
   let security = loadSecurity();
   let lastActivityAt = Date.now();
   let appLocked = false;
-  let faceUnlockPending = false;
-  let faceAutoTimer = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -187,7 +185,7 @@
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
-    if (!['emerald', 'graphite', 'light', 'future'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
+    if (!['emerald', 'graphite', 'light'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -246,8 +244,6 @@
   let financeTab = 'overview';
   let taskFilter = 'today';
   let taskSearch = '';
-  let projectFilter = 'active';
-  let growthRange = 'month';
   let financeCompareCurrent = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
   let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
   let financeSelectedMonth = financeCompareCurrent;
@@ -263,7 +259,6 @@
   const lockScreen = $('#lockScreen');
   const lockHint = $('#lockHint');
   const lockError = $('#lockError');
-  const faceStatus = $('#faceStatus');
   const unlockFaceIdButton = $('#unlockFaceId');
   const unlockPinForm = $('#unlockPinForm');
   const unlockPinInput = $('#unlockPin');
@@ -276,10 +271,9 @@
   }
 
   function applyTheme() {
-    if (state.profile.theme === 'future') state.profile.theme = 'emerald';
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
-    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4' };
-    $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
+    const themeColor = state.profile.theme === 'light' ? '#edf5ef' : state.profile.theme === 'graphite' ? '#090d12' : '#03130b';
+    $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
   }
 
   function transactionsInRange(type, start, end) {
@@ -668,7 +662,6 @@
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
-    document.body.dataset.screen = currentScreen;
     const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс', settings: 'Настройки' };
     $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
@@ -780,56 +773,41 @@
 
   function renderTasks() {
     const today = todayISO();
-    const tomorrow = localISO(addDays(new Date(), 1));
+    const nextWeek = localISO(addDays(new Date(), 7));
     const normalizedSearch = taskSearch.trim().toLowerCase();
-    const baseTasks = state.tasks.filter(task => !normalizedSearch || `${task.title} ${task.project} ${task.notes}`.toLowerCase().includes(normalizedSearch));
+    let tasks = state.tasks.filter(task => {
+      if (normalizedSearch && !`${task.title} ${task.project} ${task.notes}`.toLowerCase().includes(normalizedSearch)) return false;
+      if (taskFilter === 'today') return task.due === today;
+      if (taskFilter === 'overdue') return task.status !== 'done' && task.due && task.due < today;
+      if (taskFilter === 'week') return task.due && task.due >= today && task.due <= nextWeek;
+      return true;
+    });
     const priorityOrder = { high: 0, medium: 1, low: 2 };
-    const sorted = baseTasks.slice().sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.due || '9999').localeCompare(b.due || '9999') || (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
-    const todayTasks = sorted.filter(task => task.due === today && task.status !== 'done');
-    const tomorrowTasks = sorted.filter(task => task.due === tomorrow && task.status !== 'done');
-    const planTasks = sorted.filter(task => task.status !== 'done');
-    const completed = sorted.filter(task => task.status === 'done').slice(0, 8);
-
-    const tabBar = `<section class="tabs task-view-tabs">
-      ${[['today','Сегодня'],['plan','План'],['notes','Заметки']].map(([key,label]) => `<button class="tab ${taskFilter === key ? 'active' : ''}" type="button" data-task-filter="${key}">${label}</button>`).join('')}
-    </section>`;
-
-    if (taskFilter === 'notes') {
-      app.innerHTML = `${tabBar}${knowledgeSectionMarkup(12)}`;
-      bindCommon();
-      bindKnowledgeInline();
-      $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
-      return;
-    }
+    tasks = tasks.sort((a, b) => (a.status === 'done') - (b.status === 'done') || (a.due || '9999').localeCompare(b.due || '9999') || (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+    const active = tasks.filter(task => task.status !== 'done');
+    const completed = tasks.filter(task => task.status === 'done');
 
     app.innerHTML = `
-      ${tabBar}
-      <section class="task-search-row"><input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Найти задачу"></section>
-      ${taskFilter === 'today' ? `
-        <section class="section compact-section">
-          <div class="section-head"><h2>Сегодня, ${dateText(today)}</h2><span class="badge">${todayTasks.length}</span></div>
-          <div class="list compact-list">${todayTasks.length ? todayTasks.map(taskItem).join('') : empty('На сегодня задач нет.')}</div>
-        </section>
-        <section class="section compact-section">
-          <div class="section-head"><h2>Завтра, ${dateText(tomorrow)}</h2><span class="badge">${tomorrowTasks.length}</span></div>
-          <div class="list compact-list">${tomorrowTasks.length ? tomorrowTasks.map(taskItem).join('') : empty('На завтра задач нет.')}</div>
-        </section>` : `
-        <section class="section compact-section">
-          <div class="section-head"><h2>План</h2><span class="badge">${planTasks.length}</span></div>
-          <div class="list compact-list">${planTasks.length ? planTasks.map(taskItem).join('') : empty('Активных задач нет.')}</div>
-        </section>
-        <section class="section compact-section">
-          <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
-          <div class="list compact-list">${completed.length ? completed.map(taskItem).join('') : empty('Выполненных задач пока нет.')}</div>
-        </section>`}
-      <section class="task-ideas-link card" data-task-filter-jump="notes">
-        <div><small>Идеи и заметки</small><strong>${state.notes.length} записей в ${state.noteFolders.length} папках</strong></div><span>›</span>
-      </section>`;
+      <section class="toolbar-card">
+        <div class="filter-row">
+          ${[['today', 'Сегодня'], ['overdue', 'Просрочено'], ['week', '7 дней'], ['all', 'Все']].map(([key, label]) => `<button class="chip ${taskFilter === key ? 'active' : ''}" type="button" data-task-filter="${key}">${label}</button>`).join('')}
+        </div>
+        <input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Поиск задач">
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Активные</h2><span class="badge">${active.length}</span></div>
+        <div class="list">${active.length ? active.map(taskItem).join('') : empty('В этом фильтре активных задач нет.')}</div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
+        <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
+      </section>
+      ${knowledgeSectionMarkup()}`;
 
     bindCommon();
-    $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
-    $('[data-task-filter-jump]')?.addEventListener('click', () => { taskFilter = 'notes'; renderTasks(); });
-    $('#taskSearch')?.addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
+    bindKnowledgeInline();
+    $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
+    $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
   function knowledgeSectionMarkup(limit = 4) {
@@ -908,7 +886,7 @@
         <div class="finance-hero-head">
           <div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div>
           <div class="finance-head-actions">
-            <label class="hero-month-picker"><span>Месяц</span><select id="financeMonthPicker">${monthsForSelect().map(key => `<option value="${key}" ${key === analytics.selectedMonth ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('')}</select></label>
+            <label class="hero-month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label>
             <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
           </div>
         </div>
@@ -1135,21 +1113,27 @@
   }
 
   function renderProjects() {
-    const visible = state.projects.filter(project => projectFilter === 'archive' ? project.status === 'completed' : project.status !== 'completed');
-    const activeClients = visible.filter(project => project.type === 'client');
-    const ownProjects = visible.filter(project => project.type !== 'client');
+    const active = state.projects.filter(project => project.status === 'active' || project.status === 'growth');
+    const expected = sum(active.map(project => project.value));
+    const monthStart = startOfMonth(new Date());
+    const monthEnd = endOfMonth(new Date());
+    const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
     app.innerHTML = `
-      <section class="tabs project-tabs">
-        <button class="tab ${projectFilter === 'active' ? 'active' : ''}" type="button" data-project-filter="active">Активные</button>
-        <button class="tab ${projectFilter === 'archive' ? 'active' : ''}" type="button" data-project-filter="archive">Архив</button>
+      <section class="hero compact">
+        <p class="eyebrow">Проекты</p>
+        <div class="kpi">${active.length}</div>
+        <p>Здесь хранятся клиенты и собственные проекты. Если указать фактический доход проекта, он автоматически попадёт в «Финансы» и в общий баланс.</p>
       </section>
-      ${activeClients.length ? `<section class="section compact-section"><div class="section-head"><h2>Клиенты</h2><span class="badge">${activeClients.length}</span></div><div class="list project-list">${activeClients.map(projectItem).join('')}</div></section>` : ''}
-      ${ownProjects.length ? `<section class="section compact-section"><div class="section-head"><h2>Собственные проекты</h2><span class="badge">${ownProjects.length}</span></div><div class="list project-list">${ownProjects.map(projectItem).join('')}</div></section>` : ''}
-      ${!visible.length ? empty(projectFilter === 'archive' ? 'В архиве пока нет проектов.' : 'Добавьте первый клиентский или собственный проект.') : ''}
-      <button class="btn primary full add-project-button" type="button" id="addProject">＋ Новый проект</button>`;
+      <section class="stats grid two">
+        <div class="stat-card"><small>Ожидаемый доход</small><strong>${money(expected)}</strong></div>
+        <div class="stat-card"><small>Получено от проектов</small><strong class="positive">${money(actual)}</strong></div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Все проекты</h2><button class="link-btn" type="button" id="addProject">Добавить</button></div>
+        <div class="list">${state.projects.length ? state.projects.map(projectItem).join('') : empty('Добавьте первый клиентский или собственный проект.')}</div>
+      </section>`;
     bindCommon();
-    $$('[data-project-filter]').forEach(button => button.addEventListener('click', () => { projectFilter = button.dataset.projectFilter; renderProjects(); }));
-    $('#addProject')?.addEventListener('click', () => openProjectModal());
+    $('#addProject').addEventListener('click', () => openProjectModal());
   }
 
   function projectItem(project) {
@@ -1158,15 +1142,17 @@
     const actual = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId === project.id && dateInRange(tx.date, monthStart, monthEnd)).map(tx => tx.amount));
     const overdue = project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO());
     return `<div class="card project-card ${overdue ? 'overdue-card' : ''}">
-      <div class="project-card-head"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${projectTypeText(project.type)}</div></div><strong>${money(project.value)}</strong></div>
-      <div class="project-compact-stats">
-        <span><small>Получено</small><b>${money(actual)}</b></span>
-        <span><small>Ожидается</small><b>${money(project.value)}</b></span>
-        <span><small>Статус</small><b>${projectStatusText(project.status)}</b></span>
+      <div class="metric-row"><div><div class="item-title">${escapeHtml(project.name)}</div><div class="item-meta">${projectTypeText(project.type)}</div></div><span class="badge ${project.status === 'active' ? 'low' : project.status === 'paused' ? 'high' : 'medium'}">${projectStatusText(project.status)}</span></div>
+      <div class="project-metrics two-cols">
+        <div><small>Ожидается</small><strong>${money(project.value)}</strong></div>
+        <div><small>Получено за месяц</small><strong class="positive">${money(actual)}</strong></div>
       </div>
-      ${project.paymentDate ? `<div class="project-date-row"><span>Следующая оплата</span><b>${dateText(project.paymentDate)}</b></div>` : ''}
-      ${project.next ? `<div class="project-next">${escapeHtml(project.next)}</div>` : ''}
-      <div class="project-footer"><span class="item-meta">${paymentStatusText(project.paymentStatus)}</span><div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}" aria-label="Редактировать">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}" aria-label="Удалить">×</button></div></div>
+      ${project.next ? `<div class="insight" style="margin-top:12px">Следующий шаг: ${escapeHtml(project.next)}</div>` : ''}
+      ${project.notes ? `<div class="item-note">${escapeHtml(project.notes)}</div>` : ''}
+      <div class="project-footer">
+        <span class="item-meta">${project.paymentDate ? `Ближайшая оплата ${dateText(project.paymentDate)}` : paymentStatusText(project.paymentStatus)}</span>
+        <div class="item-actions"><button class="mini-btn edit-project" type="button" data-id="${project.id}">✎</button><button class="mini-btn delete-project" type="button" data-id="${project.id}">×</button></div>
+      </div>
     </div>`;
   }
 
@@ -1236,41 +1222,51 @@
 
   function renderGrowth() {
     const analytics = getFinanceAnalytics();
-    const months = growthRange === 'year' ? 12 : growthRange === 'week' ? 3 : 6;
-    const moneySeries = monthlyMoneySeries(months);
-    const capitalSeries = estimatedCapitalSeries(months);
+    const moneySeries = monthlyMoneySeries(6);
+    const capitalSeries = estimatedCapitalSeries(6);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
     const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
+    const insights = systemInsights();
     const activeGoals = state.goals.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     app.innerHTML = `
-      <section class="tabs progress-period-tabs">
-        ${[['week','Неделя'],['month','Месяц'],['year','Год']].map(([key,label]) => `<button class="tab ${growthRange === key ? 'active' : ''}" type="button" data-growth-range="${key}">${label}</button>`).join('')}
+      <section class="progress-hero dynamics-hero">
+        <div><p class="eyebrow">Динамика системы</p><h2>${money(analytics.capital)}</h2><p>Изменения денег, задач, целей и дисциплины за последние месяцы.</p></div>
+        <div class="score-ring large" style="--score:${overallScore()}"><span>${overallScore()}%</span></div>
       </section>
-      <section class="card progress-main-card">
-        <small>Капитал</small><strong>${money(analytics.capital)}</strong><span class="positive">Динамика за выбранный период</span>
-        ${compactMoneyChart(capitalSeries)}
+      <section class="tabs progress-tabs">
+        <button class="tab active" type="button" data-growth-scroll="capitalDynamics">Капитал</button>
+        <button class="tab" type="button" data-growth-scroll="incomeDynamics">Деньги</button>
+        <button class="tab" type="button" data-growth-scroll="goalDynamics">Цели</button>
+        <button class="tab" type="button" data-growth-scroll="disciplineDynamics">Дисциплина</button>
       </section>
-      <section class="card progress-money-card">
-        <div class="section-head"><h2>Доходы и расходы</h2><span class="badge">${growthRange === 'year' ? '12 месяцев' : growthRange === 'week' ? 'короткий период' : '6 месяцев'}</span></div>
-        ${dualBarChart(moneySeries)}
-        <div class="progress-income-expense"><span><small>Доход</small><b class="positive">${money(analytics.monthIncome)}</b></span><span><small>Расход</small><b class="negative">${money(analytics.monthExpense)}</b></span><span><small>Накоплено</small><b>${money(analytics.monthBalance)}</b></span></div>
+      <section class="section" id="capitalDynamics">
+        <div class="section-head"><h2>Динамика капитала</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${compactMoneyChart(capitalSeries)}<div class="metric-row trend-footer"><span>Сейчас</span><strong>${money(analytics.capital)}</strong></div></div>
       </section>
-      <section class="growth-mini-grid">
-        <div class="card"><small>Задачи</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
-        <div class="card"><small>Привычки</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
+      <section class="section" id="incomeDynamics">
+        <div class="section-head"><h2>Доходы и расходы</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>
-      <section class="section compact-section" id="goalDynamics">
+      <section class="growth-summary dynamics-summary">
+        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
+        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
+      </section>
+      <section class="section" id="goalDynamics">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
-        <div class="list goal-list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
+        <div class="list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
       </section>
-      <section class="section compact-section">
+      <section class="section" id="disciplineDynamics">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
         <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h2>Сигналы</h2></div>
+        <div class="list">${insights.length ? insights.slice(0, 5).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Данных пока недостаточно для выводов.</div>'}</div>
       </section>`;
     bindCommon();
-    $$('[data-growth-range]').forEach(button => button.addEventListener('click', () => { growthRange = button.dataset.growthRange; renderGrowth(); }));
+    $$('[data-growth-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.growthScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
   }
@@ -1383,7 +1379,7 @@
   }
 
   function openGlobalAdd() {
-    openOtherActionsMenu();
+    openQuickExpenseModal();
   }
 
   function openQuickExpenseModal() {
@@ -1429,13 +1425,11 @@
 
   function openOtherActionsMenu() {
     openModal('Добавить', `
-      <div class="quick-sheet vnext-quick-sheet">
-        <button type="button" class="primary-action" data-quick="expense"><span>−</span><b>Расход</b><small>Внести за несколько секунд</small></button>
+      <div class="quick-sheet">
         <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
+        <button type="button" data-quick="expense"><span>−</span><b>Расход</b><small>Быстрый ввод расхода</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
-        <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
-        <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
-        <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
+        <button type="button" data-quick="account"><span>▣</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
     $$('[data-quick]', modalBody).forEach(button => button.addEventListener('click', () => {
       const action = button.dataset.quick;
@@ -1444,8 +1438,6 @@
       if (action === 'expense') openQuickExpenseModal();
       if (action === 'task') openTaskModal();
       if (action === 'account') openAccountModal();
-      if (action === 'project') openProjectModal();
-      if (action === 'note') openKnowledgeNoteModal();
     }));
   }
 
@@ -1867,53 +1859,27 @@
     lockScreen.hidden = false;
     unlockFaceIdButton.hidden = !security.faceIdEnabled;
     unlockPinForm.hidden = !security.pinEnabled;
-    const faceOrb = $('.face-orb');
-    if (faceOrb) faceOrb.hidden = !security.faceIdEnabled;
-    $('.lock-divider')?.toggleAttribute('hidden', !security.pinEnabled || !security.faceIdEnabled);
-    $('.lock-card h2').textContent = security.faceIdEnabled ? 'Разблокировка Face ID' : 'Введите PIN-код';
-    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход, чтобы открыть личные данные.' : 'Введи PIN-код для доступа к данным.');
+    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход через Face ID или введи PIN-код.' : 'Введи PIN-код для доступа к данным.');
     lockError.textContent = '';
     unlockPinInput.value = '';
-    if (faceStatus) {
-      faceStatus.hidden = !security.faceIdEnabled;
-      faceStatus.className = 'face-status waiting';
-      faceStatus.innerHTML = '<span></span> Ожидание Face ID';
-    }
-    clearTimeout(faceAutoTimer);
-    if (security.faceIdEnabled && document.visibilityState !== 'hidden') {
-      faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
-    } else if (security.pinEnabled && document.visibilityState !== 'hidden') {
-      setTimeout(() => unlockPinInput?.focus(), 120);
-    }
+    setTimeout(() => unlockPinInput?.focus(), 120);
   }
 
   function unlockApp() {
     appLocked = false;
-    faceUnlockPending = false;
-    clearTimeout(faceAutoTimer);
     document.body.classList.remove('app-locked');
     if (lockScreen) lockScreen.hidden = true;
     if (lockError) lockError.textContent = '';
     lastActivityAt = Date.now();
   }
 
-  async function unlockWithFaceId(options = {}) {
-    if (faceUnlockPending) return false;
+  async function unlockWithFaceId() {
     if (!security.faceIdEnabled || !security.faceCredentialId || !securityAvailable()) {
-      lockError.textContent = 'Face ID недоступен на этом устройстве.';
-      if (faceStatus) {
-        faceStatus.className = 'face-status error';
-        faceStatus.innerHTML = '<span></span> Face ID недоступен';
-      }
+      lockError.textContent = 'Face ID недоступен. Используй PIN-код.';
       return false;
     }
-    faceUnlockPending = true;
     try {
-      lockError.textContent = '';
-      if (faceStatus) {
-        faceStatus.className = 'face-status scanning';
-        faceStatus.innerHTML = '<span></span> Проверка Face ID';
-      }
+      lockError.textContent = 'Ожидаю подтверждение Face ID…';
       const challenge = crypto.getRandomValues(new Uint8Array(32));
       await navigator.credentials.get({
         publicKey: {
@@ -1921,24 +1887,14 @@
           timeout: 60000,
           userVerification: 'required',
           allowCredentials: [{ type: 'public-key', id: base64ToBytes(security.faceCredentialId), transports: ['internal'] }]
-        },
-        mediation: 'optional'
+        }
       });
       security.failedAttempts = 0;
-      if (faceStatus) {
-        faceStatus.className = 'face-status success';
-        faceStatus.innerHTML = '<span></span> Успешно';
-      }
-      setTimeout(unlockApp, 160);
+      unlockApp();
       return true;
     } catch (error) {
       console.error(error);
-      faceUnlockPending = false;
-      if (faceStatus) {
-        faceStatus.className = 'face-status error';
-        faceStatus.innerHTML = '<span></span> Повтори Face ID';
-      }
-      lockError.textContent = options.automatic ? 'Не удалось запустить Face ID автоматически. Нажми «Повторить Face ID».' : error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID.';
+      lockError.textContent = error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID. Используй PIN.';
       return false;
     }
   }
@@ -1993,7 +1949,11 @@
 
   function disablePin() {
     if (!security.pinEnabled) return;
-    if (!confirm(security.faceIdEnabled ? 'Отключить PIN-код? Face ID останется единственным способом входа.' : 'Отключить PIN-код? Защита приложения будет выключена.')) return;
+    if (security.faceIdEnabled) {
+      alert('Сначала отключи Face ID. PIN остаётся резервным способом входа.');
+      return;
+    }
+    if (!confirm('Отключить PIN-код? Защита приложения станет слабее.')) return;
     security.pinEnabled = false;
     security.pinHash = '';
     security.pinSalt = '';
@@ -2009,6 +1969,10 @@
       alert('Face ID для веб-приложения доступен только на поддерживаемом устройстве через HTTPS. Открой установленный Alexander OS на iPhone.');
       return;
     }
+    if (!security.pinEnabled) {
+      alert('Сначала создай резервный PIN-код. Он нужен, если Face ID временно недоступен.');
+      return;
+    }
     try {
       const credential = await navigator.credentials.create({
         publicKey: {
@@ -2022,7 +1986,7 @@
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
           timeout: 60000,
           attestation: 'none',
-          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'discouraged', userVerification: 'required' }
+          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' }
         }
       });
       if (!credential) throw new Error('Credential was not created');
@@ -2056,13 +2020,13 @@
         <div><strong>${security.pinEnabled || security.faceIdEnabled ? 'Защита включена' : 'Защита выключена'}</strong><small>Локальная блокировка приложения на этом устройстве</small></div>
       </div>
       <div class="settings-list card security-list">
-        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Можно использовать отдельно или вместе с Face ID'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
-        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID останется единственным способом входа</small></span><b>›</b></button>' : ''}
-        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Автоматически при открытии' : securityAvailable() ? 'Можно включить без PIN' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
+        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Резервный способ входа'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
+        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID может остаться без резервного входа</small></span><b>›</b></button>' : ''}
+        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Включён на этом устройстве' : securityAvailable() ? 'Быстрая разблокировка' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
         <label class="settings-row select-row"><span>Автоблокировка<small>При бездействии</small></span><select id="autoLockMinutes"><option value="0" ${Number(state.profile.autoLockMinutes || 0) === 0 ? 'selected' : ''}>Никогда</option><option value="1" ${Number(state.profile.autoLockMinutes || 0) === 1 ? 'selected' : ''}>Через 1 минуту</option><option value="5" ${Number(state.profile.autoLockMinutes || 0) === 5 ? 'selected' : ''}>Через 5 минут</option><option value="15" ${Number(state.profile.autoLockMinutes || 0) === 15 ? 'selected' : ''}>Через 15 минут</option></select></label>
         <label class="settings-row switch-row"><span>Блокировать при сворачивании<small>Рекомендуется для финансовых данных</small></span><input id="lockOnBackground" type="checkbox" ${state.profile.lockOnBackground !== false ? 'checked' : ''}></label>
       </div>
-      <div class="privacy-note"><b>Важно:</b> Face ID запускается автоматически при открытии, если он включён. Приложение не блокируется, пока ты сам не включишь Face ID или PIN-код.</div>
+      <div class="privacy-note"><b>Важно:</b> Face ID здесь защищает вход в локальное приложение. Для полной серверной авторизации и облачной синхронизации потребуется отдельный backend.</div>
     `, null, { hideActions: true });
     $('#securityPin')?.addEventListener('click', setupPin);
     $('#disablePin')?.addEventListener('click', disablePin);
@@ -2071,82 +2035,99 @@
     $('#lockOnBackground')?.addEventListener('change', event => { state.profile.lockOnBackground = event.target.checked; saveState({ snapshot: false }); toast('Настройка сохранена'); });
   }
 
-  function openProfileSettings() {
-    openModal('Профиль', `
-      <div class="profile-editor-head"><div class="settings-avatar">S</div><div><b>Alexander OS</b><small>Персональные настройки</small></div></div>
-      <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}" required></div>
-    `, form => {
-      const data = Object.fromEntries(new FormData(form));
-      state.profile.name = String(data.name || '').trim() || 'Пользователь';
-      return true;
-    });
-  }
+  function renderSettings() {
+    const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
+    const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
+    const securityStatus = security.faceIdEnabled ? 'Face ID + PIN' : security.pinEnabled ? 'PIN-код' : 'Не включена';
+    app.innerHTML = `
+      <section class="settings-screen v10-settings">
+        <section class="card settings-profile-card v10-profile-card">
+          <div class="settings-avatar">S</div>
+          <div><small>Alexander OS v10</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Финансы, цели, задачи и прогресс в одной системе</p></div>
+          <span class="security-status ${security.pinEnabled || security.faceIdEnabled ? 'active' : ''}">${security.pinEnabled || security.faceIdEnabled ? 'Защищено' : 'Без защиты'}</span>
+        </section>
 
-  function openFinancePreferences() {
-    openModal('Финансы и цели', `
-      <div class="form-grid"><div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div><div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div></div>
-      <div class="form-grid"><div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div><div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div></div>
-    `, form => {
-      const data = Object.fromEntries(new FormData(form));
-      state.profile.capitalTarget = Number(data.capitalTarget || 0);
-      state.profile.monthlyIncomeTarget = Number(data.monthlyIncomeTarget || 0);
-      state.profile.cushionTarget = Number(data.cushionTarget || 0);
-      state.profile.monthlyExpenseLimit = Number(data.monthlyExpenseLimit || 0);
-      return true;
-    });
-  }
+        <section class="settings-group">
+          <h3>Профиль и цели</h3>
+          <form id="profileForm" class="card settings-form">
+            <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
+            <div class="form-grid">
+              <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
+              <div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
+              <div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
+            </div>
+            <button class="btn primary full" type="submit">Сохранить профиль</button>
+          </form>
+        </section>
 
-  function openAppearanceSettings() {
-    openModal('Внешний вид', `
-      <p class="modal-description">Три темы используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
-      <div class="theme-picker exact-theme-picker" role="radiogroup">
-        ${[['emerald','Изумрудная','#42e778','Основная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
-      </div>`, null, { hideActions: true });
-    $$('[data-theme-modal]', modalBody).forEach(button => button.addEventListener('click', () => {
-      state.profile.theme = button.dataset.themeModal;
+        <section class="settings-group">
+          <h3>Темы</h3>
+          <div class="card theme-picker" role="radiogroup" aria-label="Тема приложения">
+            ${[
+              ['emerald', 'Изумрудная', '#20c66f'],
+              ['graphite', 'Графитовая', '#606a76'],
+              ['light', 'Светлая', '#f4f7f5']
+            ].map(([key, label, color]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-choice="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${key === 'emerald' ? 'Основная' : key === 'graphite' ? 'Строгая' : 'Дневная'}</small></button>`).join('')}
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Безопасность</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="securitySettings"><span>Защита приложения<small>${securityStatus} · автоблокировка ${Number(state.profile.autoLockMinutes || 0) ? `${state.profile.autoLockMinutes} мин.` : 'выключена'}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><span>Заблокировать сейчас<small>Проверить экран входа</small></span><b>⌾</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Данные и резервные копии</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="exportEncryptedData"><span>Защищённая копия<small>Файл .aos с паролем и AES-GCM</small></span><b>↗</b></button>
+            <button class="settings-row" type="button" id="exportData"><span>Обычная копия JSON<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Полное резервное копирование'}</small></span><b>›</b></button>
+            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить JSON или защищённый .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
+            <button class="settings-row" type="button" id="exportChatGPT"><span>Отчёт для ChatGPT<small>Финансы, задачи, проекты, цели и заметки</small></span><b>↗</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Приложение</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="installHelp"><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Конфиденциальность</h3>
+          <div class="card privacy-card v10-privacy-card">
+            <div class="privacy-icon">⌾</div>
+            <div><b>Данные остаются на устройстве</b><p>Обычная база хранится локально в браузере. Для передачи используй защищённую резервную копию .aos.</p></div>
+          </div>
+          <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
+        </section>
+        <p class="app-version">Alexander OS · версия 10.0</p>
+      </section>`;
+
+    $('#profileForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(event.currentTarget));
+      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0) };
+      saveState();
+      render();
+      toast('Профиль сохранён');
+    });
+    $$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
+      state.profile.theme = button.dataset.themeChoice;
       saveState({ snapshot: false });
       applyTheme();
-      closeModal();
       renderSettings();
       toast('Тема изменена');
     }));
-  }
-
-  function renderSettings() {
-    const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
-    const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены' : 'Выключены';
-    const securityStatus = security.faceIdEnabled && security.pinEnabled ? 'Face ID + PIN' : security.faceIdEnabled ? 'Face ID' : security.pinEnabled ? 'PIN-код' : 'Не настроена';
-    const themeName = ({ emerald:'Изумрудная', graphite:'Графитовая', light:'Светлая' })[state.profile.theme] || 'Изумрудная';
-    app.innerHTML = `
-      <section class="settings-screen exact-settings">
-        <button class="card settings-profile-card compact-profile" type="button" id="profileSettings">
-          <div class="settings-avatar">S</div><div><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Премиум-профиль Alexander OS</p></div><span>›</span>
-        </button>
-        <section class="settings-list card exact-settings-list">
-          <button class="settings-row" type="button" id="securitySettings"><i class="settings-icon">⌾</i><span>Безопасность<small>${securityStatus} · автоблокировка</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="appearanceSettings"><i class="settings-icon">◉</i><span>Внешний вид<small>${themeName}, шрифты и контраст</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="financePreferences"><i class="settings-icon">▣</i><span>Финансы<small>Валюта, категории и цели</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="notificationSettings"><i class="settings-icon">♢</i><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
-        </section>
-        <section class="settings-list card exact-settings-list">
-          <button class="settings-row featured" type="button" id="exportEncryptedData"><i class="settings-icon">⇧</i><span>Резервное копирование<small>Защищённая копия .aos</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="exportData"><i class="settings-icon">⇩</i><span>Экспорт JSON<small>Полная копия всех данных</small></span><b>›</b></button>
-          <label class="settings-row file-row"><i class="settings-icon">↺</i><span>Импорт данных<small>Точное восстановление JSON или .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
-          <button class="settings-row" type="button" id="exportChatGPT"><i class="settings-icon">✦</i><span>Отчёт для ChatGPT<small>Финансы, задачи, цели и заметки</small></span><b>›</b></button>
-        </section>
-        <section class="settings-list card exact-settings-list">
-          <button class="settings-row" type="button" id="openKnowledgeBase"><i class="settings-icon">◫</i><span>База мыслей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="installHelp"><i class="settings-icon">＋</i><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
-        </section>
-        <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS v10 · Exact Design</p>
-      </section>`;
-
-    $('#profileSettings')?.addEventListener('click', openProfileSettings);
     $('#securitySettings')?.addEventListener('click', openSecuritySettings);
-    $('#appearanceSettings')?.addEventListener('click', openAppearanceSettings);
-    $('#financePreferences')?.addEventListener('click', openFinancePreferences);
     $('#lockNow')?.addEventListener('click', () => lockApp());
     $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
     $('#notificationSettings')?.addEventListener('click', requestNotifications);
@@ -2214,7 +2195,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '10.4',
+      appVersion: '10.0',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -2261,7 +2242,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '10.4',
+      appVersion: '10.0',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -2479,7 +2460,6 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
   $('#globalAdd').addEventListener('click', openGlobalAdd);
-  $('#floatingAdd')?.addEventListener('click', openGlobalAdd);
 
   unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
   unlockPinForm?.addEventListener('submit', event => {
@@ -2501,12 +2481,6 @@ ${JSON.stringify(state, null, 2)}
       if (state.profile.lockOnBackground !== false && (security.pinEnabled || security.faceIdEnabled)) lockApp('Приложение заблокировано после сворачивания.');
     } else {
       checkTaskReminders();
-      if (appLocked && security.faceIdEnabled) {
-        clearTimeout(faceAutoTimer);
-        faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
-      } else if (appLocked && security.pinEnabled) {
-        setTimeout(() => unlockPinInput?.focus(), 120);
-      }
     }
   });
 

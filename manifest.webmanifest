@@ -1,12 +1,12 @@
 {
   "name": "Alexander OS v10",
   "short_name": "Alexander OS",
-  "description": "Личная система финансов, задач, проектов, прогресса и защищённых данных.",
+  "description": "Личная система капитала, задач, проектов и прогресса.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#03110b",
-  "theme_color": "#03110b",
+  "background_color": "#03130b",
+  "theme_color": "#03130b",
   "lang": "ru",
   "icons": [
     {
