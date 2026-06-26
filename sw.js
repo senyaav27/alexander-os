@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-vnext-10-3';
-const ASSETS = ['./', './index.html', './styles.css?v=10.3', './app.js?v=10.3', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v10-4-exact';
+const ASSETS = ['./', './index.html', './styles.css?v=10.4-exact', './app.js?v=10.4-exact', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
