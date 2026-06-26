@@ -2,6 +2,62 @@
   'use strict';
 
   const STORAGE_KEY = 'alexander_os_v1';
+  const SECURITY_KEY = 'alexander_os_security_v10';
+  const memoryStorage = new Map();
+  const safeStorage = {
+    getItem(key) {
+      try { return window.localStorage.getItem(key); } catch (error) { return memoryStorage.has(key) ? memoryStorage.get(key) : null; }
+    },
+    setItem(key, value) {
+      try { window.localStorage.setItem(key, value); } catch (error) { memoryStorage.set(key, String(value)); }
+    },
+    removeItem(key) {
+      try { window.localStorage.removeItem(key); } catch (error) { memoryStorage.delete(key); }
+    }
+  };
+  function loadSecurity() {
+    try {
+      const parsed = JSON.parse(safeStorage.getItem(SECURITY_KEY) || '{}');
+      return {
+        pinEnabled: Boolean(parsed.pinEnabled && parsed.pinHash && parsed.pinSalt),
+        pinHash: parsed.pinHash || '',
+        pinSalt: parsed.pinSalt || '',
+        faceIdEnabled: Boolean(parsed.faceIdEnabled && parsed.faceCredentialId),
+        faceCredentialId: parsed.faceCredentialId || '',
+        failedAttempts: 0,
+        blockedUntil: 0
+      };
+    } catch (error) {
+      return { pinEnabled: false, pinHash: '', pinSalt: '', faceIdEnabled: false, faceCredentialId: '', failedAttempts: 0, blockedUntil: 0 };
+    }
+  }
+
+  function saveSecurity() {
+    safeStorage.setItem(SECURITY_KEY, JSON.stringify({
+      pinEnabled: security.pinEnabled,
+      pinHash: security.pinHash,
+      pinSalt: security.pinSalt,
+      faceIdEnabled: security.faceIdEnabled,
+      faceCredentialId: security.faceCredentialId
+    }));
+  }
+
+  const bytesToBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const base64ToBytes = value => Uint8Array.from(atob(value), char => char.charCodeAt(0));
+  const concatBytes = (...parts) => {
+    const arrays = parts.map(part => part instanceof Uint8Array ? part : new Uint8Array(part));
+    const output = new Uint8Array(arrays.reduce((total, part) => total + part.length, 0));
+    let offset = 0;
+    arrays.forEach(part => { output.set(part, offset); offset += part.length; });
+    return output;
+  };
+
+  let security = loadSecurity();
+  let lastActivityAt = Date.now();
+  let appLocked = false;
+  let faceUnlockPending = false;
+  let faceAutoTimer = null;
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -27,7 +83,7 @@
   const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
 
   const INCOME_CATEGORIES = [
-    ['salary', 'Зарплата'], ['client', 'Клиенты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
+    ['salary', 'Зарплата'], ['client', 'Клиенты'], ['project_income', 'Свои проекты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
   ];
   const EXPENSE_CATEGORIES = [
     ['groceries', 'Продукты'], ['cafes', 'Кафе и доставка'], ['transport', 'Транспорт'], ['taxi', 'Такси'], ['housing', 'Жильё'], ['subscriptions', 'Подписки'], ['health', 'Здоровье'], ['clothing', 'Одежда'], ['entertainment', 'Развлечения'], ['education', 'Обучение'], ['business', 'Бизнес'], ['gifts', 'Подарки'], ['debt_payment', 'Долги и кредиты'], ['travel', 'Путешествия'], ['other_expense', 'Другое']
@@ -37,18 +93,22 @@
 
   function freshState() {
     return {
-      version: 8,
+      version: 10,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
         monthlyIncomeTarget: 200000,
         cushionTarget: 200000,
         monthlyExpenseLimit: 70000,
-        theme: 'dark',
+        theme: 'emerald',
         notificationsEnabled: false,
         lastBackup: null,
         lastChatGPTExport: null,
-        progressRange: '6m'
+        progressRange: '6m',
+        lastExpenseCategory: 'groceries',
+        lastExpenseAccountId: '',
+        autoLockMinutes: 1,
+        lockOnBackground: true
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -112,7 +172,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 8,
+      version: 10,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -126,6 +186,8 @@
       notes: Array.isArray(raw.notes) ? raw.notes : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
+
+    if (!['emerald', 'graphite', 'light', 'future'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -170,7 +232,7 @@
 
   function loadState() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = safeStorage.getItem(STORAGE_KEY);
       return saved ? migrateState(JSON.parse(saved)) : freshState();
     } catch (error) {
       console.error(error);
@@ -179,13 +241,14 @@
   }
 
   let state = loadState();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   let currentScreen = 'dashboard';
   let financeTab = 'overview';
   let taskFilter = 'today';
   let taskSearch = '';
   let financeCompareCurrent = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
   let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
+  let financeSelectedMonth = financeCompareCurrent;
   let modalAction = null;
 
   const app = $('#app');
@@ -195,19 +258,25 @@
   const modalForm = $('#modalForm');
   const modalActions = $('#modalActions');
   const modalSubmit = $('#modalSubmit');
-  const settingsModal = $('#settingsModal');
-  const settingsBody = $('#settingsBody');
+  const lockScreen = $('#lockScreen');
+  const lockHint = $('#lockHint');
+  const lockError = $('#lockError');
+  const faceStatus = $('#faceStatus');
+  const unlockFaceIdButton = $('#unlockFaceId');
+  const unlockPinForm = $('#unlockPinForm');
+  const unlockPinInput = $('#unlockPin');
 
-  function saveState() {
-    state.version = 7;
-    recordSnapshot();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  function saveState(options = {}) {
+    state.version = 10;
+    if (options.snapshot !== false) recordSnapshot();
+    safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
-    document.documentElement.dataset.theme = state.profile.theme || 'dark';
-    const themeColor = state.profile.theme === 'light' ? '#eef6f0' : '#06140d';
-    $('meta[name="theme-color"]')?.setAttribute('content', themeColor);
+    document.documentElement.dataset.theme = state.profile.theme || 'emerald';
+    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#edf5ef', future: '#001710' };
+    $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
   }
 
   function transactionsInRange(type, start, end) {
@@ -222,18 +291,20 @@
     return state.obligations.filter(item => item.status === 'open' && (!type || item.type === type));
   }
 
-  function getFinanceAnalytics() {
+  function getFinanceAnalytics(selectedMonthKey = null) {
     const now = new Date();
-    const currentEnd = endOfToday(now);
+    const selectedKey = selectedMonthKey || monthKey(now);
+    const { start: monthStart, end: monthEndRange } = monthRange(selectedKey);
+    const isCurrentMonth = selectedKey === monthKey(now);
+    const currentEnd = isCurrentMonth ? endOfToday(now) : monthEndRange;
     const weekStart = startOfWeek(now);
     const weekDayIndex = (now.getDay() || 7) - 1;
     const previousWeekStart = addDays(weekStart, -7);
     const previousWeekEnd = endOfToday(addDays(previousWeekStart, weekDayIndex));
-    const monthStart = startOfMonth(now);
-    const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthDate = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1);
     const previousMonthStart = startOfMonth(previousMonthDate);
     const previousMonthLastDay = endOfMonth(previousMonthDate).getDate();
-    const comparableDay = Math.min(now.getDate(), previousMonthLastDay);
+    const comparableDay = isCurrentMonth ? Math.min(now.getDate(), previousMonthLastDay) : previousMonthLastDay;
     const previousMonthEnd = endOfToday(new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth(), comparableDay));
 
     const assets = sum(state.accounts.map(account => account.balance));
@@ -261,9 +332,9 @@
     transactionsInRange('expense', monthStart, currentEnd).forEach(tx => categories.set(tx.category, (categories.get(tx.category) || 0) + Number(tx.amount || 0)));
     const categoryRows = [...categories.entries()].map(([key, amount]) => ({ key, label: categoryLabel(key), amount })).sort((a, b) => b.amount - a.amount);
 
-    const daysElapsed = now.getDate();
-    const daysInMonth = endOfMonth(now).getDate();
-    const projectedExpense = daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
+    const daysInMonth = endOfMonth(monthStart).getDate();
+    const daysElapsed = isCurrentMonth ? now.getDate() : daysInMonth;
+    const projectedExpense = isCurrentMonth && daysElapsed > 0 ? Math.round(monthExpense / daysElapsed * daysInMonth) : monthExpense;
     const remainingLimit = Number(state.profile.monthlyExpenseLimit || 0) - monthExpense;
 
     return {
@@ -273,7 +344,7 @@
       monthIncome, previousMonthIncome,
       monthSalary, previousMonthSalary,
       todayExpense, monthBalance, savingsRate, optionalExpense, categoryRows, projectedExpense, remainingLimit,
-      weekStart, weekEnd: currentEnd, monthStart, monthEnd: currentEnd
+      weekStart, weekEnd: currentEnd, monthStart, monthEnd: currentEnd, selectedMonth: selectedKey, isCurrentMonth
     };
   }
 
@@ -297,7 +368,7 @@
       return [{ cls: 'warning', text: 'Добавляй каждый доход и расход. Без фактических операций приложение не сможет показать реальную динамику.' }];
     }
 
-    const weekChange = percentageChange(analytics.weekExpense, analytics.previousWeekExpense);
+    const weekChange = analytics.isCurrentMonth ? percentageChange(analytics.weekExpense, analytics.previousWeekExpense) : null;
     if (weekChange !== null) {
       if (weekChange > 15) insights.push({ cls: 'danger', text: `Расходы этой недели выросли на ${weekChange}% к прошлой. Проверь ежедневные траты, пока рост не стал новой нормой.` });
       if (weekChange < -10) insights.push({ cls: '', text: `Расходы этой недели снизились на ${Math.abs(weekChange)}%. Зафиксируй, от каких трат отказался, чтобы сохранить результат.` });
@@ -425,7 +496,10 @@
     if (change === 0) return '<span class="compare neutral">без изменений</span>';
     const rose = change > 0;
     const good = lowerIsBetter ? !rose : rose;
-    const verb = rose ? 'выросли' : 'снизились';
+    const feminine = new Set(['Зарплата', 'Дисциплина']);
+    const neuter = new Set(['Выполнение']);
+    const plural = new Set(['Доходы', 'Расходы', 'Сбережения']);
+    const verb = feminine.has(label) ? (rose ? 'выросла' : 'снизилась') : neuter.has(label) ? (rose ? 'выросло' : 'снизилось') : plural.has(label) ? (rose ? 'выросли' : 'снизились') : (rose ? 'вырос' : 'снизился');
     return `<span class="compare ${good ? 'good' : 'bad'}">${label} ${verb} на ${Math.abs(change)}%</span>`;
   }
 
@@ -591,10 +665,12 @@
   function render() {
     applyTheme();
     $('#todayLabel').textContent = fullDate();
-    const titles = { dashboard: 'Сегодня', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
-    $('#screenTitle').textContent = titles[currentScreen];
+    document.body.dataset.screen = currentScreen;
+    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс', settings: 'Настройки' };
+    $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
-    ({ dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth })[currentScreen]();
+    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth, settings: renderSettings }[currentScreen] || renderDashboard;
+    renderer();
   }
 
   function taskCompletionToday() {
@@ -626,76 +702,54 @@
 
   function renderDashboard() {
     const analytics = getFinanceAnalytics();
-    const score = overallScore();
     const mainTasks = state.tasks
       .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
       .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))
-      .slice(0, 3);
-    const overdueTasks = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
-    const overdueMoney = openObligations().filter(item => item.dueDate && item.dueDate < todayISO()).length;
-    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 7))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-    const hasData = Boolean(state.transactions.length || state.projects.length || state.accounts.some(account => Number(account.balance || 0) !== 0));
-    const monthLimit = Number(state.profile.monthlyExpenseLimit || 0);
-    const alertRows = [];
-    if (overdueTasks) alertRows.push(`<div class="alert-row danger"><b>${overdueTasks}</b><span>просроченных задач</span><button data-go="tasks">Открыть</button></div>`);
-    if (overdueMoney) alertRows.push(`<div class="alert-row danger"><b>${overdueMoney}</b><span>просроченных платежей</span><button data-go="finance">Открыть</button></div>`);
-    if (monthLimit > 0 && analytics.projectedExpense > monthLimit) alertRows.push(`<div class="alert-row warning"><b>${money(analytics.projectedExpense - monthLimit)}</b><span>прогноз превышения бюджета</span><button data-go="finance">Разобрать</button></div>`);
-    const initials = (state.profile.name || 'А').split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
-    const mainFocus = mainTasks[0]?.title || 'Определи 3 главные задачи дня';
+      .slice(0, 4);
+    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+    const capitalSeries = estimatedCapitalSeries(6);
+    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
+    const greetingHour = new Date().getHours();
+    const greeting = greetingHour < 12 ? 'Доброе утро' : greetingHour < 18 ? 'Добрый день' : 'Добрый вечер';
 
     app.innerHTML = `
-      <section class="hero home-hero">
-        <div class="profile-row">
-          <div class="profile-avatar">${escapeHtml(initials)}</div>
-          <div class="profile-copy"><small>Доброе утро</small><h2>${escapeHtml(state.profile.name || 'Пользователь')} <span>👋</span></h2></div>
-          <span class="status-dot" title="Система активна"></span>
-        </div>
-        <div class="focus-card">
-          <div><small>Фокус дня</small><strong>${escapeHtml(mainFocus)}</strong><span>${mainTasks.length ? `${mainTasks.length} приоритетные задачи` : 'Критичных задач нет'}</span></div>
-          <div class="score-ring" style="--score:${hasData ? score : 0}"><span>${hasData ? `${score}%` : '—'}</span></div>
-        </div>
+      <section class="home-welcome">
+        <small>Сегодня, ${dateText(todayISO())}</small>
+        <h2>${greeting}, ${escapeHtml(state.profile.name || 'Пользователь')}! <span>👋</span></h2>
       </section>
 
-      <section class="quick-actions premium-actions">
-        <button class="quick-btn" type="button" id="quickTask"><span>＋</span>Задача</button>
-        <button class="quick-btn expense-action" type="button" id="quickExpense"><span>−</span>Расход</button>
-        <button class="quick-btn" type="button" id="quickIncome"><span>＋</span>Доход</button>
+      <section class="card home-capital-card">
+        <div class="metric-row">
+          <div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div>
+          <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
+        </div>
+        ${heroSparkline(capitalSeries)}
       </section>
 
-      ${alertRows.length ? `<section class="section compact-section"><div class="section-head"><h2>Требует внимания</h2></div><div class="alert-list">${alertRows.join('')}</div></section>` : ''}
-
-      <section class="section">
-        <div class="section-head"><h2>Финансовый пульс</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
-        <div class="card pulse-card premium-pulse">
-          <div class="pulse-main"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Свободный остаток</small><strong class="${analytics.freeBalance < 0 ? 'negative' : ''}">${money(analytics.freeBalance)}</strong></div></div>
-          <div class="pulse-grid"><div><small>Неделя</small><b>${money(analytics.weekExpense)}</b>${compareBadge(analytics.weekExpense, analytics.previousWeekExpense, true)}</div><div><small>Месяц</small><b>${money(analytics.monthExpense)}</b>${compareBadge(analytics.monthExpense, analytics.previousMonthExpense, true)}</div></div>
-        </div>
+      <section class="home-metric-grid">
+        <button type="button" class="home-metric-card income" data-go="finance"><small>Доход за месяц</small><strong>${money(analytics.monthIncome)}</strong><span>${compareSentence('Доход', analytics.monthIncome, analytics.previousMonthIncome).replace(/<[^>]+>/g, '')}</span></button>
+        <button type="button" class="home-metric-card expense" data-go="finance"><small>Расход за месяц</small><strong>${money(analytics.monthExpense)}</strong><span>${compareSentence('Расход', analytics.monthExpense, analytics.previousMonthExpense, true).replace(/<[^>]+>/g, '')}</span></button>
+        <button type="button" class="home-metric-card week" data-go="finance"><small>Расход за неделю</small><strong>${money(analytics.weekExpense)}</strong><span>Текущая неделя</span></button>
+        <button type="button" class="home-metric-card free" data-go="finance"><small>Свободный остаток</small><strong>${money(analytics.freeBalance)}</strong><span>После ближайших платежей</span></button>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Сегодня - ${mainTasks.length} задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
+        <div class="section-head"><h2>Ближайшие платежи</h2><button class="link-btn" type="button" data-go="finance">Все</button></div>
+        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 14 дней платежей нет.')}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Ближайшие задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
         <div class="list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
       </section>
 
-      <section class="section money-strip-section">
-        <div class="money-mini-grid">
-          <button type="button" class="money-mini-card" data-go="finance"><small>Ожидаемые поступления</small><strong class="positive">+${money(analytics.expected)}</strong><span>${openObligations('expected').length} платежа</span></button>
-          <button type="button" class="money-mini-card" data-go="finance"><small>Платежи и списания</small><strong class="negative">−${money(analytics.upcomingPayments)}</strong><span>${openObligations().filter(item => item.type !== 'expected').length} платежа</span></button>
-        </div>
-      </section>
-
       <section class="section">
-        <div class="section-head"><h2>Инсайт дня</h2><button class="link-btn" type="button" data-go="growth">Подробнее</button></div>
-        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и привычки - система начнёт находить точки роста.')}</div>
+        <div class="section-head"><h2>Стратегический сигнал</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
+        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и цели - система начнёт находить точки роста.')}</div>
       </section>
-
-      ${upcoming.length ? `<section class="section"><div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Все</button></div><div class="list">${upcoming.map(obligationItem).join('')}</div></section>` : ''}
     `;
     bindCommon();
     bindFinanceActions();
-    $('#quickTask').addEventListener('click', () => openTaskModal());
-    $('#quickExpense').addEventListener('click', () => openTransactionModal(null, 'expense'));
-    $('#quickIncome').addEventListener('click', () => openTransactionModal(null, 'income'));
   }
 
   function taskItem(task) {
@@ -751,18 +805,45 @@
       <section class="section">
         <div class="section-head"><h2>Выполнено</h2><span class="badge">${completed.length}</span></div>
         <div class="list">${completed.length ? completed.map(taskItem).join('') : empty('Здесь появятся закрытые задачи.')}</div>
-      </section>`;
+      </section>
+      ${knowledgeSectionMarkup()}`;
 
     bindCommon();
+    bindKnowledgeInline();
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; render(); }));
     $('#taskSearch').addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
-  function dailyExpenseSeries() {
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = addDays(new Date(), index - 6);
+  function knowledgeSectionMarkup(limit = 4) {
+    const folders = state.noteFolders;
+    const notes = state.notes.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, limit);
+    return `
+      <section class="section">
+        <div class="section-head"><h2>База мыслей и идей</h2><div class="action-inline"><button class="link-btn" type="button" id="openKnowledgeInline">Открыть</button><button class="link-btn" type="button" id="addKnowledgeInline">+ Запись</button></div></div>
+        <div class="card knowledge-preview-card">
+          <div class="folder-chip-row">${folders.map(folder => `<button type="button" class="chip knowledge-folder" data-folder="${folder.id}">${escapeHtml(folder.name)} <small>${state.notes.filter(note => note.folderId === folder.id).length}</small></button>`).join('')}</div>
+          <div class="list knowledge-list inline">${notes.length ? notes.map(note => `<div class="card knowledge-note inline-note" data-folder-id="${note.folderId}"><div class="metric-row"><div><div class="item-title">${escapeHtml(note.title)}</div><div class="item-meta">${escapeHtml(folders.find(folder => folder.id === note.folderId)?.name || 'Без папки')} · ${longDateText((note.updatedAt || note.createdAt).slice(0,10))}</div></div><div class="item-actions"><button class="mini-btn edit-note" type="button" data-id="${note.id}">✎</button></div></div><div class="item-note">${escapeHtml(note.body).split('\\n').join('<br>')}</div></div>`).join('') : empty('Записывай идеи, запуски, мысли и выводы прямо здесь.')}</div>
+        </div>
+      </section>`;
+  }
+
+  function bindKnowledgeInline() {
+    $('#openKnowledgeInline')?.addEventListener('click', () => renderKnowledgeBase());
+    $('#addKnowledgeInline')?.addEventListener('click', () => openKnowledgeNoteModal());
+    $$('.knowledge-folder').forEach(button => button.addEventListener('click', () => {
+      const folderId = button.dataset.folder;
+      $$('.inline-note').forEach(note => note.hidden = note.dataset.folderId !== folderId);
+    }));
+    $$('.edit-note').forEach(button => button.addEventListener('click', () => openKnowledgeNoteModal(state.notes.find(note => note.id === button.dataset.id))));
+  }
+
+  function dailyExpenseSeries(monthKey = financeSelectedMonth) {
+    const { start, end } = monthRange(monthKey);
+    const days = end.getDate();
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(start.getFullYear(), start.getMonth(), index + 1);
       const iso = localISO(date);
-      return { label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).slice(0, 2), value: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)) };
+      return { label: String(index + 1), value: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)) };
     });
   }
 
@@ -788,17 +869,48 @@
     return `${Math.round(number)}`;
   }
 
+  function incomeSourceTotals(analytics) {
+    const incomes = transactionsInRange('income', analytics.monthStart, analytics.monthEnd);
+    const salary = sum(incomes.filter(tx => tx.category === 'salary').map(tx => tx.amount));
+    const clients = sum(incomes.filter(tx => tx.category === 'client').map(tx => tx.amount));
+    const ownProjects = sum(incomes.filter(tx => tx.category === 'project_income').map(tx => tx.amount));
+    const other = Math.max(0, analytics.monthIncome - salary - clients - ownProjects);
+    return { salary, clients, ownProjects, projectsTotal: clients + ownProjects, other };
+  }
+
   function renderFinance() {
-    const analytics = getFinanceAnalytics();
+    const analytics = getFinanceAnalytics(financeSelectedMonth);
+    const sources = incomeSourceTotals(analytics);
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     const capitalSeries = estimatedCapitalSeries(6);
     const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
+    const monthIsCurrent = analytics.selectedMonth === monthKey(new Date());
     app.innerHTML = `
-      <section class="hero compact finance-hero">
-        <div class="finance-hero-head"><div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div><span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span></div>
+      <section class="hero compact finance-hero finance-master-card">
+        <div class="finance-hero-head">
+          <div><p class="eyebrow">Общий капитал</p><div class="kpi">${money(analytics.capital)}</div></div>
+          <div class="finance-head-actions">
+            <label class="hero-month-picker"><span>Месяц</span><input id="financeMonthPicker" type="month" value="${analytics.selectedMonth}"></label>
+            <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
+          </div>
+        </div>
         ${heroSparkline(capitalSeries)}
         <div class="capital-breakdown"><span><small>Активы</small>${money(analytics.assets)}</span><span><small>Долги</small>${money(analytics.debt)}</span><span><small>Ликвидно</small>${money(analytics.liquid)}</span></div>
-        <div class="metric-row"><span class="muted">Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
+        <div class="finance-master-grid">
+          <div><small>Заработано за месяц</small><strong>${money(analytics.monthIncome)}</strong></div>
+          <div><small>Зарплата</small><strong>${money(sources.salary)}</strong></div>
+          <div><small>Клиенты и проекты</small><strong>${money(sources.projectsTotal)}</strong></div>
+          <div><small>Расходы за месяц</small><strong>${money(analytics.monthExpense)}</strong></div>
+          <div><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong><em>${monthIsCurrent ? 'текущая неделя' : 'текущая неделя'}</em></div>
+          <div><small>Свободный остаток</small><strong>${money(analytics.freeBalance)}</strong></div>
+        </div>
+        <details class="finance-source-details">
+          <summary>Структура дохода</summary>
+          <div class="finance-source-row"><span>Клиенты</span><b>${money(sources.clients)}</b></div>
+          <div class="finance-source-row"><span>Свои проекты</span><b>${money(sources.ownProjects)}</b></div>
+          <div class="finance-source-row"><span>Другие доходы</span><b>${money(sources.other)}</b></div>
+        </details>
+        <div class="metric-row goal-row"><span>Цель: ${money(state.profile.capitalTarget)}</span><strong>${progress}%</strong></div>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </section>
       <section class="tabs finance-tabs">
@@ -808,6 +920,7 @@
     `;
     bindCommon();
     $$('[data-finance-tab]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTab; renderFinance(); }));
+    $('#financeMonthPicker')?.addEventListener('change', event => { financeSelectedMonth = event.target.value || monthKey(new Date()); renderFinance(); });
     bindFinanceActions();
   }
 
@@ -822,75 +935,43 @@
     const insights = getFinanceInsights(analytics);
     const maxCategory = Math.max(1, ...analytics.categoryRows.map(row => row.amount));
     const moneySeries = monthlyMoneySeries(6);
+    const recent = state.transactions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.id).localeCompare(String(a.id))).slice(0, 5);
     return `
-      <section class="finance-toolbar">
-        <button class="action-tile" type="button" id="openMonthCompare">
-          <span class="action-tile-icon">↗</span>
-          <span><b>Сравнить периоды</b><small>Месяцы, зарплата и категории</small></span>
-          <i>›</i>
-        </button>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Динамика</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>
-
-      <section class="stats grid two finance-kpis">
-        <div class="stat-card"><small>Доход за месяц</small><strong class="positive">${money(analytics.monthIncome)}</strong>${compareSentence('Доходы', analytics.monthIncome, analytics.previousMonthIncome)}</div>
-        <div class="stat-card"><small>Расход за месяц</small><strong class="negative">${money(analytics.monthExpense)}</strong>${compareSentence('Расходы', analytics.monthExpense, analytics.previousMonthExpense, true)}</div>
-        <div class="stat-card"><small>Расход за неделю</small><strong>${money(analytics.weekExpense)}</strong>${compareSentence('Расходы', analytics.weekExpense, analytics.previousWeekExpense, true)}</div>
-        <div class="stat-card"><small>Сбережено</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">${analytics.savingsRate}% дохода</span></div>
-      </section>
-
-      ${incomeOverviewMarkup(analytics)}
-
-      <section class="section">
-        <div class="section-head"><h2>Денежный поток</h2><span class="badge">6 месяцев</span></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}<div class="metric-row trend-footer"><span>Итог периода</span><strong>${money(sum(moneySeries.map(row => row.net)))}</strong></div></div>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Расходы по дням</h2><button class="link-btn" type="button" data-add-transaction="expense">+ Расход</button></div>
-        <div class="card chart-card">${barChart(dailyExpenseSeries())}</div>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h2>На что уходят деньги</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Категории расходов</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
         <div class="card category-list">
-          ${analytics.categoryRows.length ? analytics.categoryRows.map(row => `
+          ${analytics.categoryRows.length ? analytics.categoryRows.slice(0, 6).map(row => `
             <div class="category-row">
               <div class="metric-row"><span>${escapeHtml(row.label)}</span><strong>${money(row.amount)}</strong></div>
               <div class="progress thin"><span style="width:${Math.round(row.amount / maxCategory * 100)}%"></span></div>
-            </div>`).join('') : '<div class="item-meta">Расходов за текущий месяц пока нет.</div>'}
+            </div>`).join('') : '<div class="item-meta">Расходов за выбранный месяц пока нет.</div>'}
         </div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Анализ</h2></div>
-        <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Заполняй операции, и здесь появятся выводы по расходам и сбережениям.</div>'}</div>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Последние операции</h2><button class="link-btn" type="button" data-finance-tab-jump="operations">Все</button></div>
+        <div class="list">${recent.length ? recent.map(transactionItem).join('') : empty('Добавьте первый доход или расход.')}</div>
       </section>
-    `;
-  }
-
-  function incomeOverviewMarkup(analytics) {
-    const monthStart = analytics.monthStart;
-    const monthEnd = analytics.monthEnd;
-    const incomes = transactionsInRange('income', monthStart, monthEnd);
-    const sourceRows = INCOME_CATEGORIES.map(([key, label]) => ({ key, label, amount: sum(incomes.filter(tx => tx.category === key).map(tx => tx.amount)) })).filter(row => row.amount > 0);
-    const target = Number(state.profile.monthlyIncomeTarget || 0);
-    const percent = target > 0 ? Math.min(100, Math.round(analytics.monthIncome / target * 100)) : 0;
-    const remain = Math.max(0, target - analytics.monthIncome);
-    return `<section class="section">
-      <div class="section-head"><h2>Доход за месяц</h2><span class="badge">${monthName(`${new Date().getFullYear()}-${pad(new Date().getMonth()+1)}`)}</span></div>
-      <div class="card income-target-card">
-        <div class="metric-row"><div><small>Фактически заработано</small><strong class="positive">${money(analytics.monthIncome)}</strong></div><div class="target-percent">${percent}%</div></div>
-        <div class="progress"><span style="width:${percent}%"></span></div>
-        <div class="metric-row"><span class="muted">Цель ${money(target)}</span><span class="muted">Осталось ${money(remain)}</span></div>
-        <div class="income-source-grid">${sourceRows.length ? sourceRows.map(row => `<div><small>${escapeHtml(row.label)}</small><strong>${money(row.amount)}</strong></div>`).join('') : '<div class="item-meta">Доходов за месяц пока нет.</div>'}</div>
-      </div>
-    </section>`;
+      <section class="section finance-support-section">
+        <details class="card details-card month-compare-card">
+          <summary><span>Сравнение месяцев</span><small>Доход, зарплата, расходы и категории</small></summary>
+          <div class="details-body">${monthComparisonMarkup()}</div>
+        </details>
+      </section>
+      <section class="section finance-support-section">
+        <div class="section-head"><h2>Выводы</h2></div>
+        <div class="list">${insights.length ? insights.slice(0, 4).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Добавляй операции, и здесь появятся выводы.</div>'}</div>
+      </section>`;
   }
 
   function monthComparisonMarkup() {
     const currentMetrics = monthMetrics(financeCompareCurrent);
     const baseMetrics = monthMetrics(financeCompareBase);
-    const monthOptions = monthsForSelect().map(key => `<option value="${key}">${escapeHtml(monthName(key))}</option>`).join('');
+    const currentMonthOptions = monthsForSelect().map(key => `<option value="${key}" ${key === financeCompareCurrent ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('');
+    const baseMonthOptions = monthsForSelect().map(key => `<option value="${key}" ${key === financeCompareBase ? 'selected' : ''}>${escapeHtml(monthName(key))}</option>`).join('');
     const categoryKeys = new Set([...currentMetrics.categories.keys(), ...baseMetrics.categories.keys()]);
     const categoryCompare = [...categoryKeys].map(key => {
       const current = Number(currentMetrics.categories.get(key) || 0);
@@ -898,7 +979,7 @@
       return { key, label: categoryLabel(key), current, base, delta: current - base, percent: percentageChange(current, base) };
     }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 8);
     return `<div class="compare-panel compact-compare">
-      <div class="compare-selects"><label>Текущий<select id="compareCurrent">${monthOptions}</select></label><span>к</span><label>База<select id="compareBase">${monthOptions}</select></label></div>
+      <div class="compare-selects"><label>Текущий<select id="compareCurrent">${currentMonthOptions}</select></label><span>к</span><label>База<select id="compareBase">${baseMonthOptions}</select></label></div>
       <div class="comparison-grid">
         <div><small>Доход</small><strong>${money(currentMetrics.income)}</strong>${compareSentence('Доходы', currentMetrics.income, baseMetrics.income)}</div>
         <div><small>Расход</small><strong>${money(currentMetrics.expense)}</strong>${compareSentence('Расходы', currentMetrics.expense, baseMetrics.expense, true)}</div>
@@ -1012,6 +1093,15 @@
   }
 
   function bindFinanceActions() {
+    $('#financeMonthPicker')?.addEventListener('change', event => { financeSelectedMonth = event.target.value || financeSelectedMonth; renderFinance(); });
+    const refreshInlineCompare = () => {
+      const container = $('.month-compare-card .details-body');
+      if (!container) return;
+      container.innerHTML = monthComparisonMarkup();
+      bindFinanceActions();
+    };
+    $('#compareCurrent')?.addEventListener('change', event => { financeCompareCurrent = event.target.value; refreshInlineCompare(); });
+    $('#compareBase')?.addEventListener('change', event => { financeCompareBase = event.target.value; refreshInlineCompare(); });
     $('#openMonthCompare')?.addEventListener('click', openMonthComparisonModal);
     $$('[data-add-transaction]').forEach(button => button.addEventListener('click', () => openTransactionModal(null, button.dataset.addTransaction)));
     $$('[data-finance-tab-jump]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTabJump; renderFinance(); }));
@@ -1036,7 +1126,7 @@
       <section class="hero compact">
         <p class="eyebrow">Проекты</p>
         <div class="kpi">${active.length}</div>
-        <p>Здесь хранятся клиенты и собственные проекты. Фактический заработок считается только по операциям в «Финансах».</p>
+        <p>Здесь хранятся клиенты и собственные проекты. Если указать фактический доход проекта, он автоматически попадёт в «Финансы» и в общий баланс.</p>
       </section>
       <section class="stats grid two">
         <div class="stat-card"><small>Ожидаемый доход</small><strong>${money(expected)}</strong></div>
@@ -1113,100 +1203,76 @@
     return Number(goal.current || 0);
   }
 
+  function goalItem(goal) {
+    const current = goalCurrent(goal);
+    const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
+    const pace = goalPace(goal, current, percent);
+    return `<div class="card goal-card">
+      <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
+      <div class="progress"><span style="width:${percent}%"></span></div>
+      <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
+      ${goal.nextAction ? `<div class="item-note"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
+      <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
+    </div>`;
+  }
+
+  function habitItem(habit) {
+    const days = getLast7Days();
+    return `<div class="card habit-card">
+      <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
+      <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
+    </div>`;
+  }
+
   function renderGrowth() {
     const analytics = getFinanceAnalytics();
-    const days = getLast7Days();
-    const reviews = state.weeklyReviews.slice().sort((a, b) => (b.weekStart || '').localeCompare(a.weekStart || ''));
-    const currentWeek = localISO(startOfWeek(new Date()));
-    const currentReview = reviews.find(review => review.weekStart === currentWeek);
+    const moneySeries = monthlyMoneySeries(6);
+    const capitalSeries = estimatedCapitalSeries(6);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
     const previousHabits = habitWeekStats(addDays(new Date(), -7), true);
-    const moneySeries = monthlyMoneySeries(6);
-    const capitalSeries = estimatedCapitalSeries(6);
-    const activeProjects = state.projects.filter(project => ['active', 'growth'].includes(project.status));
-    const overduePayments = state.projects.filter(project => project.paymentStatus === 'overdue' || (project.paymentStatus === 'waiting' && project.paymentDate && project.paymentDate < todayISO())).length;
-    const projectIncome = sum(activeProjects.map(project => project.value));
-    const projectActualIncome = sum(state.transactions.filter(tx => tx.type === 'income' && tx.projectId && dateInRange(tx.date, analytics.monthStart, analytics.monthEnd)).map(tx => tx.amount));
     const insights = systemInsights();
-    const score = overallScore();
-    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
-
+    const activeGoals = state.goals.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     app.innerHTML = `
-      <section class="progress-hero" id="growthOverview">
-        <div><p class="eyebrow">Индекс системы</p><h2>${score}%</h2><p>${score >= 75 ? 'Курс устойчивый. Не ослабляй дисциплину.' : score >= 45 ? 'Есть прогресс, но несколько зон тянут назад.' : 'Система теряет темп. Сначала деньги и ключевые задачи.'}</p></div>
-        <div class="score-ring large" style="--score:${score}"><span>${score}</span></div>
+      <section class="progress-hero dynamics-hero">
+        <div><p class="eyebrow">Динамика системы</p><h2>${money(analytics.capital)}</h2><p>Изменения денег, задач, целей и дисциплины за последние месяцы.</p></div>
+        <div class="score-ring large" style="--score:${overallScore()}"><span>${overallScore()}%</span></div>
       </section>
-
       <section class="tabs progress-tabs">
-        <button class="tab active" type="button" data-growth-scroll="growthOverview">Обзор</button>
-        <button class="tab" type="button" data-growth-scroll="growthGoals">Цели</button>
-        <button class="tab" type="button" data-growth-scroll="growthHabits">Привычки</button>
-        <button class="tab" type="button" data-growth-scroll="growthDynamics">Динамика</button>
+        <button class="tab active" type="button" data-growth-scroll="capitalDynamics">Капитал</button>
+        <button class="tab" type="button" data-growth-scroll="incomeDynamics">Деньги</button>
+        <button class="tab" type="button" data-growth-scroll="goalDynamics">Цели</button>
+        <button class="tab" type="button" data-growth-scroll="disciplineDynamics">Дисциплина</button>
       </section>
-
-      <section class="growth-summary">
-        <div class="stat-card"><small>Капитал</small><strong>${money(analytics.capital)}</strong><span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? 'рост' : 'снижение'} ${Math.abs(capitalChange)}%`}</span></div>
-        <div class="stat-card"><small>Чистый поток месяца</small><strong class="${analytics.monthBalance >= 0 ? 'positive' : 'negative'}">${money(analytics.monthBalance)}</strong><span class="compare neutral">доход минус расход</span></div>
-        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
-        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
-      </section>
-
-      <section class="section" id="growthDynamics">
+      <section class="section" id="capitalDynamics">
         <div class="section-head"><h2>Динамика капитала</h2><span class="badge">6 месяцев</span></div>
         <div class="card chart-card">${compactMoneyChart(capitalSeries)}<div class="metric-row trend-footer"><span>Сейчас</span><strong>${money(analytics.capital)}</strong></div></div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Доходы и расходы</h2><button class="link-btn" type="button" data-go="finance">Финансы</button></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}<div class="project-metrics two-cols"><div><small>Доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong></div><div><small>Расход месяца</small><strong class="negative">${money(analytics.monthExpense)}</strong></div></div></div>
+      <section class="section" id="incomeDynamics">
+        <div class="section-head"><h2>Доходы и расходы</h2><span class="badge">6 месяцев</span></div>
+        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Где теряется прогресс</h2></div>
-        <div class="list">${insights.length ? insights.map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Критичных отклонений не найдено. Продолжай заполнять операции, задачи и привычки.</div>'}</div>
+      <section class="growth-summary dynamics-summary">
+        <div class="stat-card"><small>Задачи недели</small><strong>${currentTasks.rate}%</strong>${compareSentence('Выполнение', currentTasks.rate, previousTasks.rate)}</div>
+        <div class="stat-card"><small>Привычки недели</small><strong>${currentHabits.rate}%</strong>${compareSentence('Дисциплина', currentHabits.rate, previousHabits.rate)}</div>
       </section>
-
-      <section class="section">
-        <div class="section-head"><h2>Проекты</h2><button class="link-btn" type="button" data-go="projects">Открыть</button></div>
-        <div class="card project-progress-grid"><div><small>Активных</small><strong>${activeProjects.length}</strong></div><div><small>Ожидается</small><strong>${money(projectIncome)}</strong></div><div><small>Факт от проектов</small><strong class="positive">${money(projectActualIncome)}</strong></div><div><small>Весь доход месяца</small><strong class="positive">${money(analytics.monthIncome)}</strong></div></div>
-      </section>
-
-      <section class="section" id="growthGoals">
+      <section class="section" id="goalDynamics">
         <div class="section-head"><h2>Цели</h2><button class="link-btn" type="button" id="addGoal">Добавить</button></div>
-        <div class="list">${state.goals.length ? state.goals.map(goal => {
-          const current = goalCurrent(goal);
-          const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
-          const pace = goalPace(goal, current, percent);
-          return `<div class="card goal-card">
-            <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
-            <div class="progress"><span style="width:${percent}%"></span></div>
-            <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
-            ${goal.nextAction ? `<div class="item-note"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
-            <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
-          </div>`;
-        }).join('') : empty('Добавьте измеримую цель.')}</div>
+        <div class="list">${activeGoals.length ? activeGoals.map(goalItem).join('') : empty('Добавьте первую цель.')}</div>
       </section>
-
-      <section class="section" id="growthHabits">
+      <section class="section" id="disciplineDynamics">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
-        <div class="list">${state.habits.length ? state.habits.map(habit => `
-          <div class="card habit-card">
-            <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
-            <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
-          </div>`).join('') : empty('Добавьте полезную привычку.')}</div>
+        <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
-
       <section class="section">
-        <div class="section-head"><h2>Недельные разборы</h2><button class="link-btn" type="button" id="addReview">${currentReview ? 'Изменить' : 'Заполнить'}</button></div>
-        <div class="list">${reviews.length ? reviews.slice(0, 4).map(reviewItem).join('') : empty('Разбор недели покажет, что реально двигает доход и капитал.')}</div>
+        <div class="section-head"><h2>Сигналы</h2></div>
+        <div class="list">${insights.length ? insights.slice(0, 5).map(item => `<div class="insight ${item.cls}">${escapeHtml(item.text)}</div>`).join('') : '<div class="insight">Данных пока недостаточно для выводов.</div>'}</div>
       </section>`;
     bindCommon();
     $$('[data-growth-scroll]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.growthScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
-    $('#addGoal').addEventListener('click', () => openGoalModal());
-    $('#addHabit').addEventListener('click', () => openHabitModal());
-    $('#addReview').addEventListener('click', () => openReviewModal(currentReview));
+    $('#addGoal')?.addEventListener('click', () => openGoalModal());
+    $('#addHabit')?.addEventListener('click', () => openHabitModal());
   }
 
   function reviewItem(review) {
@@ -1273,6 +1339,10 @@
 
   function removeItem(collection, id) {
     if (!confirm('Удалить запись?')) return;
+    if (collection === 'projects') {
+      state.transactions.filter(item => item.projectId === id && item.autoProjectIncome).forEach(item => applyTransactionToAccount(item, -1));
+      state.transactions = state.transactions.filter(item => !(item.projectId === id && item.autoProjectIncome));
+    }
     state[collection] = state[collection].filter(item => item.id !== id);
     saveState();
     render();
@@ -1313,20 +1383,69 @@
   }
 
   function openGlobalAdd() {
-    openModal('Быстрое добавление', `
-      <div class="quick-sheet">
-        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Пополнить общий баланс</small></button>
-        <button type="button" data-quick="expense"><span>−</span><b>Расход</b><small>Списать со счёта</small></button>
+    openOtherActionsMenu();
+  }
+
+  function openQuickExpenseModal() {
+    const categoryButtons = EXPENSE_CATEGORIES.slice(0, 8).map(([value, label], index) => `<button type="button" class="expense-category-chip ${value === (state.profile.lastExpenseCategory || 'groceries') ? 'active' : ''}" data-expense-category="${value}">${escapeHtml(label)}</button>`).join('');
+    openModal('Быстрый расход', `
+      <div class="quick-expense-form">
+        <div class="quick-amount-wrap"><span>−</span><input id="quickExpenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"><b>₽</b></div>
+        <div class="quick-amounts"><button type="button" data-add-amount="100">+100</button><button type="button" data-add-amount="500">+500</button><button type="button" data-add-amount="1000">+1 000</button></div>
+        <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(state.profile.lastExpenseCategory || 'groceries')}">
+        <div class="field"><label>Категория</label><div class="expense-category-grid">${categoryButtons}</div></div>
+        <div class="form-grid">
+          <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(state.profile.lastExpenseAccountId || '')}</select></div>
+          <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
+        </div>
+        <div class="field"><label>Комментарий <small>необязательно</small></label><input name="title" placeholder="Например, обед или такси"></div>
+        <button class="quick-more-actions" type="button" id="openOtherActions">Доход, задача или счёт</button>
+      </div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      const amount = Number(data.amount || 0);
+      if (amount <= 0) return false;
+      const category = data.category || 'other_expense';
+      const transaction = { id: uid(), title: String(data.title || '').trim() || categoryLabel(category), type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '' };
+      state.transactions.push(transaction);
+      applyTransactionToAccount(transaction, 1);
+      state.profile.lastExpenseCategory = category;
+      state.profile.lastExpenseAccountId = transaction.accountId;
+      return true;
+    }, { submitText: 'Сохранить расход' });
+    setTimeout(() => $('#quickExpenseAmount')?.focus(), 80);
+    $$('[data-expense-category]', modalBody).forEach(button => button.addEventListener('click', () => {
+      $$('[data-expense-category]', modalBody).forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      $('#quickExpenseCategory').value = button.dataset.expenseCategory;
+    }));
+    $$('[data-add-amount]', modalBody).forEach(button => button.addEventListener('click', () => {
+      const input = $('#quickExpenseAmount');
+      input.value = Number(input.value || 0) + Number(button.dataset.addAmount || 0);
+      input.focus();
+    }));
+    $('#openOtherActions')?.addEventListener('click', () => { closeModal(); openOtherActionsMenu(); });
+  }
+
+  function openOtherActionsMenu() {
+    openModal('Добавить', `
+      <div class="quick-sheet vnext-quick-sheet">
+        <button type="button" class="primary-action" data-quick="expense"><span>−</span><b>Расход</b><small>Внести за несколько секунд</small></button>
+        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
-        <button type="button" data-quick="account"><span>▣</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
+        <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
+        <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
+        <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
     $$('[data-quick]', modalBody).forEach(button => button.addEventListener('click', () => {
       const action = button.dataset.quick;
       closeModal();
       if (action === 'income') openTransactionModal(null, 'income');
-      if (action === 'expense') openTransactionModal(null, 'expense');
+      if (action === 'expense') openQuickExpenseModal();
       if (action === 'task') openTaskModal();
       if (action === 'account') openAccountModal();
+      if (action === 'project') openProjectModal();
+      if (action === 'note') openKnowledgeNoteModal();
     }));
   }
 
@@ -1494,16 +1613,53 @@
     }, { submitText: isIncome ? 'Получено' : 'Оплачено' });
   }
 
+  function projectIncomeCategory(type) {
+    if (type === 'client') return 'client';
+    if (type === 'personal') return 'project_income';
+    if (type === 'job') return 'salary';
+    return 'other_income';
+  }
+
+  function syncProjectMonthlyIncome(project, amount, monthKey) {
+    if (!project?.id || !monthKey) return;
+    const start = `${monthKey}-01`;
+    let tx = state.transactions.find(item => item.type === 'income' && item.projectId === project.id && item.projectIncomeMonth === monthKey && item.autoProjectIncome);
+    if (tx) {
+      applyTransactionToAccount(tx, -1);
+      if (amount > 0) {
+        tx.title = `${project.name} - доход`;
+        tx.amount = amount;
+        tx.date = start;
+        tx.category = projectIncomeCategory(project.type);
+        applyTransactionToAccount(tx, 1);
+      } else {
+        state.transactions = state.transactions.filter(item => item.id !== tx.id);
+      }
+      return;
+    }
+    if (amount > 0) {
+      tx = { id: uid(), title: `${project.name} - доход`, type: 'income', amount, date: start, category: projectIncomeCategory(project.type), accountId: getDefaultAccount().id, notes: `Автосинхронизация проекта: ${project.name}`, projectId: project.id, autoProjectIncome: true, projectIncomeMonth: monthKey };
+      state.transactions.push(tx);
+      applyTransactionToAccount(tx, 1);
+    }
+  }
+
   function openProjectModal(item = null) {
+    const actualMonth = monthKey(new Date());
+    const existingIncome = item ? state.transactions.find(tx => tx.type === 'income' && tx.projectId === item.id && tx.projectIncomeMonth === actualMonth && tx.autoProjectIncome) : null;
     openModal(item ? 'Изменить проект' : 'Новый проект', `
-      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Дмитрий Авто"></div>
+      <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Например, Dmitry Auto"></div>
       <div class="form-grid">
-        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Свой проект</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Рабочее направление</option></select></div>
+        <div class="field"><label>Тип</label><select name="type"><option value="client" ${!item || item?.type === 'client' ? 'selected' : ''}>Клиент</option><option value="personal" ${item?.type === 'personal' ? 'selected' : ''}>Свой проект</option><option value="job" ${item?.type === 'job' ? 'selected' : ''}>Зарплата / работа</option></select></div>
         <div class="field"><label>Статус</label><select name="status"><option value="active" ${!item || item?.status === 'active' ? 'selected' : ''}>Активен</option><option value="growth" ${item?.status === 'growth' ? 'selected' : ''}>Развитие</option><option value="paused" ${item?.status === 'paused' ? 'selected' : ''}>Пауза</option><option value="completed" ${item?.status === 'completed' ? 'selected' : ''}>Завершён</option></select></div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>Ожидаемый доход в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
+        <div class="field"><label>План в месяц, ₽</label><input name="value" type="number" min="0" value="${item?.value ?? 0}"></div>
         <div class="field"><label>Статус оплаты</label><select name="paymentStatus"><option value="not_due" ${!item || item?.paymentStatus === 'not_due' ? 'selected' : ''}>Не ожидается</option><option value="waiting" ${item?.paymentStatus === 'waiting' ? 'selected' : ''}>Ожидается</option><option value="paid" ${item?.paymentStatus === 'paid' ? 'selected' : ''}>Получено</option><option value="overdue" ${item?.paymentStatus === 'overdue' ? 'selected' : ''}>Просрочено</option></select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Месяц фактического дохода</label><input name="actualMonth" type="month" value="${actualMonth}"></div>
+        <div class="field"><label>Фактически пришло, ₽</label><input name="actualIncome" type="number" min="0" value="${existingIncome?.amount ?? 0}"></div>
       </div>
       <div class="field"><label>Дата следующей оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
       <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
@@ -1511,8 +1667,14 @@
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.value = Number(data.value || 0);
+      const actualIncome = Number(data.actualIncome || 0);
+      const actualMonth = data.actualMonth || monthKey(new Date());
+      delete data.actualIncome;
+      delete data.actualMonth;
       if (!data.name.trim()) return false;
-      if (item) Object.assign(item, data); else state.projects.push({ id: uid(), debt: 0, startDate: todayISO(), ...data });
+      let target = item;
+      if (item) Object.assign(item, data); else { target = { id: uid(), debt: 0, startDate: todayISO(), ...data }; state.projects.push(target); }
+      syncProjectMonthlyIncome(target, actualIncome, actualMonth);
       return true;
     });
   }
@@ -1538,8 +1700,15 @@
       data.current = Number(data.current || 0);
       data.target = Number(data.target || 1);
       data.monthlyPlan = Number(data.monthlyPlan || 0);
-      if (!data.title.trim()) return false;
-      if (item) Object.assign(item, data); else state.goals.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
+      data.title = String(data.title || '').trim();
+      data.unit = String(data.unit || '').trim();
+      data.nextAction = String(data.nextAction || '').trim();
+      if (!data.title) return false;
+      if (item) {
+        Object.assign(item, data, { updatedAt: new Date().toISOString() });
+      } else {
+        state.goals = [{ id: uid(), ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...state.goals];
+      }
       return true;
     });
   }
@@ -1640,7 +1809,6 @@
   }
 
   function openKnowledgeBase() {
-    settingsModal.close();
     renderKnowledgeBase();
   }
 
@@ -1681,55 +1849,334 @@
     });
   }
 
+  async function derivePinHash(pin, saltBytes) {
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 180000, hash: 'SHA-256' }, keyMaterial, 256);
+    return bytesToBase64(bits);
+  }
+
+  function securityAvailable() {
+    return Boolean(window.isSecureContext && window.PublicKeyCredential && navigator.credentials);
+  }
+
+  function lockApp(message = '') {
+    if (!(security.pinEnabled || security.faceIdEnabled) || !lockScreen) return;
+    appLocked = true;
+    document.body.classList.add('app-locked');
+    lockScreen.hidden = false;
+    unlockFaceIdButton.hidden = !security.faceIdEnabled;
+    unlockPinForm.hidden = !security.pinEnabled;
+    const faceOrb = $('.face-orb');
+    if (faceOrb) faceOrb.hidden = !security.faceIdEnabled;
+    $('.lock-divider')?.toggleAttribute('hidden', !security.pinEnabled || !security.faceIdEnabled);
+    $('.lock-card h2').textContent = security.faceIdEnabled ? 'Разблокировка Face ID' : 'Введите PIN-код';
+    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход, чтобы открыть личные данные.' : 'Введи PIN-код для доступа к данным.');
+    lockError.textContent = '';
+    unlockPinInput.value = '';
+    if (faceStatus) {
+      faceStatus.hidden = !security.faceIdEnabled;
+      faceStatus.className = 'face-status waiting';
+      faceStatus.innerHTML = '<span></span> Ожидание Face ID';
+    }
+    clearTimeout(faceAutoTimer);
+    if (security.faceIdEnabled && document.visibilityState !== 'hidden') {
+      faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
+    } else if (security.pinEnabled && document.visibilityState !== 'hidden') {
+      setTimeout(() => unlockPinInput?.focus(), 120);
+    }
+  }
+
+  function unlockApp() {
+    appLocked = false;
+    faceUnlockPending = false;
+    clearTimeout(faceAutoTimer);
+    document.body.classList.remove('app-locked');
+    if (lockScreen) lockScreen.hidden = true;
+    if (lockError) lockError.textContent = '';
+    lastActivityAt = Date.now();
+  }
+
+  async function unlockWithFaceId(options = {}) {
+    if (faceUnlockPending) return false;
+    if (!security.faceIdEnabled || !security.faceCredentialId || !securityAvailable()) {
+      lockError.textContent = 'Face ID недоступен на этом устройстве.';
+      if (faceStatus) {
+        faceStatus.className = 'face-status error';
+        faceStatus.innerHTML = '<span></span> Face ID недоступен';
+      }
+      return false;
+    }
+    faceUnlockPending = true;
+    try {
+      lockError.textContent = '';
+      if (faceStatus) {
+        faceStatus.className = 'face-status scanning';
+        faceStatus.innerHTML = '<span></span> Проверка Face ID';
+      }
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          timeout: 60000,
+          userVerification: 'required',
+          allowCredentials: [{ type: 'public-key', id: base64ToBytes(security.faceCredentialId), transports: ['internal'] }]
+        },
+        mediation: 'optional'
+      });
+      security.failedAttempts = 0;
+      if (faceStatus) {
+        faceStatus.className = 'face-status success';
+        faceStatus.innerHTML = '<span></span> Успешно';
+      }
+      setTimeout(unlockApp, 160);
+      return true;
+    } catch (error) {
+      console.error(error);
+      faceUnlockPending = false;
+      if (faceStatus) {
+        faceStatus.className = 'face-status error';
+        faceStatus.innerHTML = '<span></span> Повтори Face ID';
+      }
+      lockError.textContent = options.automatic ? 'Не удалось запустить Face ID автоматически. Нажми «Повторить Face ID».' : error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID.';
+      return false;
+    }
+  }
+
+  async function verifyPin(pin) {
+    if (!security.pinEnabled) return false;
+    if (Date.now() < security.blockedUntil) {
+      const seconds = Math.ceil((security.blockedUntil - Date.now()) / 1000);
+      lockError.textContent = `Слишком много попыток. Повтори через ${seconds} сек.`;
+      return false;
+    }
+    const hash = await derivePinHash(String(pin || ''), base64ToBytes(security.pinSalt));
+    if (hash === security.pinHash) {
+      security.failedAttempts = 0;
+      unlockApp();
+      return true;
+    }
+    security.failedAttempts += 1;
+    if (security.failedAttempts >= 5) {
+      security.blockedUntil = Date.now() + 30000;
+      security.failedAttempts = 0;
+      lockError.textContent = '5 неверных попыток. Вход заблокирован на 30 секунд.';
+    } else {
+      lockError.textContent = `Неверный PIN. Осталось попыток: ${5 - security.failedAttempts}.`;
+    }
+    unlockPinInput?.select();
+    return false;
+  }
+
+  async function setupPin() {
+    if (!globalThis.crypto?.subtle) { alert('Шифрование PIN недоступно в этом браузере. Открой Alexander OS через HTTPS.'); return; }
+    const pin = prompt('Придумай PIN-код из 4–8 цифр. Не используй дату рождения.');
+    if (pin === null) return;
+    if (!/^\d{4,8}$/.test(pin)) {
+      alert('PIN должен содержать от 4 до 8 цифр.');
+      return;
+    }
+    const repeat = prompt('Повтори PIN-код.');
+    if (repeat !== pin) {
+      alert('PIN-коды не совпадают.');
+      return;
+    }
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    security.pinSalt = bytesToBase64(salt);
+    security.pinHash = await derivePinHash(pin, salt);
+    security.pinEnabled = true;
+    saveSecurity();
+    closeModal();
+    toast('PIN-код включён');
+    if (currentScreen === 'settings') renderSettings();
+  }
+
+  function disablePin() {
+    if (!security.pinEnabled) return;
+    if (!confirm(security.faceIdEnabled ? 'Отключить PIN-код? Face ID останется единственным способом входа.' : 'Отключить PIN-код? Защита приложения будет выключена.')) return;
+    security.pinEnabled = false;
+    security.pinHash = '';
+    security.pinSalt = '';
+    if (!security.faceIdEnabled) security.faceCredentialId = '';
+    saveSecurity();
+    closeModal();
+    if (currentScreen === 'settings') renderSettings();
+    toast('PIN-код отключён');
+  }
+
+  async function enableFaceId() {
+    if (!securityAvailable()) {
+      alert('Face ID для веб-приложения доступен только на поддерживаемом устройстве через HTTPS. Открой установленный Alexander OS на iPhone.');
+      return;
+    }
+    try {
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rp: { name: 'Alexander OS' },
+          user: {
+            id: crypto.getRandomValues(new Uint8Array(16)),
+            name: 'alexander-os-local-user',
+            displayName: state.profile.name || 'Пользователь'
+          },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          timeout: 60000,
+          attestation: 'none',
+          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'discouraged', userVerification: 'required' }
+        }
+      });
+      if (!credential) throw new Error('Credential was not created');
+      security.faceCredentialId = bytesToBase64(credential.rawId);
+      security.faceIdEnabled = true;
+      saveSecurity();
+      closeModal();
+      toast('Face ID включён');
+      if (currentScreen === 'settings') renderSettings();
+    } catch (error) {
+      console.error(error);
+      alert(error?.name === 'NotAllowedError' ? 'Настройка Face ID отменена.' : 'Не удалось включить Face ID на этом устройстве.');
+    }
+  }
+
+  function disableFaceId() {
+    if (!security.faceIdEnabled) return;
+    if (!confirm('Отключить Face ID для Alexander OS?')) return;
+    security.faceIdEnabled = false;
+    security.faceCredentialId = '';
+    saveSecurity();
+    closeModal();
+    if (currentScreen === 'settings') renderSettings();
+    toast('Face ID отключён');
+  }
+
+  function openSecuritySettings() {
+    openModal('Безопасность', `
+      <div class="security-overview">
+        <div class="security-shield">⌾</div>
+        <div><strong>${security.pinEnabled || security.faceIdEnabled ? 'Защита включена' : 'Защита выключена'}</strong><small>Локальная блокировка приложения на этом устройстве</small></div>
+      </div>
+      <div class="settings-list card security-list">
+        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Можно использовать отдельно или вместе с Face ID'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
+        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID останется единственным способом входа</small></span><b>›</b></button>' : ''}
+        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Автоматически при открытии' : securityAvailable() ? 'Можно включить без PIN' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
+        <label class="settings-row select-row"><span>Автоблокировка<small>При бездействии</small></span><select id="autoLockMinutes"><option value="0" ${Number(state.profile.autoLockMinutes || 0) === 0 ? 'selected' : ''}>Никогда</option><option value="1" ${Number(state.profile.autoLockMinutes || 0) === 1 ? 'selected' : ''}>Через 1 минуту</option><option value="5" ${Number(state.profile.autoLockMinutes || 0) === 5 ? 'selected' : ''}>Через 5 минут</option><option value="15" ${Number(state.profile.autoLockMinutes || 0) === 15 ? 'selected' : ''}>Через 15 минут</option></select></label>
+        <label class="settings-row switch-row"><span>Блокировать при сворачивании<small>Рекомендуется для финансовых данных</small></span><input id="lockOnBackground" type="checkbox" ${state.profile.lockOnBackground !== false ? 'checked' : ''}></label>
+      </div>
+      <div class="privacy-note"><b>Важно:</b> Face ID запускается автоматически при открытии, если он включён. Приложение не блокируется, пока ты сам не включишь Face ID или PIN-код.</div>
+    `, null, { hideActions: true });
+    $('#securityPin')?.addEventListener('click', setupPin);
+    $('#disablePin')?.addEventListener('click', disablePin);
+    $('#securityFace')?.addEventListener('click', () => security.faceIdEnabled ? disableFaceId() : enableFaceId());
+    $('#autoLockMinutes')?.addEventListener('change', event => { state.profile.autoLockMinutes = Number(event.target.value || 0); saveState({ snapshot: false }); toast('Автоблокировка сохранена'); });
+    $('#lockOnBackground')?.addEventListener('change', event => { state.profile.lockOnBackground = event.target.checked; saveState({ snapshot: false }); toast('Настройка сохранена'); });
+  }
+
   function renderSettings() {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
     const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
-    settingsBody.innerHTML = `
-      <form id="profileForm">
-        <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
-        <div class="form-grid">
-          <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
-          <div class="field"><label>Цель дохода в месяц, ₽</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
-        </div>
-        <div class="form-grid">
-          <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
-          <div class="field"><label>Лимит расходов в месяц, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
-        </div>
-        <div class="field"><label>Тема</label><select name="theme"><option value="dark" ${state.profile.theme === 'dark' ? 'selected' : ''}>Тёмная</option><option value="light" ${state.profile.theme === 'light' ? 'selected' : ''}>Светлая</option></select></div>
-        <button class="btn primary full" type="submit">Сохранить настройки</button>
-      </form>
-      <div class="settings-list">
-        <button class="settings-row featured" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
-        <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления задач<small>${notificationStatus}</small></span><b>›</b></button>
-        <button class="settings-row" type="button" id="exportData"><span>Экспортировать резервную копию<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Резервной копии ещё нет'}</small></span><b>›</b></button>
-        <button class="settings-row featured" type="button" id="exportChatGPT"><span>Выгрузить отчёт для ChatGPT<small>${state.profile.lastChatGPTExport ? `Последняя: ${longDateText(state.profile.lastChatGPTExport)}` : 'Финансы, задачи, проекты, цели и привычки в одном файле'}</small></span><b>↗</b></button>
-        <label class="settings-row file-row"><span>Импортировать резервную копию<small>Восстановить данные из JSON</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
-        <button class="settings-row" type="button" id="installHelp"><span>Как установить на iPhone<small>Добавить на экран Домой</small></span><b>›</b></button>
-        <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
-      </div>
-      <p class="privacy-note"><b>Конфиденциальность:</b> отчёт для ChatGPT содержит твои суммы, задачи и проекты. Не добавляй пароли, номера карт, документы и другие секреты.</p>`;
+    const securityStatus = security.faceIdEnabled && security.pinEnabled ? 'Face ID + PIN' : security.faceIdEnabled ? 'Face ID' : security.pinEnabled ? 'PIN-код' : 'Не включена';
+    app.innerHTML = `
+      <section class="settings-screen v10-settings">
+        <section class="card settings-profile-card v10-profile-card">
+          <div class="settings-avatar">S</div>
+          <div><small>Alexander OS vNext</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Финансы, цели, задачи и прогресс в одной системе</p></div>
+          <span class="security-status ${security.pinEnabled || security.faceIdEnabled ? 'active' : ''}">${security.pinEnabled || security.faceIdEnabled ? 'Защищено' : 'Без защиты'}</span>
+        </section>
 
-    $('#profileForm').addEventListener('submit', event => {
+        <section class="settings-group">
+          <h3>Профиль и цели</h3>
+          <form id="profileForm" class="card settings-form">
+            <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
+            <div class="form-grid">
+              <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
+              <div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
+              <div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
+            </div>
+            <button class="btn primary full" type="submit">Сохранить профиль</button>
+          </form>
+        </section>
+
+        <section class="settings-group">
+          <h3>Темы</h3>
+          <div class="card theme-picker" role="radiogroup" aria-label="Тема приложения">
+            ${[
+              ['emerald', 'Изумрудная', '#20c66f', 'Основная'],
+              ['future', 'Future 2030', '#5dffcf', 'Неоновая'],
+              ['graphite', 'Графитовая', '#606a76', 'Строгая'],
+              ['light', 'Светлая', '#f4f7f5', 'Дневная']
+            ].map(([key, label, color, subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-choice="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Безопасность</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="securitySettings"><span>Защита приложения<small>${securityStatus} · автоблокировка ${Number(state.profile.autoLockMinutes || 0) ? `${state.profile.autoLockMinutes} мин.` : 'выключена'}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><span>Заблокировать сейчас<small>Проверить экран входа</small></span><b>⌾</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Данные и резервные копии</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="exportEncryptedData"><span>Защищённая копия<small>Файл .aos с паролем и AES-GCM</small></span><b>↗</b></button>
+            <button class="settings-row" type="button" id="exportData"><span>Обычная копия JSON<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Полное резервное копирование'}</small></span><b>›</b></button>
+            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить JSON или защищённый .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
+            <button class="settings-row" type="button" id="exportChatGPT"><span>Отчёт для ChatGPT<small>Финансы, задачи, проекты, цели и заметки</small></span><b>↗</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Приложение</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row" type="button" id="notificationSettings"><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="installHelp"><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Конфиденциальность</h3>
+          <div class="card privacy-card v10-privacy-card">
+            <div class="privacy-icon">⌾</div>
+            <div><b>Данные остаются на устройстве</b><p>Обычная база хранится локально в браузере. Для передачи используй защищённую резервную копию .aos.</p></div>
+          </div>
+          <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
+        </section>
+        <p class="app-version">Alexander OS · версия vNext 10.3</p>
+      </section>`;
+
+    $('#profileForm')?.addEventListener('submit', event => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.currentTarget));
-      state.profile = { ...state.profile, name: data.name.trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0), theme: data.theme || 'dark' };
+      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0) };
       saveState();
-      applyTheme();
       render();
-      toast('Настройки сохранены');
+      toast('Профиль сохранён');
     });
-
-    $('#openKnowledgeBase').addEventListener('click', openKnowledgeBase);
-    $('#notificationSettings').addEventListener('click', requestNotifications);
-    $('#installHelp').addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить». Уведомления на iPhone доступны для установленного приложения.'));
-    $('#exportData').addEventListener('click', exportData);
-    $('#exportChatGPT').addEventListener('click', exportChatGPTData);
-    $('#importData').addEventListener('change', importData);
-    $('#resetData').addEventListener('click', () => {
+    $$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
+      state.profile.theme = button.dataset.themeChoice;
+      saveState({ snapshot: false });
+      applyTheme();
+      renderSettings();
+      toast('Тема изменена');
+    }));
+    $('#securitySettings')?.addEventListener('click', openSecuritySettings);
+    $('#lockNow')?.addEventListener('click', () => lockApp());
+    $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
+    $('#notificationSettings')?.addEventListener('click', requestNotifications);
+    $('#installHelp')?.addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить».'));
+    $('#exportData')?.addEventListener('click', exportData);
+    $('#exportEncryptedData')?.addEventListener('click', exportEncryptedData);
+    $('#exportChatGPT')?.addEventListener('click', exportChatGPTData);
+    $('#importData')?.addEventListener('change', importData);
+    $('#resetData')?.addEventListener('click', () => {
       if (!confirm('Точно удалить все данные и вернуть стартовую версию?')) return;
       state = freshState();
       saveState();
-      settingsModal.close();
       render();
     });
   }
@@ -1742,7 +2189,7 @@
     const permission = await Notification.requestPermission();
     state.profile.notificationsEnabled = permission === 'granted';
     saveState();
-    renderSettings();
+    if (currentScreen === 'settings') renderSettings();
     if (permission === 'granted') {
       await showNotification('Alexander OS', 'Уведомления включены. Новые задачи и напоминания будут показываться на устройстве.', 'notifications-enabled');
     } else {
@@ -1771,11 +2218,97 @@
     return true;
   }
 
+  async function deriveBackupKey(password, salt) {
+    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  async function encryptBackupPayload(payload, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveBackupKey(password, salt);
+    const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+    return {
+      format: 'AlexanderOSEncryptedBackup',
+      schemaVersion: 1,
+      appVersion: '10.0',
+      exportedAt: new Date().toISOString(),
+      kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
+      cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
+      ciphertext: bytesToBase64(ciphertext)
+    };
+  }
+
+  async function decryptBackupPayload(wrapper, password) {
+    if (wrapper?.format !== 'AlexanderOSEncryptedBackup') throw new Error('Not encrypted backup');
+    const salt = base64ToBytes(wrapper.kdf?.salt || '');
+    const iv = base64ToBytes(wrapper.cipher?.iv || '');
+    const key = await deriveBackupKey(password, salt);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, base64ToBytes(wrapper.ciphertext || ''));
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+
+  async function exportEncryptedData() {
+    if (!globalThis.crypto?.subtle) { alert('Защищённый экспорт доступен только через HTTPS в современном браузере.'); return; }
+    const password = prompt('Придумай пароль для резервной копии. Минимум 8 символов.');
+    if (password === null) return;
+    if (password.length < 8) {
+      alert('Пароль должен содержать минимум 8 символов.');
+      return;
+    }
+    const repeat = prompt('Повтори пароль резервной копии.');
+    if (repeat !== password) {
+      alert('Пароли не совпадают.');
+      return;
+    }
+    try {
+      state.profile.lastBackup = todayISO();
+      saveState({ snapshot: false });
+      const encrypted = await encryptBackupPayload(createBackupPayload(state), password);
+      await shareOrDownloadFile(`alexander-os-secure-${todayISO()}.aos`, JSON.stringify(encrypted), 'application/octet-stream');
+      if (currentScreen === 'settings') renderSettings();
+      toast('Защищённая копия создана');
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось создать защищённую копию на этом устройстве.');
+    }
+  }
+
+  function createBackupPayload(sourceState = state) {
+    return {
+      format: 'AlexanderOSBackup',
+      schemaVersion: 1,
+      appVersion: '10.0',
+      exportedAt: new Date().toISOString(),
+      data: clone(sourceState)
+    };
+  }
+
+  function extractBackupData(parsed) {
+    if (parsed?.format === 'AlexanderOSBackup' && parsed?.data && typeof parsed.data === 'object') return parsed.data;
+    if (parsed && typeof parsed === 'object' && (parsed.profile || parsed.tasks || parsed.transactions)) return parsed;
+    throw new Error('Unsupported backup format');
+  }
+
+  function validateBackupData(data) {
+    if (!data || typeof data !== 'object') return false;
+    const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
+    if (!data.profile || typeof data.profile !== 'object') return false;
+    return requiredArrays.every(key => Array.isArray(data[key]));
+  }
+
+  function backupSummary(data) {
+    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок`;
+  }
+
   async function exportData() {
     state.profile.lastBackup = todayISO();
-    saveState();
-    await shareOrDownloadFile(`alexander-os-backup-${todayISO()}.json`, JSON.stringify(state, null, 2), 'application/json');
-    renderSettings();
+    saveState({ snapshot: false });
+    const payload = createBackupPayload(state);
+    await shareOrDownloadFile(`alexander-os-full-backup-${todayISO()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    if (currentScreen === 'settings') renderSettings();
+    toast('Полная резервная копия создана');
   }
 
   function reportList(items, formatter, emptyText = 'Нет данных') {
@@ -1899,41 +2432,48 @@ ${JSON.stringify(state, null, 2)}
     saveState();
     const report = createChatGPTReport();
     await shareOrDownloadFile(`alexander-os-chatgpt-${todayISO()}.md`, report, 'text/markdown');
-    renderSettings();
+    if (currentScreen === 'settings') renderSettings();
     toast('Отчёт для ChatGPT подготовлен');
   }
 
   async function importData(event) {
-    const file = event.target.files?.[0];
+    const input = event.target;
+    const file = input.files?.[0];
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text());
-      state = migrateState(parsed);
-      saveState();
-      settingsModal.close();
+      let parsed = JSON.parse(await file.text());
+      if (parsed?.format === 'AlexanderOSEncryptedBackup') {
+        const password = prompt('Введите пароль защищённой резервной копии.');
+        if (password === null) return;
+        try {
+          parsed = await decryptBackupPayload(parsed, password);
+        } catch (error) {
+          throw new Error('Wrong password or damaged encrypted backup');
+        }
+      }
+      const backupData = extractBackupData(parsed);
+      if (!validateBackupData(backupData)) throw new Error('Backup validation failed');
+      const summary = backupSummary(backupData);
+      const confirmed = confirm(`Импорт полностью заменит текущие данные приложения.\n\nВ файле: ${summary}.\n\nПродолжить?`);
+      if (!confirmed) return;
+
+      safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
+      state = normalizeState(clone(backupData));
+      state.version = 10;
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
+      applyTheme();
       render();
-      toast('Данные восстановлены');
+      toast(`Восстановлено: ${summary}`);
     } catch (error) {
       console.error(error);
-      alert('Файл резервной копии повреждён или имеет неверный формат.');
+      alert(error?.message?.includes('Wrong password') ? 'Неверный пароль или файл повреждён.' : 'Не удалось импортировать файл. Выбери JSON или .aos, скачанный через «Экспорт данных» в Alexander OS.');
+    } finally {
+      input.value = '';
     }
-    event.target.value = '';
   }
 
   $$('.nav-item[data-screen]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
-
-  function openSettingsPanel() {
-    renderSettings();
-    $$('.nav-item').forEach(button => button.classList.toggle('active', button.id === 'settingsNavButton'));
-    settingsModal.showModal();
-  }
-
-  function closeSettingsPanel() {
-    if (settingsModal.open) settingsModal.close();
-    render();
-  }
-
-  $('#settingsNavButton')?.addEventListener('click', openSettingsPanel);
 
   modalForm.addEventListener('submit', event => {
     event.preventDefault();
@@ -1956,18 +2496,39 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
-  $('#settingsButton')?.addEventListener('click', openSettingsPanel);
   $('#globalAdd').addEventListener('click', openGlobalAdd);
-  $('#closeSettings').addEventListener('click', closeSettingsPanel);
-  settingsModal.addEventListener('cancel', event => { event.preventDefault(); closeSettingsPanel(); });
-  settingsModal.addEventListener('click', event => { if (event.target === settingsModal) closeSettingsPanel(); });
+  $('#floatingAdd')?.addEventListener('click', openGlobalAdd);
+
+  unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
+  unlockPinForm?.addEventListener('submit', event => {
+    event.preventDefault();
+    verifyPin(unlockPinInput.value);
+  });
+  ['pointerdown', 'keydown', 'touchstart'].forEach(eventName => document.addEventListener(eventName, () => { if (!appLocked) lastActivityAt = Date.now(); }, { passive: true }));
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
   }
   setInterval(checkTaskReminders, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkTaskReminders(); });
+  setInterval(() => {
+    const minutes = Number(state.profile.autoLockMinutes || 0);
+    if (!appLocked && minutes > 0 && (security.pinEnabled || security.faceIdEnabled) && Date.now() - lastActivityAt >= minutes * 60000) lockApp('Приложение заблокировано из-за бездействия.');
+  }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state.profile.lockOnBackground !== false && (security.pinEnabled || security.faceIdEnabled)) lockApp('Приложение заблокировано после сворачивания.');
+    } else {
+      checkTaskReminders();
+      if (appLocked && security.faceIdEnabled) {
+        clearTimeout(faceAutoTimer);
+        faceAutoTimer = setTimeout(() => unlockWithFaceId({ automatic: true }), 260);
+      } else if (appLocked && security.pinEnabled) {
+        setTimeout(() => unlockPinInput?.focus(), 120);
+      }
+    }
+  });
 
   saveState();
   render();
+  if (security.pinEnabled || security.faceIdEnabled) lockApp();
 })();
