@@ -2,6 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'alexander_os_v1';
+  const SECURITY_KEY = 'alexander_os_security_v10';
   const memoryStorage = new Map();
   const safeStorage = {
     getItem(key) {
@@ -14,6 +15,47 @@
       try { window.localStorage.removeItem(key); } catch (error) { memoryStorage.delete(key); }
     }
   };
+  function loadSecurity() {
+    try {
+      const parsed = JSON.parse(safeStorage.getItem(SECURITY_KEY) || '{}');
+      return {
+        pinEnabled: Boolean(parsed.pinEnabled && parsed.pinHash && parsed.pinSalt),
+        pinHash: parsed.pinHash || '',
+        pinSalt: parsed.pinSalt || '',
+        faceIdEnabled: Boolean(parsed.faceIdEnabled && parsed.faceCredentialId),
+        faceCredentialId: parsed.faceCredentialId || '',
+        failedAttempts: 0,
+        blockedUntil: 0
+      };
+    } catch (error) {
+      return { pinEnabled: false, pinHash: '', pinSalt: '', faceIdEnabled: false, faceCredentialId: '', failedAttempts: 0, blockedUntil: 0 };
+    }
+  }
+
+  function saveSecurity() {
+    safeStorage.setItem(SECURITY_KEY, JSON.stringify({
+      pinEnabled: security.pinEnabled,
+      pinHash: security.pinHash,
+      pinSalt: security.pinSalt,
+      faceIdEnabled: security.faceIdEnabled,
+      faceCredentialId: security.faceCredentialId
+    }));
+  }
+
+  const bytesToBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const base64ToBytes = value => Uint8Array.from(atob(value), char => char.charCodeAt(0));
+  const concatBytes = (...parts) => {
+    const arrays = parts.map(part => part instanceof Uint8Array ? part : new Uint8Array(part));
+    const output = new Uint8Array(arrays.reduce((total, part) => total + part.length, 0));
+    let offset = 0;
+    arrays.forEach(part => { output.set(part, offset); offset += part.length; });
+    return output;
+  };
+
+  let security = loadSecurity();
+  let lastActivityAt = Date.now();
+  let appLocked = false;
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -49,7 +91,7 @@
 
   function freshState() {
     return {
-      version: 9.2,
+      version: 10,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -62,7 +104,9 @@
         lastChatGPTExport: null,
         progressRange: '6m',
         lastExpenseCategory: 'groceries',
-        lastExpenseAccountId: ''
+        lastExpenseAccountId: '',
+        autoLockMinutes: 1,
+        lockOnBackground: true
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -126,7 +170,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 9.2,
+      version: 10,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -212,9 +256,16 @@
   const modalForm = $('#modalForm');
   const modalActions = $('#modalActions');
   const modalSubmit = $('#modalSubmit');
+  const lockScreen = $('#lockScreen');
+  const lockHint = $('#lockHint');
+  const lockError = $('#lockError');
+  const unlockFaceIdButton = $('#unlockFaceId');
+  const unlockPinForm = $('#unlockPinForm');
+  const unlockPinInput = $('#unlockPin');
+
 
   function saveState(options = {}) {
-    state.version = 9.2;
+    state.version = 10;
     if (options.snapshot !== false) recordSnapshot();
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
@@ -442,7 +493,10 @@
     if (change === 0) return '<span class="compare neutral">без изменений</span>';
     const rose = change > 0;
     const good = lowerIsBetter ? !rose : rose;
-    const verb = rose ? 'выросли' : 'снизились';
+    const feminine = new Set(['Зарплата', 'Дисциплина']);
+    const neuter = new Set(['Выполнение']);
+    const plural = new Set(['Доходы', 'Расходы', 'Сбережения']);
+    const verb = feminine.has(label) ? (rose ? 'выросла' : 'снизилась') : neuter.has(label) ? (rose ? 'выросло' : 'снизилось') : plural.has(label) ? (rose ? 'выросли' : 'снизились') : (rose ? 'вырос' : 'снизился');
     return `<span class="compare ${good ? 'good' : 'bad'}">${label} ${verb} на ${Math.abs(change)}%</span>`;
   }
 
@@ -644,76 +698,54 @@
 
   function renderDashboard() {
     const analytics = getFinanceAnalytics();
-    const score = overallScore();
     const mainTasks = state.tasks
       .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
       .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))
-      .slice(0, 3);
-    const overdueTasks = state.tasks.filter(task => task.status !== 'done' && task.due && task.due < todayISO()).length;
-    const overdueMoney = openObligations().filter(item => item.dueDate && item.dueDate < todayISO()).length;
-    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 7))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-    const hasData = Boolean(state.transactions.length || state.projects.length || state.accounts.some(account => Number(account.balance || 0) !== 0));
-    const monthLimit = Number(state.profile.monthlyExpenseLimit || 0);
-    const alertRows = [];
-    if (overdueTasks) alertRows.push(`<div class="alert-row danger"><b>${overdueTasks}</b><span>просроченных задач</span><button data-go="tasks">Открыть</button></div>`);
-    if (overdueMoney) alertRows.push(`<div class="alert-row danger"><b>${overdueMoney}</b><span>просроченных платежей</span><button data-go="finance">Открыть</button></div>`);
-    if (monthLimit > 0 && analytics.projectedExpense > monthLimit) alertRows.push(`<div class="alert-row warning"><b>${money(analytics.projectedExpense - monthLimit)}</b><span>прогноз превышения бюджета</span><button data-go="finance">Разобрать</button></div>`);
-    const initials = (state.profile.name || 'А').split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
-    const mainFocus = mainTasks[0]?.title || 'Определи 3 главные задачи дня';
+      .slice(0, 4);
+    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+    const capitalSeries = estimatedCapitalSeries(6);
+    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
+    const greetingHour = new Date().getHours();
+    const greeting = greetingHour < 12 ? 'Доброе утро' : greetingHour < 18 ? 'Добрый день' : 'Добрый вечер';
 
     app.innerHTML = `
-      <section class="hero home-hero">
-        <div class="profile-row">
-          <div class="profile-avatar">${escapeHtml(initials)}</div>
-          <div class="profile-copy"><small>Доброе утро</small><h2>${escapeHtml(state.profile.name || 'Пользователь')} <span>👋</span></h2></div>
-          <span class="status-dot" title="Система активна"></span>
-        </div>
-        <div class="focus-card">
-          <div><small>Фокус дня</small><strong>${escapeHtml(mainFocus)}</strong><span>${mainTasks.length ? `${mainTasks.length} приоритетные задачи` : 'Критичных задач нет'}</span></div>
-          <div class="score-ring" style="--score:${hasData ? score : 0}"><span>${hasData ? `${score}%` : '—'}</span></div>
-        </div>
+      <section class="home-welcome">
+        <small>Сегодня, ${dateText(todayISO())}</small>
+        <h2>${greeting}, ${escapeHtml(state.profile.name || 'Пользователь')}! <span>👋</span></h2>
       </section>
 
-      <section class="quick-actions premium-actions">
-        <button class="quick-btn" type="button" id="quickTask"><span>＋</span>Задача</button>
-        <button class="quick-btn expense-action" type="button" id="quickExpense"><span>−</span>Расход</button>
-        <button class="quick-btn" type="button" id="quickIncome"><span>＋</span>Доход</button>
+      <section class="card home-capital-card">
+        <div class="metric-row">
+          <div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div>
+          <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
+        </div>
+        ${heroSparkline(capitalSeries)}
       </section>
 
-      ${alertRows.length ? `<section class="section compact-section"><div class="section-head"><h2>Требует внимания</h2></div><div class="alert-list">${alertRows.join('')}</div></section>` : ''}
-
-      <section class="section">
-        <div class="section-head"><h2>Финансовый пульс</h2><button class="link-btn" type="button" data-go="finance">Открыть</button></div>
-        <div class="card pulse-card premium-pulse">
-          <div class="pulse-main"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Свободный остаток</small><strong class="${analytics.freeBalance < 0 ? 'negative' : ''}">${money(analytics.freeBalance)}</strong></div></div>
-          <div class="pulse-grid"><div><small>Неделя</small><b>${money(analytics.weekExpense)}</b>${compareBadge(analytics.weekExpense, analytics.previousWeekExpense, true)}</div><div><small>Месяц</small><b>${money(analytics.monthExpense)}</b>${compareBadge(analytics.monthExpense, analytics.previousMonthExpense, true)}</div></div>
-        </div>
+      <section class="home-metric-grid">
+        <button type="button" class="home-metric-card income" data-go="finance"><small>Доход за месяц</small><strong>${money(analytics.monthIncome)}</strong><span>${compareSentence('Доход', analytics.monthIncome, analytics.previousMonthIncome).replace(/<[^>]+>/g, '')}</span></button>
+        <button type="button" class="home-metric-card expense" data-go="finance"><small>Расход за месяц</small><strong>${money(analytics.monthExpense)}</strong><span>${compareSentence('Расход', analytics.monthExpense, analytics.previousMonthExpense, true).replace(/<[^>]+>/g, '')}</span></button>
+        <button type="button" class="home-metric-card week" data-go="finance"><small>Расход за неделю</small><strong>${money(analytics.weekExpense)}</strong><span>Текущая неделя</span></button>
+        <button type="button" class="home-metric-card free" data-go="finance"><small>Свободный остаток</small><strong>${money(analytics.freeBalance)}</strong><span>После ближайших платежей</span></button>
       </section>
 
       <section class="section">
-        <div class="section-head"><h2>Сегодня - ${mainTasks.length} задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
+        <div class="section-head"><h2>Ближайшие платежи</h2><button class="link-btn" type="button" data-go="finance">Все</button></div>
+        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 14 дней платежей нет.')}</div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h2>Ближайшие задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
         <div class="list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
       </section>
 
-      <section class="section money-strip-section">
-        <div class="money-mini-grid">
-          <button type="button" class="money-mini-card" data-go="finance"><small>Ожидаемые поступления</small><strong class="positive">+${money(analytics.expected)}</strong><span>${openObligations('expected').length} платежа</span></button>
-          <button type="button" class="money-mini-card" data-go="finance"><small>Платежи и списания</small><strong class="negative">−${money(analytics.upcomingPayments)}</strong><span>${openObligations().filter(item => item.type !== 'expected').length} платежа</span></button>
-        </div>
-      </section>
-
       <section class="section">
-        <div class="section-head"><h2>Инсайт дня</h2><button class="link-btn" type="button" data-go="growth">Подробнее</button></div>
-        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и привычки - система начнёт находить точки роста.')}</div>
+        <div class="section-head"><h2>Стратегический сигнал</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
+        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и цели - система начнёт находить точки роста.')}</div>
       </section>
-
-      ${upcoming.length ? `<section class="section"><div class="section-head"><h2>Ближайшие деньги</h2><button class="link-btn" type="button" data-go="finance">Все</button></div><div class="list">${upcoming.map(obligationItem).join('')}</div></section>` : ''}
     `;
     bindCommon();
     bindFinanceActions();
-    $('#quickTask').addEventListener('click', () => openTaskModal());
-    $('#quickExpense').addEventListener('click', openQuickExpenseModal);
-    $('#quickIncome').addEventListener('click', () => openTransactionModal(null, 'income'));
   }
 
   function taskItem(task) {
@@ -1809,39 +1841,257 @@
     });
   }
 
+  async function derivePinHash(pin, saltBytes) {
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 180000, hash: 'SHA-256' }, keyMaterial, 256);
+    return bytesToBase64(bits);
+  }
+
+  function securityAvailable() {
+    return Boolean(window.isSecureContext && window.PublicKeyCredential && navigator.credentials);
+  }
+
+  function lockApp(message = '') {
+    if (!(security.pinEnabled || security.faceIdEnabled) || !lockScreen) return;
+    appLocked = true;
+    document.body.classList.add('app-locked');
+    lockScreen.hidden = false;
+    unlockFaceIdButton.hidden = !security.faceIdEnabled;
+    unlockPinForm.hidden = !security.pinEnabled;
+    lockHint.textContent = message || (security.faceIdEnabled ? 'Подтверди вход через Face ID или введи PIN-код.' : 'Введи PIN-код для доступа к данным.');
+    lockError.textContent = '';
+    unlockPinInput.value = '';
+    setTimeout(() => unlockPinInput?.focus(), 120);
+  }
+
+  function unlockApp() {
+    appLocked = false;
+    document.body.classList.remove('app-locked');
+    if (lockScreen) lockScreen.hidden = true;
+    if (lockError) lockError.textContent = '';
+    lastActivityAt = Date.now();
+  }
+
+  async function unlockWithFaceId() {
+    if (!security.faceIdEnabled || !security.faceCredentialId || !securityAvailable()) {
+      lockError.textContent = 'Face ID недоступен. Используй PIN-код.';
+      return false;
+    }
+    try {
+      lockError.textContent = 'Ожидаю подтверждение Face ID…';
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          timeout: 60000,
+          userVerification: 'required',
+          allowCredentials: [{ type: 'public-key', id: base64ToBytes(security.faceCredentialId), transports: ['internal'] }]
+        }
+      });
+      security.failedAttempts = 0;
+      unlockApp();
+      return true;
+    } catch (error) {
+      console.error(error);
+      lockError.textContent = error?.name === 'NotAllowedError' ? 'Проверка отменена. Повтори или введи PIN.' : 'Не удалось пройти Face ID. Используй PIN.';
+      return false;
+    }
+  }
+
+  async function verifyPin(pin) {
+    if (!security.pinEnabled) return false;
+    if (Date.now() < security.blockedUntil) {
+      const seconds = Math.ceil((security.blockedUntil - Date.now()) / 1000);
+      lockError.textContent = `Слишком много попыток. Повтори через ${seconds} сек.`;
+      return false;
+    }
+    const hash = await derivePinHash(String(pin || ''), base64ToBytes(security.pinSalt));
+    if (hash === security.pinHash) {
+      security.failedAttempts = 0;
+      unlockApp();
+      return true;
+    }
+    security.failedAttempts += 1;
+    if (security.failedAttempts >= 5) {
+      security.blockedUntil = Date.now() + 30000;
+      security.failedAttempts = 0;
+      lockError.textContent = '5 неверных попыток. Вход заблокирован на 30 секунд.';
+    } else {
+      lockError.textContent = `Неверный PIN. Осталось попыток: ${5 - security.failedAttempts}.`;
+    }
+    unlockPinInput?.select();
+    return false;
+  }
+
+  async function setupPin() {
+    if (!globalThis.crypto?.subtle) { alert('Шифрование PIN недоступно в этом браузере. Открой Alexander OS через HTTPS.'); return; }
+    const pin = prompt('Придумай PIN-код из 4–8 цифр. Не используй дату рождения.');
+    if (pin === null) return;
+    if (!/^\d{4,8}$/.test(pin)) {
+      alert('PIN должен содержать от 4 до 8 цифр.');
+      return;
+    }
+    const repeat = prompt('Повтори PIN-код.');
+    if (repeat !== pin) {
+      alert('PIN-коды не совпадают.');
+      return;
+    }
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    security.pinSalt = bytesToBase64(salt);
+    security.pinHash = await derivePinHash(pin, salt);
+    security.pinEnabled = true;
+    saveSecurity();
+    closeModal();
+    toast('PIN-код включён');
+    if (currentScreen === 'settings') renderSettings();
+  }
+
+  function disablePin() {
+    if (!security.pinEnabled) return;
+    if (security.faceIdEnabled) {
+      alert('Сначала отключи Face ID. PIN остаётся резервным способом входа.');
+      return;
+    }
+    if (!confirm('Отключить PIN-код? Защита приложения станет слабее.')) return;
+    security.pinEnabled = false;
+    security.pinHash = '';
+    security.pinSalt = '';
+    if (!security.faceIdEnabled) security.faceCredentialId = '';
+    saveSecurity();
+    closeModal();
+    if (currentScreen === 'settings') renderSettings();
+    toast('PIN-код отключён');
+  }
+
+  async function enableFaceId() {
+    if (!securityAvailable()) {
+      alert('Face ID для веб-приложения доступен только на поддерживаемом устройстве через HTTPS. Открой установленный Alexander OS на iPhone.');
+      return;
+    }
+    if (!security.pinEnabled) {
+      alert('Сначала создай резервный PIN-код. Он нужен, если Face ID временно недоступен.');
+      return;
+    }
+    try {
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rp: { name: 'Alexander OS' },
+          user: {
+            id: crypto.getRandomValues(new Uint8Array(16)),
+            name: 'alexander-os-local-user',
+            displayName: state.profile.name || 'Пользователь'
+          },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          timeout: 60000,
+          attestation: 'none',
+          authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' }
+        }
+      });
+      if (!credential) throw new Error('Credential was not created');
+      security.faceCredentialId = bytesToBase64(credential.rawId);
+      security.faceIdEnabled = true;
+      saveSecurity();
+      closeModal();
+      toast('Face ID включён');
+      if (currentScreen === 'settings') renderSettings();
+    } catch (error) {
+      console.error(error);
+      alert(error?.name === 'NotAllowedError' ? 'Настройка Face ID отменена.' : 'Не удалось включить Face ID на этом устройстве.');
+    }
+  }
+
+  function disableFaceId() {
+    if (!security.faceIdEnabled) return;
+    if (!confirm('Отключить Face ID для Alexander OS?')) return;
+    security.faceIdEnabled = false;
+    security.faceCredentialId = '';
+    saveSecurity();
+    closeModal();
+    if (currentScreen === 'settings') renderSettings();
+    toast('Face ID отключён');
+  }
+
+  function openSecuritySettings() {
+    openModal('Безопасность', `
+      <div class="security-overview">
+        <div class="security-shield">⌾</div>
+        <div><strong>${security.pinEnabled || security.faceIdEnabled ? 'Защита включена' : 'Защита выключена'}</strong><small>Локальная блокировка приложения на этом устройстве</small></div>
+      </div>
+      <div class="settings-list card security-list">
+        <button type="button" class="settings-row" id="securityPin"><span>PIN-код<small>${security.pinEnabled ? 'Включён · нажми, чтобы изменить' : 'Резервный способ входа'}</small></span><b>${security.pinEnabled ? 'Изменить' : 'Включить'}</b></button>
+        ${security.pinEnabled ? '<button type="button" class="settings-row danger-soft" id="disablePin"><span>Отключить PIN<small>Face ID может остаться без резервного входа</small></span><b>›</b></button>' : ''}
+        <button type="button" class="settings-row" id="securityFace"><span>Face ID<small>${security.faceIdEnabled ? 'Включён на этом устройстве' : securityAvailable() ? 'Быстрая разблокировка' : 'Недоступен в этом браузере'}</small></span><b>${security.faceIdEnabled ? 'Отключить' : 'Включить'}</b></button>
+        <label class="settings-row select-row"><span>Автоблокировка<small>При бездействии</small></span><select id="autoLockMinutes"><option value="0" ${Number(state.profile.autoLockMinutes || 0) === 0 ? 'selected' : ''}>Никогда</option><option value="1" ${Number(state.profile.autoLockMinutes || 0) === 1 ? 'selected' : ''}>Через 1 минуту</option><option value="5" ${Number(state.profile.autoLockMinutes || 0) === 5 ? 'selected' : ''}>Через 5 минут</option><option value="15" ${Number(state.profile.autoLockMinutes || 0) === 15 ? 'selected' : ''}>Через 15 минут</option></select></label>
+        <label class="settings-row switch-row"><span>Блокировать при сворачивании<small>Рекомендуется для финансовых данных</small></span><input id="lockOnBackground" type="checkbox" ${state.profile.lockOnBackground !== false ? 'checked' : ''}></label>
+      </div>
+      <div class="privacy-note"><b>Важно:</b> Face ID здесь защищает вход в локальное приложение. Для полной серверной авторизации и облачной синхронизации потребуется отдельный backend.</div>
+    `, null, { hideActions: true });
+    $('#securityPin')?.addEventListener('click', setupPin);
+    $('#disablePin')?.addEventListener('click', disablePin);
+    $('#securityFace')?.addEventListener('click', () => security.faceIdEnabled ? disableFaceId() : enableFaceId());
+    $('#autoLockMinutes')?.addEventListener('change', event => { state.profile.autoLockMinutes = Number(event.target.value || 0); saveState({ snapshot: false }); toast('Автоблокировка сохранена'); });
+    $('#lockOnBackground')?.addEventListener('change', event => { state.profile.lockOnBackground = event.target.checked; saveState({ snapshot: false }); toast('Настройка сохранена'); });
+  }
+
   function renderSettings() {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
     const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены в системе' : 'Выключены';
+    const securityStatus = security.faceIdEnabled ? 'Face ID + PIN' : security.pinEnabled ? 'PIN-код' : 'Не включена';
     app.innerHTML = `
-      <section class="settings-screen">
-        <section class="card settings-profile-card">
+      <section class="settings-screen v10-settings">
+        <section class="card settings-profile-card v10-profile-card">
           <div class="settings-avatar">S</div>
-          <div><small>Alexander OS</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Личная система капитала, задач и роста</p></div>
+          <div><small>Alexander OS v10</small><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Финансы, цели, задачи и прогресс в одной системе</p></div>
+          <span class="security-status ${security.pinEnabled || security.faceIdEnabled ? 'active' : ''}">${security.pinEnabled || security.faceIdEnabled ? 'Защищено' : 'Без защиты'}</span>
         </section>
+
         <section class="settings-group">
-          <h3>Цели и внешний вид</h3>
+          <h3>Профиль и цели</h3>
           <form id="profileForm" class="card settings-form">
             <div class="field"><label>Имя</label><input name="name" value="${escapeHtml(state.profile.name || '')}"></div>
             <div class="form-grid">
               <div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div>
-              <div class="field"><label>Цель дохода в месяц, ₽</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
+              <div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div>
             </div>
             <div class="form-grid">
               <div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div>
               <div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
             </div>
-            <div class="field"><label>Тема</label><select name="theme"><option value="emerald" ${state.profile.theme === 'emerald' ? 'selected' : ''}>Изумрудная</option><option value="graphite" ${state.profile.theme === 'graphite' ? 'selected' : ''}>Графитовая</option><option value="light" ${state.profile.theme === 'light' ? 'selected' : ''}>Светлая</option></select></div>
-            <button class="btn primary full" type="submit">Сохранить настройки</button>
+            <button class="btn primary full" type="submit">Сохранить профиль</button>
           </form>
         </section>
+
         <section class="settings-group">
-          <h3>Данные</h3>
-          <div class="settings-list card settings-list-card">
-            <button class="settings-row" type="button" id="exportData"><span>Экспорт данных<small>${state.profile.lastBackup ? `Последняя копия: ${longDateText(state.profile.lastBackup)}` : 'Скачать полную резервную копию JSON'}</small></span><b>›</b></button>
-            <label class="settings-row file-row"><span>Импорт данных<small>Полностью заменить данные из резервной копии</small></span><b>›</b><input id="importData" type="file" accept="application/json"></label>
-            <button class="settings-row featured" type="button" id="exportChatGPT"><span>Экспорт для ChatGPT<small>Финансы, задачи, проекты, цели, привычки и заметки</small></span><b>↗</b></button>
+          <h3>Темы</h3>
+          <div class="card theme-picker" role="radiogroup" aria-label="Тема приложения">
+            ${[
+              ['emerald', 'Изумрудная', '#20c66f'],
+              ['graphite', 'Графитовая', '#606a76'],
+              ['light', 'Светлая', '#f4f7f5']
+            ].map(([key, label, color]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-choice="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${key === 'emerald' ? 'Основная' : key === 'graphite' ? 'Строгая' : 'Дневная'}</small></button>`).join('')}
           </div>
         </section>
+
+        <section class="settings-group">
+          <h3>Безопасность</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="securitySettings"><span>Защита приложения<small>${securityStatus} · автоблокировка ${Number(state.profile.autoLockMinutes || 0) ? `${state.profile.autoLockMinutes} мин.` : 'выключена'}</small></span><b>›</b></button>
+            <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><span>Заблокировать сейчас<small>Проверить экран входа</small></span><b>⌾</b></button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <h3>Данные и резервные копии</h3>
+          <div class="settings-list card settings-list-card">
+            <button class="settings-row featured" type="button" id="exportEncryptedData"><span>Защищённая копия<small>Файл .aos с паролем и AES-GCM</small></span><b>↗</b></button>
+            <button class="settings-row" type="button" id="exportData"><span>Обычная копия JSON<small>${state.profile.lastBackup ? `Последняя: ${longDateText(state.profile.lastBackup)}` : 'Полное резервное копирование'}</small></span><b>›</b></button>
+            <label class="settings-row file-row"><span>Импорт данных<small>Восстановить JSON или защищённый .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
+            <button class="settings-row" type="button" id="exportChatGPT"><span>Отчёт для ChatGPT<small>Финансы, задачи, проекты, цели и заметки</small></span><b>↗</b></button>
+          </div>
+        </section>
+
         <section class="settings-group">
           <h3>Приложение</h3>
           <div class="settings-list card settings-list-card">
@@ -1850,27 +2100,40 @@
             <button class="settings-row" type="button" id="openKnowledgeBase"><span>База мыслей и идей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
           </div>
         </section>
+
         <section class="settings-group">
           <h3>Конфиденциальность</h3>
-          <div class="card privacy-card"><p>Все данные хранятся локально в браузере устройства. Не записывай пароли, номера карт и документы.</p></div>
+          <div class="card privacy-card v10-privacy-card">
+            <div class="privacy-icon">⌾</div>
+            <div><b>Данные остаются на устройстве</b><p>Обычная база хранится локально в браузере. Для передачи используй защищённую резервную копию .aos.</p></div>
+          </div>
           <button class="settings-row danger" type="button" id="resetData"><span>Сбросить все данные<small>Вернуть стартовую версию</small></span><b>›</b></button>
         </section>
-        <p class="app-version">Alexander OS · версия 9.2</p>
+        <p class="app-version">Alexander OS · версия 10.0</p>
       </section>`;
 
     $('#profileForm')?.addEventListener('submit', event => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.currentTarget));
-      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0), theme: data.theme || 'emerald' };
+      state.profile = { ...state.profile, name: String(data.name || '').trim() || 'Пользователь', capitalTarget: Number(data.capitalTarget || 0), monthlyIncomeTarget: Number(data.monthlyIncomeTarget || 0), cushionTarget: Number(data.cushionTarget || 0), monthlyExpenseLimit: Number(data.monthlyExpenseLimit || 0) };
       saveState();
-      applyTheme();
       render();
-      toast('Настройки сохранены');
+      toast('Профиль сохранён');
     });
+    $$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
+      state.profile.theme = button.dataset.themeChoice;
+      saveState({ snapshot: false });
+      applyTheme();
+      renderSettings();
+      toast('Тема изменена');
+    }));
+    $('#securitySettings')?.addEventListener('click', openSecuritySettings);
+    $('#lockNow')?.addEventListener('click', () => lockApp());
     $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
     $('#notificationSettings')?.addEventListener('click', requestNotifications);
     $('#installHelp')?.addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить».'));
     $('#exportData')?.addEventListener('click', exportData);
+    $('#exportEncryptedData')?.addEventListener('click', exportEncryptedData);
     $('#exportChatGPT')?.addEventListener('click', exportChatGPTData);
     $('#importData')?.addEventListener('change', importData);
     $('#resetData')?.addEventListener('click', () => {
@@ -1918,11 +2181,68 @@
     return true;
   }
 
+  async function deriveBackupKey(password, salt) {
+    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  async function encryptBackupPayload(payload, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveBackupKey(password, salt);
+    const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+    return {
+      format: 'AlexanderOSEncryptedBackup',
+      schemaVersion: 1,
+      appVersion: '10.0',
+      exportedAt: new Date().toISOString(),
+      kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
+      cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
+      ciphertext: bytesToBase64(ciphertext)
+    };
+  }
+
+  async function decryptBackupPayload(wrapper, password) {
+    if (wrapper?.format !== 'AlexanderOSEncryptedBackup') throw new Error('Not encrypted backup');
+    const salt = base64ToBytes(wrapper.kdf?.salt || '');
+    const iv = base64ToBytes(wrapper.cipher?.iv || '');
+    const key = await deriveBackupKey(password, salt);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, base64ToBytes(wrapper.ciphertext || ''));
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+
+  async function exportEncryptedData() {
+    if (!globalThis.crypto?.subtle) { alert('Защищённый экспорт доступен только через HTTPS в современном браузере.'); return; }
+    const password = prompt('Придумай пароль для резервной копии. Минимум 8 символов.');
+    if (password === null) return;
+    if (password.length < 8) {
+      alert('Пароль должен содержать минимум 8 символов.');
+      return;
+    }
+    const repeat = prompt('Повтори пароль резервной копии.');
+    if (repeat !== password) {
+      alert('Пароли не совпадают.');
+      return;
+    }
+    try {
+      state.profile.lastBackup = todayISO();
+      saveState({ snapshot: false });
+      const encrypted = await encryptBackupPayload(createBackupPayload(state), password);
+      await shareOrDownloadFile(`alexander-os-secure-${todayISO()}.aos`, JSON.stringify(encrypted), 'application/octet-stream');
+      if (currentScreen === 'settings') renderSettings();
+      toast('Защищённая копия создана');
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось создать защищённую копию на этом устройстве.');
+    }
+  }
+
   function createBackupPayload(sourceState = state) {
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '9.2',
+      appVersion: '10.0',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -2084,7 +2404,16 @@ ${JSON.stringify(state, null, 2)}
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text());
+      let parsed = JSON.parse(await file.text());
+      if (parsed?.format === 'AlexanderOSEncryptedBackup') {
+        const password = prompt('Введите пароль защищённой резервной копии.');
+        if (password === null) return;
+        try {
+          parsed = await decryptBackupPayload(parsed, password);
+        } catch (error) {
+          throw new Error('Wrong password or damaged encrypted backup');
+        }
+      }
       const backupData = extractBackupData(parsed);
       if (!validateBackupData(backupData)) throw new Error('Backup validation failed');
       const summary = backupSummary(backupData);
@@ -2093,7 +2422,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 9.2;
+      state.version = 10;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -2101,7 +2430,7 @@ ${JSON.stringify(state, null, 2)}
       toast(`Восстановлено: ${summary}`);
     } catch (error) {
       console.error(error);
-      alert('Не удалось импортировать файл. Выбери JSON, скачанный через «Экспорт данных» в Alexander OS.');
+      alert(error?.message?.includes('Wrong password') ? 'Неверный пароль или файл повреждён.' : 'Не удалось импортировать файл. Выбери JSON или .aos, скачанный через «Экспорт данных» в Alexander OS.');
     } finally {
       input.value = '';
     }
@@ -2132,12 +2461,30 @@ ${JSON.stringify(state, null, 2)}
 
   $('#globalAdd').addEventListener('click', openGlobalAdd);
 
+  unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
+  unlockPinForm?.addEventListener('submit', event => {
+    event.preventDefault();
+    verifyPin(unlockPinInput.value);
+  });
+  ['pointerdown', 'keydown', 'touchstart'].forEach(eventName => document.addEventListener(eventName, () => { if (!appLocked) lastActivityAt = Date.now(); }, { passive: true }));
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
   }
   setInterval(checkTaskReminders, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkTaskReminders(); });
+  setInterval(() => {
+    const minutes = Number(state.profile.autoLockMinutes || 0);
+    if (!appLocked && minutes > 0 && (security.pinEnabled || security.faceIdEnabled) && Date.now() - lastActivityAt >= minutes * 60000) lockApp('Приложение заблокировано из-за бездействия.');
+  }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state.profile.lockOnBackground !== false && (security.pinEnabled || security.faceIdEnabled)) lockApp('Приложение заблокировано после сворачивания.');
+    } else {
+      checkTaskReminders();
+    }
+  });
 
   saveState();
   render();
+  if (security.pinEnabled || security.faceIdEnabled) lockApp();
 })();

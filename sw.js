@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-v9-2-goals-backup-fix';
-const ASSETS = ['./', './index.html', './styles.css?v=9.2', './app.js?v=9.2', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v10-design-security';
+const ASSETS = ['./', './index.html', './styles.css?v=10.0', './app.js?v=10.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
