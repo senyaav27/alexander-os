@@ -1066,10 +1066,10 @@
     applyTheme();
     $('#todayLabel').textContent = fullDate();
     document.body.dataset.screen = currentScreen;
-    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс', settings: 'Настройки' };
+    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
     $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
-    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth, settings: renderSettings }[currentScreen] || renderDashboard;
+    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
     renderer();
   }
 
@@ -1920,7 +1920,7 @@
   function closeModal() {
     modalAction = null;
     modalForm.reset();
-    modal.classList.remove('workout-dialog');
+    modal.classList.remove('workout-dialog', 'settings-dialog');
     if (modal.open) modal.close();
   }
 
@@ -2568,7 +2568,7 @@
       saveState({ snapshot: false });
       applyTheme();
       closeModal();
-      renderSettings();
+      renderSettings(target);
       toast('Тема изменена');
     }));
   }
@@ -2705,11 +2705,11 @@
     }));
   }
 
-  function renderSettings() {
+  function renderSettings(target = app) {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
     const notificationStatus = !notificationSupported ? 'Не поддерживаются' : Notification.permission === 'granted' && state.profile.notificationsEnabled ? 'Включены' : Notification.permission === 'denied' ? 'Запрещены' : 'Выключены';
     const securityStatus = security.faceIdEnabled && security.pinEnabled ? 'Face ID + PIN' : security.faceIdEnabled ? 'Face ID' : security.pinEnabled ? 'PIN-код' : 'Не настроена';
-    app.innerHTML = `
+    target.innerHTML = `
       <section class="settings-screen v11-settings">
         <button class="card settings-profile-card" type="button" id="profileSettings">
           <div class="settings-avatar">S</div><div><h2>${escapeHtml(state.profile.name || 'Пользователь')}</h2><p>Твоя система. Твой прогресс. Твоя жизнь.</p></div><span>›</span>
@@ -2748,7 +2748,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.1 · Stability & Intelligence</p>
+        <p class="app-version">Alexander OS V11.2 · Profile Settings</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -2779,6 +2779,12 @@
       saveState();
       render();
     });
+  }
+
+  function openSettingsModal() {
+    modal.classList.add('settings-dialog');
+    openModal('Настройки', '', null, { hideActions: true });
+    renderSettings(modalBody);
   }
 
   async function requestNotifications() {
@@ -3090,6 +3096,8 @@ ${JSON.stringify(state, null, 2)}
       input.value = '';
     }
   }
+
+  $('#profileSettingsTrigger')?.addEventListener('click', openSettingsModal);
 
   $$('.nav-item[data-screen]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.screen)));
 

@@ -1,4 +1,4 @@
-Alexander OS V11.1 - QA Report
+Alexander OS V11.2 - QA Report
 
 Проверено 26.06.2026:
 - загрузка приложения без ошибок JavaScript

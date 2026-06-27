@@ -11,20 +11,20 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=11.1" />
-  <title>Alexander OS V11.1</title>
+  <link rel="stylesheet" href="styles.css?v=11.2" />
+  <title>Alexander OS V11.2</title>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="topbar-brand">
+      <button class="topbar-brand profile-settings-trigger" id="profileSettingsTrigger" type="button" aria-label="Открыть настройки">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="topbar-copy">
-          <div class="brand-line">Alexander OS <span>V11.1</span></div>
+          <div class="brand-line">Alexander OS <span>V11.2</span></div>
           <p class="eyebrow" id="todayLabel">Сегодня</p>
           <h1 id="screenTitle">Главная</h1>
         </div>
-      </div>
+      </button>
       <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -52,9 +52,6 @@
       <button class="nav-item" type="button" data-screen="growth" aria-label="Прогресс">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V13M12 20V8M19 20V4"/><path d="m4.5 9.5 5-4 4 2.5 6-5"/></svg><small>Прогресс</small>
       </button>
-      <button class="nav-item settings-nav" id="settingsNavButton" type="button" data-screen="settings" aria-label="Настройки">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M19.1 14.8a1.6 1.6 0 0 0 .3 1.8l.1.1-2.1 2.1-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2h-3v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1-2.1-2.1.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H5.2v-3h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1 2.1-2.1.1.1a1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5v-.2h3v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1 2.1 2.1-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1h.2v3h-.2a1.6 1.6 0 0 0-1.5 1Z"/></svg><small>Настройки</small>
-      </button>
     </nav>
   </div>
 
@@ -65,7 +62,7 @@
         <span class="face-corners"><i></i><i></i><i></i><i></i></span>
         <svg viewBox="0 0 64 64"><path d="M22 28v-4a6 6 0 0 1 6-6h2M42 28v-4a6 6 0 0 0-6-6h-2M22 36v4a6 6 0 0 0 6 6h2M42 36v4a6 6 0 0 1-6 6h-2"/><path d="M26 31h.1M38 31h.1M27 38c3 2.4 7 2.4 10 0"/></svg>
       </div>
-      <p class="eyebrow">Alexander OS V11.1</p>
+      <p class="eyebrow">Alexander OS V11.2</p>
       <h2>Разблокировка Face ID</h2>
       <p id="lockHint">Подтверди вход, чтобы открыть личные данные.</p>
       <div class="face-status" id="faceStatus"><span></span> Ожидание подтверждения</div>
@@ -94,6 +91,6 @@
   </dialog>
 
 
-  <script src="app.js?v=11.1"></script>
+  <script src="app.js?v=11.2"></script>
 </body>
 </html>

@@ -3202,3 +3202,38 @@ dialog.modal.workout-dialog { width:min(100%,760px); max-width:760px; height:100
   .calendar-cell { min-height:52px; padding:6px; }
   .workout-card-actions { grid-template-columns:1fr; }
 }
+
+
+/* V11.2 - five-tab navigation and profile settings sheet */
+.profile-settings-trigger {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.profile-settings-trigger:active { transform: scale(.985); }
+.profile-settings-trigger .brand-mark { box-shadow: 0 0 0 1px rgba(156,243,41,.14), 0 10px 30px rgba(65,210,83,.12); }
+.bottom-nav { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.settings-dialog .modal-card {
+  width: min(100%, 620px);
+  max-height: 94dvh;
+  padding: 14px;
+  border-radius: 28px 28px 0 0;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  box-shadow: 0 -22px 70px rgba(0,0,0,.44);
+}
+.settings-dialog::backdrop { background: rgba(0,8,5,.62); backdrop-filter: blur(10px); }
+.settings-dialog .modal-head { position: sticky; top: 0; z-index: 5; padding: 4px 2px 12px; background: linear-gradient(180deg,var(--bg) 78%,transparent); }
+.settings-dialog .modal-head h2 { font-size: 24px; }
+.settings-dialog #modalBody { padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+.settings-dialog .settings-screen { gap: 14px; }
+.settings-dialog .settings-profile-card { margin-top: 2px; }
+@media (max-width: 640px) {
+  .settings-dialog { align-items: end; padding: 0; }
+  .settings-dialog .modal-card { width: 100%; max-width: none; min-height: 82dvh; max-height: 94dvh; margin: 0; }
+}
