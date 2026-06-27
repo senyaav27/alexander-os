@@ -209,7 +209,7 @@
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
-    if (!['emerald', 'graphite', 'light', 'future'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
+    if (!['emerald', 'graphite', 'light', 'future', 'neonlime'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -330,7 +330,7 @@
   function applyTheme() {
     if (state.profile.theme === 'future') state.profile.theme = 'emerald';
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
-    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4' };
+    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4', neonlime: '#121416' };
     $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
   }
 
@@ -608,7 +608,7 @@
     test('Парсер быстрого расхода', () => { const parsed = parseSmartExpense('550 обед'); return parsed.amount === 550 && parsed.category === 'cafes'; });
     test('Календарный диапазон', () => monthRange(monthKey(new Date())).end >= monthRange(monthKey(new Date())).start);
     test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
-    test('Темы интерфейса', () => ['emerald','graphite','light'].includes(state.profile.theme));
+    test('Темы интерфейса', () => ['emerald','graphite','light','neonlime'].includes(state.profile.theme));
     test('Уникальность счетов', () => new Set(state.accounts.map(item => item.id)).size === state.accounts.length);
     test('Безопасное восстановление', () => Boolean(normalizeState(clone(state)).accounts.length));
     return tests;
@@ -1673,7 +1673,7 @@
       <section class="v11-progress-grid">
         <button class="card v11-progress-tile" type="button" id="jumpGoals"><span class="tile-icon">◎</span><small>Цели</small><strong>${goalRate}%</strong><em>${activeGoals.length} активных</em></button>
         <button class="card v11-progress-tile" type="button" data-go="finance"><span class="tile-icon">₽</span><small>Финансы</small><strong>${money(analytics.monthBalance)}</strong><em>${analytics.monthBalance >= 0 ? 'рост капитала' : 'нужно сократить расходы'}</em></button>
-        <button class="card v11-progress-tile" type="button" id="jumpHabits"><span class="tile-icon">◌</span><small>Привычки</small><strong>${currentHabits.rate}%</strong><em>${currentHabits.rate >= previousHabits.rate ? 'стабильный ритм' : 'ниже прошлой недели'}</em></button>
+        <button class="card v11-progress-tile" type="button" id="jumpHabits"><span class="tile-icon habit-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" pathLength="100"/><path d="m8.2 12.1 2.4 2.5 5.4-5.7"/></svg></span><small>Привычки</small><strong>${currentHabits.rate}%</strong><em>${currentHabits.rate >= previousHabits.rate ? 'стабильный ритм' : 'ниже прошлой недели'}</em></button>
         <button class="card v11-progress-tile" type="button" data-go="projects"><span class="tile-icon">▣</span><small>Проекты</small><strong>${projectRate}%</strong><em>${state.projects.filter(project => ['active','growth'].includes(project.status)).length} в работе</em></button>
       </section>
 
@@ -2559,16 +2559,16 @@
 
   function openAppearanceSettings() {
     openModal('Внешний вид', `
-      <p class="modal-description">Три темы используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
+      <p class="modal-description">Четыре темы используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
       <div class="theme-picker exact-theme-picker" role="radiogroup">
-        ${[['emerald','Изумрудная','#42e778','Основная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
+        ${[['emerald','Изумрудная','#42e778','Основная'],['neonlime','Неон лайм','#d7ff19','Контрастная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
       </div>`, null, { hideActions: true });
     $$('[data-theme-modal]', modalBody).forEach(button => button.addEventListener('click', () => {
       state.profile.theme = button.dataset.themeModal;
       saveState({ snapshot: false });
       applyTheme();
       closeModal();
-      renderSettings(target);
+      render();
       toast('Тема изменена');
     }));
   }
@@ -2718,7 +2718,7 @@
         <section class="card v11-theme-card">
           <div class="section-head"><div><h2>Внешний вид</h2><small>Тема меняется мгновенно</small></div></div>
           <div class="v11-theme-picker">
-            ${[['emerald','Изумрудная','#33e36d'],['graphite','Графитовая','#364149'],['light','Светлая','#f2efe5']].map(([key,label,color]) => `<button type="button" class="v11-theme-choice ${state.profile.theme===key?'active':''}" data-theme-inline="${key}"><span style="--theme-swatch:${color}"></span><b>${label}</b></button>`).join('')}
+            ${[['emerald','Изумрудная','#33e36d'],['neonlime','Неон лайм','#d7ff19'],['graphite','Графитовая','#364149'],['light','Светлая','#f2efe5']].map(([key,label,color]) => `<button type="button" class="v11-theme-choice ${state.profile.theme===key?'active':''}" data-theme-inline="${key}"><span style="--theme-swatch:${color}"></span><b>${label}</b></button>`).join('')}
           </div>
         </section>
 
@@ -2748,7 +2748,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.2 · Profile Settings</p>
+        <p class="app-version">Alexander OS V11.3 · Neon Lime</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -2770,7 +2770,7 @@
       state.profile.theme = button.dataset.themeInline;
       saveState({ snapshot:false });
       applyTheme();
-      renderSettings();
+      renderSettings(target);
       toast('Тема изменена');
     }));
     $('#resetData')?.addEventListener('click', () => {
@@ -2782,9 +2782,10 @@
   }
 
   function openSettingsModal() {
-    modal.classList.add('settings-dialog');
     openModal('Настройки', '', null, { hideActions: true });
+    modal.classList.add('settings-dialog');
     renderSettings(modalBody);
+    requestAnimationFrame(() => { modalBody.scrollTop = 0; });
   }
 
   async function requestNotifications() {

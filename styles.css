@@ -3237,3 +3237,306 @@ dialog.modal.workout-dialog { width:min(100%,760px); max-width:760px; height:100
   .settings-dialog { align-items: end; padding: 0; }
   .settings-dialog .modal-card { width: 100%; max-width: none; min-height: 82dvh; max-height: 94dvh; margin: 0; }
 }
+
+/* =========================================================
+   Alexander OS V11.3 - Settings polish, spacing and Neon Lime
+   ========================================================= */
+
+:root[data-theme="neonlime"] {
+  --bg: #111315;
+  --bg-soft: #17191c;
+  --surface: #1b1e21;
+  --surface-2: #141619;
+  --surface-3: #25292d;
+  --surface-soft: rgba(23, 25, 28, .96);
+  --text: #f5f5f0;
+  --muted: #9a9d9f;
+  --line: rgba(255, 255, 255, .075);
+  --line-strong: rgba(216, 255, 24, .28);
+  --accent: #d8ff18;
+  --accent-soft: rgba(216, 255, 24, .12);
+  --accent-2: #a7ff47;
+  --danger: #ff6d62;
+  --warning: #ffd34f;
+  --success: #c8ff32;
+  --shadow: 0 28px 72px rgba(0, 0, 0, .46);
+  --glass-shadow: 0 20px 54px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255,255,255,.035);
+  color-scheme: dark;
+}
+
+:root[data-theme="neonlime"] body {
+  background:
+    radial-gradient(circle at 58% -12%, rgba(216,255,24,.055), transparent 30%),
+    linear-gradient(180deg, #16181a 0%, #101214 56%, #0b0d0f 100%);
+}
+
+:root[data-theme="neonlime"] .topbar {
+  background: linear-gradient(180deg, rgba(17,19,21,.98), rgba(17,19,21,.90), rgba(17,19,21,0));
+}
+
+:root[data-theme="neonlime"] .brand-mark,
+:root[data-theme="neonlime"] .top-add,
+:root[data-theme="neonlime"] .floating-add {
+  border-color: rgba(222,255,77,.66) !important;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255,255,255,.72), transparent 23%),
+    linear-gradient(145deg, #edff73 0%, #d8ff18 58%, #a6d900 100%) !important;
+  color: #151a00 !important;
+  box-shadow: 0 12px 30px rgba(216,255,24,.21), inset 0 1px 0 rgba(255,255,255,.68) !important;
+}
+
+:root[data-theme="neonlime"] .card,
+:root[data-theme="neonlime"] .stat-card,
+:root[data-theme="neonlime"] .toolbar-card,
+:root[data-theme="neonlime"] .item,
+:root[data-theme="neonlime"] .action-tile,
+:root[data-theme="neonlime"] .settings-profile-card,
+:root[data-theme="neonlime"] .settings-list-card,
+:root[data-theme="neonlime"] .settings-form,
+:root[data-theme="neonlime"] .privacy-card,
+:root[data-theme="neonlime"] .home-metric-card {
+  border-color: rgba(255,255,255,.07);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.006)),
+    #1b1e21;
+  box-shadow: 0 17px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+:root[data-theme="neonlime"] .home-capital-card,
+:root[data-theme="neonlime"] .progress-hero,
+:root[data-theme="neonlime"] .v11-progress-overview {
+  border-color: rgba(216,255,24,.20);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(216,255,24,.12), transparent 33%),
+    linear-gradient(145deg, #24282a 0%, #1b1e20 52%, #17191b 100%);
+  box-shadow: 0 24px 62px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+:root[data-theme="neonlime"] .finance-master-card {
+  border-color: rgba(216,255,24,.24);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(216,255,24,.15), transparent 31%),
+    linear-gradient(145deg, #292d2e 0%, #1e2123 50%, #17191b 100%);
+  color: var(--text);
+  box-shadow: 0 26px 66px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+:root[data-theme="neonlime"] .finance-master-card .eyebrow,
+:root[data-theme="neonlime"] .finance-master-grid small,
+:root[data-theme="neonlime"] .finance-master-grid em,
+:root[data-theme="neonlime"] .finance-master-card .capital-breakdown small {
+  color: #9ea19e;
+}
+
+:root[data-theme="neonlime"] .finance-master-card .capital-breakdown span,
+:root[data-theme="neonlime"] .finance-master-grid > div,
+:root[data-theme="neonlime"] .finance-source-details {
+  border-color: rgba(255,255,255,.075);
+  background: rgba(0,0,0,.17);
+  color: var(--text);
+}
+
+:root[data-theme="neonlime"] .finance-master-grid > div:nth-child(1),
+:root[data-theme="neonlime"] .finance-master-grid > div:nth-child(2),
+:root[data-theme="neonlime"] .finance-master-grid > div:nth-child(3),
+:root[data-theme="neonlime"] .finance-master-grid > div:nth-child(6) {
+  background: linear-gradient(145deg, rgba(216,255,24,.08), rgba(0,0,0,.16));
+}
+
+:root[data-theme="neonlime"] .finance-master-grid strong,
+:root[data-theme="neonlime"] .finance-master-card .capital-breakdown span {
+  color: var(--text);
+}
+
+:root[data-theme="neonlime"] .tabs,
+:root[data-theme="neonlime"] .bottom-nav {
+  border-color: rgba(255,255,255,.07);
+  background: rgba(20,22,24,.93);
+  box-shadow: 0 18px 48px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+:root[data-theme="neonlime"] .tab.active,
+:root[data-theme="neonlime"] .chip.active {
+  background: linear-gradient(180deg, #e3ff55, #c4ef0d);
+  color: #171b05;
+  box-shadow: 0 7px 18px rgba(216,255,24,.18), inset 0 1px 0 rgba(255,255,255,.56);
+}
+
+:root[data-theme="neonlime"] .bottom-nav .nav-item.active {
+  background: radial-gradient(circle at 50% -10%, rgba(216,255,24,.15), transparent 68%);
+  color: var(--accent);
+}
+
+:root[data-theme="neonlime"] .btn.primary {
+  background: linear-gradient(180deg, #e4ff58, #c9f315);
+  color: #171b05;
+  box-shadow: 0 12px 28px rgba(216,255,24,.17), inset 0 1px 0 rgba(255,255,255,.58);
+}
+
+/* Deliberate breathing room between the progress chart and metric tiles. */
+.v11-progress-grid {
+  margin-top: 22px;
+}
+
+/* Refined habit icon - consistent vector ring instead of a text glyph. */
+.v11-progress-tile .habit-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.v11-progress-tile .habit-icon circle {
+  stroke-dasharray: 72 28;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Four quick themes, readable on every iPhone width. */
+.v11-theme-picker {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.v11-theme-choice {
+  min-height: 104px;
+  padding: 12px 8px;
+  transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+.v11-theme-choice:active { transform: scale(.98); }
+.v11-theme-choice span {
+  width: 48px;
+  height: 48px;
+}
+.v11-theme-choice[data-theme-inline="neonlime"] span,
+.theme-choice[data-theme-modal="neonlime"] > span {
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255,255,255,.76), transparent 22%),
+    linear-gradient(145deg, #f0ff78, #d8ff18 55%, #9dcc00);
+  box-shadow: 0 0 24px rgba(216,255,24,.28), inset 0 1px 5px rgba(255,255,255,.52);
+}
+
+/* Reliable, inset settings sheet with fixed header and independent scrolling. */
+dialog.modal.settings-dialog {
+  width: min(calc(100% - 22px), 600px) !important;
+  max-width: 600px !important;
+  max-height: calc(100dvh - max(22px, env(safe-area-inset-top)) - 12px) !important;
+  margin: max(11px, env(safe-area-inset-top)) auto 11px !important;
+  padding: 0 !important;
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 28px !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  box-shadow: 0 30px 100px rgba(0,0,0,.56), 0 0 0 1px rgba(255,255,255,.02) !important;
+}
+.settings-dialog::backdrop {
+  background: rgba(0, 7, 4, .68);
+  backdrop-filter: blur(13px) saturate(110%);
+}
+.settings-dialog .modal-card {
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: inherit !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: inherit !important;
+  background:
+    radial-gradient(circle at 52% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 27%),
+    color-mix(in srgb, var(--bg) 96%, var(--surface)) !important;
+}
+.settings-dialog .modal-head {
+  position: relative !important;
+  top: auto !important;
+  z-index: 10;
+  flex: 0 0 auto;
+  min-height: 70px;
+  margin: 0 !important;
+  padding: 24px 18px 14px !important;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 96%, transparent) !important;
+  backdrop-filter: blur(24px);
+}
+.settings-dialog .modal-head::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  transform: translateX(-50%);
+}
+.settings-dialog .modal-head h2 {
+  font-size: 24px;
+  line-height: 1;
+}
+.settings-dialog .modal-head .icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  flex: 0 0 42px;
+  touch-action: manipulation;
+}
+.settings-dialog #modalBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 14px calc(24px + env(safe-area-inset-bottom)) !important;
+  scroll-padding-top: 14px;
+}
+.settings-dialog .settings-screen {
+  display: grid;
+  gap: 12px !important;
+}
+.settings-dialog .settings-profile-card {
+  margin: 0 !important;
+  min-height: 82px;
+  padding: 14px;
+  border-radius: 21px;
+}
+.settings-dialog .v11-theme-card {
+  padding: 14px;
+  border-radius: 21px;
+}
+.settings-dialog .exact-settings-list {
+  padding: 4px 12px;
+  border-radius: 21px;
+}
+.settings-dialog .settings-row {
+  min-height: 58px;
+  padding: 10px 2px;
+}
+.settings-dialog .settings-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 11px;
+}
+.settings-dialog .app-version {
+  margin: 3px 0 0;
+  padding-bottom: 4px;
+  text-align: center;
+}
+
+@media (max-width: 420px) {
+  dialog.modal.settings-dialog {
+    width: calc(100% - 14px) !important;
+    max-height: calc(100dvh - max(14px, env(safe-area-inset-top)) - 7px) !important;
+    margin: max(7px, env(safe-area-inset-top)) auto 7px !important;
+    border-radius: 25px !important;
+  }
+  .settings-dialog .modal-head { min-height: 66px; padding: 22px 14px 12px !important; }
+  .settings-dialog #modalBody { padding: 12px 11px calc(18px + env(safe-area-inset-bottom)) !important; }
+  .settings-dialog .settings-profile-card { grid-template-columns: 48px 1fr auto; min-height: 76px; padding: 12px; }
+  .settings-dialog .settings-avatar { width: 48px; height: 48px; }
+  .settings-dialog .settings-profile-card h2 { font-size: 18px; }
+  .settings-dialog .settings-row { min-height: 55px; }
+  .v11-progress-grid { margin-top: 19px; }
+}
