@@ -93,7 +93,7 @@
 
   function freshState() {
     return {
-      version: 11,
+      version: 11.1,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -108,7 +108,10 @@
         lastExpenseCategory: 'groceries',
         lastExpenseAccountId: '',
         autoLockMinutes: 1,
-        lockOnBackground: true
+        lockOnBackground: true,
+        recurringReminderDays: 3,
+        lastWeeklyReviewWeek: '',
+        lastDiagnosticsAt: null
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -142,6 +145,10 @@
       weeklyReviews: [],
       noteFolders: [{ id: 'inbox', name: 'Входящие', createdAt: new Date().toISOString() }],
       notes: [],
+      history: [],
+      trash: [],
+      recurringRules: [],
+      workoutLogs: [],
       snapshots: []
     };
   }
@@ -182,7 +189,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11,
+      version: 11.1,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -195,6 +202,10 @@
       weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : [],
       noteFolders: Array.isArray(raw.noteFolders) && raw.noteFolders.length ? raw.noteFolders : clone(base.noteFolders),
       notes: Array.isArray(raw.notes) ? raw.notes : [],
+      history: Array.isArray(raw.history) ? raw.history : [],
+      trash: Array.isArray(raw.trash) ? raw.trash : [],
+      recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
+      workoutLogs: Array.isArray(raw.workoutLogs) ? raw.workoutLogs : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
@@ -206,13 +217,17 @@
       status: task.status || (task.done ? 'done' : 'todo')
     }));
     result.accounts = result.accounts.map(account => ({ type: 'card', balance: 0, ...account, balance: Number(account.balance || 0) }));
-    result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', ...tx, amount: Number(tx.amount || 0) }));
+    result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', createdAt: new Date().toISOString(), ...tx, amount: Number(tx.amount || 0) }));
     result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
     result.projects = result.projects.map(project => ({ type: 'client', value: 0, status: 'active', paymentStatus: 'not_due', paymentDate: '', next: '', notes: '', startDate: '', ...project, value: Number(project.value || 0) }));
     result.noteFolders = result.noteFolders.map(folder => ({ id: folder.id || uid(), name: folder.name || 'Без названия', createdAt: folder.createdAt || new Date().toISOString() }));
     result.notes = result.notes.map(note => ({ id: note.id || uid(), folderId: note.folderId || result.noteFolders[0]?.id || 'inbox', title: note.title || 'Без названия', body: note.body || '', tags: note.tags || '', projectId: note.projectId || '', createdAt: note.createdAt || new Date().toISOString(), updatedAt: note.updatedAt || note.createdAt || new Date().toISOString() }));
     result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', createdAt: new Date(new Date().getFullYear(), 0, 1).toISOString(), ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
     result.habits = result.habits.map(habit => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], ...habit }));
+    result.history = result.history.slice(0, 12).map(entry => ({ id: entry.id || uid(), label: entry.label || 'Изменение данных', createdAt: entry.createdAt || new Date().toISOString(), snapshot: entry.snapshot || {} }));
+    result.trash = result.trash.map(entry => ({ id: entry.id || uid(), collection: entry.collection || '', label: entry.label || 'Удалённая запись', deletedAt: entry.deletedAt || new Date().toISOString(), item: entry.item || {}, related: Array.isArray(entry.related) ? entry.related : [] }));
+    result.recurringRules = result.recurringRules.map(rule => ({ id: rule.id || uid(), title: rule.title || 'Регулярная операция', type: rule.type === 'income' ? 'income' : 'expense', amount: Number(rule.amount || 0), category: rule.category || (rule.type === 'income' ? 'salary' : 'subscriptions'), accountId: rule.accountId || '', day: Math.max(1, Math.min(31, Number(rule.day || 1))), enabled: rule.enabled !== false, createdAt: rule.createdAt || new Date().toISOString() }));
+    result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Силовая тренировка', duration: Number(log.duration || 45), effort: Number(log.effort || 3), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
     return ensureAccountIntegrity(result);
   }
 
@@ -280,8 +295,34 @@
   const unlockPinInput = $('#unlockPin');
 
 
+  function stateForHistory(source) {
+    const snapshot = clone(source || {});
+    delete snapshot.history;
+    return snapshot;
+  }
+
   function saveState(options = {}) {
-    state.version = 11;
+    state.version = 11.1;
+    const previousRaw = safeStorage.getItem(STORAGE_KEY);
+    if (options.history !== false && previousRaw) {
+      try {
+        const previous = JSON.parse(previousRaw);
+        const before = JSON.stringify(stateForHistory(previous));
+        const after = JSON.stringify(stateForHistory(state));
+        if (before !== after) {
+          state.history ||= [];
+          state.history.unshift({
+            id: uid(),
+            label: options.label || 'Изменение данных',
+            createdAt: new Date().toISOString(),
+            snapshot: stateForHistory(previous)
+          });
+          state.history = state.history.slice(0, 12);
+        }
+      } catch (error) {
+        console.warn('Не удалось сохранить историю изменения', error);
+      }
+    }
     if (options.snapshot !== false) recordSnapshot();
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
@@ -291,6 +332,351 @@
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
     const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4' };
     $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
+  }
+
+  function collectionTitle(collection) {
+    return ({
+      tasks: 'Задача', transactions: 'Операция', obligations: 'Платёж', projects: 'Проект',
+      goals: 'Цель', habits: 'Привычка', weeklyReviews: 'Недельный разбор', notes: 'Заметка',
+      workoutLogs: 'Тренировка', recurringRules: 'Регулярная операция'
+    })[collection] || 'Запись';
+  }
+
+  function itemTitle(collection, item) {
+    return item?.title || item?.name || item?.type || collectionTitle(collection);
+  }
+
+  function pushToTrash(collection, item, related = []) {
+    state.trash ||= [];
+    state.trash.unshift({
+      id: uid(), collection, label: itemTitle(collection, item), deletedAt: new Date().toISOString(),
+      item: clone(item), related: clone(related)
+    });
+    state.trash = state.trash.slice(0, 100);
+  }
+
+  function restoreTrashEntry(id) {
+    const entry = state.trash.find(item => item.id === id);
+    if (!entry) return;
+    const collection = entry.collection;
+    state[collection] ||= [];
+    const added = !state[collection].some(item => item.id === entry.item.id);
+    if (added) state[collection].push(clone(entry.item));
+    if (collection === 'transactions' && added) applyTransactionToAccount(entry.item, 1);
+    if (collection === 'projects' && entry.related?.length) {
+      entry.related.forEach(transaction => {
+        if (!state.transactions.some(item => item.id === transaction.id)) {
+          state.transactions.push(clone(transaction));
+          applyTransactionToAccount(transaction, 1);
+        }
+      });
+    }
+    state.trash = state.trash.filter(item => item.id !== id);
+    saveState({ label: `Восстановлено: ${entry.label}` });
+    render();
+    toast('Запись восстановлена');
+  }
+
+  function deleteTrashEntry(id) {
+    const entry = state.trash.find(item => item.id === id);
+    if (!entry || !confirm(`Удалить «${entry.label}» окончательно?`)) return;
+    state.trash = state.trash.filter(item => item.id !== id);
+    saveState({ label: `Окончательно удалено: ${entry.label}` });
+    openTrashManager();
+  }
+
+  function openTrashManager() {
+    const rows = (state.trash || []).slice().sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+    openModal('Корзина', `
+      <div class="utility-intro"><b>Удалённые записи хранятся локально</b><p>Их можно вернуть вместе со связанными данными. Окончательное удаление отменить нельзя.</p></div>
+      <div class="utility-list">${rows.length ? rows.map(entry => `
+        <div class="utility-row">
+          <div><b>${escapeHtml(entry.label)}</b><small>${collectionTitle(entry.collection)} · ${longDateText((entry.deletedAt || '').slice(0,10))}</small></div>
+          <div class="utility-actions"><button type="button" class="mini-action restore-trash" data-id="${entry.id}">Вернуть</button><button type="button" class="mini-action danger delete-trash" data-id="${entry.id}">Удалить</button></div>
+        </div>`).join('') : empty('Корзина пуста.')}</div>
+    `, null, { hideActions: true });
+    $$('.restore-trash', modalBody).forEach(button => button.addEventListener('click', () => restoreTrashEntry(button.dataset.id)));
+    $$('.delete-trash', modalBody).forEach(button => button.addEventListener('click', () => deleteTrashEntry(button.dataset.id)));
+  }
+
+  function undoLastChange() {
+    const entry = state.history?.[0];
+    if (!entry?.snapshot) {
+      toast('История изменений пуста');
+      return;
+    }
+    if (!confirm(`Вернуть состояние до изменения «${entry.label}»?`)) return;
+    const remaining = state.history.slice(1);
+    const restored = normalizeState(clone(entry.snapshot));
+    restored.history = remaining;
+    state = restored;
+    saveState({ history: false, snapshot: false });
+    render();
+    toast('Последнее изменение отменено');
+  }
+
+  function openHistoryManager() {
+    const rows = state.history || [];
+    openModal('История изменений', `
+      <div class="utility-intro"><b>Последние ${rows.length} изменений</b><p>История хранится только на этом устройстве и ограничена 12 состояниями.</p></div>
+      ${rows.length ? `<button class="btn primary full" type="button" id="undoLatestChange">Отменить последнее изменение</button>` : ''}
+      <div class="utility-list">${rows.length ? rows.map((entry, index) => `<div class="utility-row"><div><b>${escapeHtml(entry.label)}</b><small>${new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(entry.createdAt))}</small></div><span class="utility-index">${index + 1}</span></div>`).join('') : empty('Изменений для восстановления пока нет.')}</div>
+    `, null, { hideActions: true });
+    $('#undoLatestChange')?.addEventListener('click', () => { closeModal(); undoLastChange(); });
+  }
+
+  function transactionFingerprint(tx) {
+    return [tx.type, tx.date, Math.round(Number(tx.amount || 0) * 100), tx.category, String(tx.title || '').trim().toLowerCase(), tx.accountId || ''].join('|');
+  }
+
+  function findDuplicateTransaction(candidate, excludeId = '') {
+    const fingerprint = transactionFingerprint(candidate);
+    return state.transactions.find(item => item.id !== excludeId && transactionFingerprint(item) === fingerprint);
+  }
+
+  function confirmTransactionNotDuplicate(candidate, excludeId = '') {
+    const duplicate = findDuplicateTransaction(candidate, excludeId);
+    if (!duplicate) return true;
+    return confirm(`Похожая операция уже существует: «${duplicate.title}», ${money(duplicate.amount)}, ${longDateText(duplicate.date)}. Добавить ещё одну?`);
+  }
+
+  function smartExpenseCategory(textValue) {
+    const text = String(textValue || '').toLowerCase();
+    const rules = [
+      ['cafes', ['обед','кофе','кафе','доставка','ресторан','завтрак','ужин']],
+      ['groceries', ['продукт','магазин','пятероч','перекрест','вкусвилл','супермаркет']],
+      ['transport', ['метро','автобус','транспорт','проезд','электрич']],
+      ['taxi', ['такси','яндекс go','uber']],
+      ['subscriptions', ['подписк','интернет','связь','телефон']],
+      ['health', ['аптек','врач','анализ','лекар']],
+      ['clothing', ['одежд','обув','куртк','футболк']],
+      ['education', ['курс','книга','обучен']],
+      ['business', ['реклама','директ','домен','хостинг','сервис']],
+      ['entertainment', ['кино','игр','развлеч']],
+      ['housing', ['аренд','жкх','квартир']],
+      ['travel', ['билет','отель','поездк','путешеств']]
+    ];
+    return rules.find(([, words]) => words.some(word => text.includes(word)))?.[0] || state.profile.lastExpenseCategory || 'other_expense';
+  }
+
+  function parseSmartExpense(value) {
+    const raw = String(value || '').trim().replace(',', '.');
+    const amountMatch = raw.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s|$)/);
+    const amount = amountMatch ? Number(amountMatch[1]) : 0;
+    const title = raw.replace(amountMatch?.[0] || '', ' ').replace(/\s+/g, ' ').trim();
+    return { amount, title: title || 'Расход', category: smartExpenseCategory(title) };
+  }
+
+  function recurringDueDate(rule, key = monthKey(new Date())) {
+    const { start, end } = monthRange(key);
+    const day = Math.min(end.getDate(), Math.max(1, Number(rule.day || 1)));
+    return localISO(new Date(start.getFullYear(), start.getMonth(), day));
+  }
+
+  function ensureRecurringObligations() {
+    const key = monthKey(new Date());
+    let created = false;
+    (state.recurringRules || []).filter(rule => rule.enabled !== false && Number(rule.amount || 0) > 0).forEach(rule => {
+      const exists = state.obligations.some(item => item.recurringRuleId === rule.id && item.recurringMonth === key);
+      if (exists) return;
+      state.obligations.push({
+        id: uid(), title: rule.title, type: rule.type === 'income' ? 'expected' : 'payment', amount: Number(rule.amount),
+        dueDate: recurringDueDate(rule, key), status: 'open', notes: 'Создано по регулярному правилу',
+        recurringRuleId: rule.id, recurringMonth: key, accountId: rule.accountId || '', category: rule.category || ''
+      });
+      created = true;
+    });
+    if (created) saveState({ history: false, snapshot: false });
+  }
+
+  function recurringRuleItem(rule) {
+    return `<div class="utility-row"><div><b>${escapeHtml(rule.title)}</b><small>${rule.type === 'income' ? 'Доход' : 'Расход'} · ${money(rule.amount)} · каждый месяц ${rule.day}-го числа</small></div><div class="utility-actions"><button type="button" class="mini-action edit-rule" data-id="${rule.id}">Изменить</button><button type="button" class="mini-action danger delete-rule" data-id="${rule.id}">Удалить</button></div></div>`;
+  }
+
+  function openRecurringRules() {
+    ensureRecurringObligations();
+    openModal('Регулярные операции', `
+      <div class="utility-intro"><b>План без смешивания с фактом</b><p>Каждое правило создаёт ожидаемый платёж или поступление. В доходы и расходы сумма попадёт только после подтверждения.</p></div>
+      <button class="btn primary full" type="button" id="addRecurringRule">+ Добавить правило</button>
+      <div class="utility-list">${state.recurringRules.length ? state.recurringRules.map(recurringRuleItem).join('') : empty('Добавьте зарплату, подписку, кредит или оплату клиента.')}</div>
+    `, null, { hideActions: true });
+    $('#addRecurringRule')?.addEventListener('click', () => openRecurringRuleModal());
+    $$('.edit-rule', modalBody).forEach(button => button.addEventListener('click', () => openRecurringRuleModal(state.recurringRules.find(item => item.id === button.dataset.id))));
+    $$('.delete-rule', modalBody).forEach(button => button.addEventListener('click', () => {
+      const rule = state.recurringRules.find(item => item.id === button.dataset.id);
+      if (!rule || !confirm(`Удалить правило «${rule.title}»? Уже созданные платежи останутся.`)) return;
+      pushToTrash('recurringRules', rule);
+      state.recurringRules = state.recurringRules.filter(item => item.id !== rule.id);
+      saveState({ label: `Удалено правило: ${rule.title}` });
+      openRecurringRules();
+    }));
+  }
+
+  function openRecurringRuleModal(item = null) {
+    openModal(item ? 'Изменить правило' : 'Новое регулярное правило', `
+      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Например, зарплата или интернет"></div>
+      <div class="form-grid"><div class="field"><label>Тип</label><select name="type" id="recurringType"><option value="expense" ${item?.type !== 'income' ? 'selected' : ''}>Расход</option><option value="income" ${item?.type === 'income' ? 'selected' : ''}>Доход</option></select></div><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" min="1" step="0.01" required value="${item?.amount ?? ''}"></div></div>
+      <div class="form-grid"><div class="field"><label>День месяца</label><input name="day" type="number" min="1" max="31" value="${item?.day ?? 1}"></div><div class="field"><label>Счёт</label><select name="accountId">${accountOptions(item?.accountId || '')}</select></div></div>
+      <div class="field"><label>Категория</label><select name="category" id="recurringCategory">${categoryOptions(item?.type === 'income' ? 'income' : 'expense', item?.category || (item?.type === 'income' ? 'salary' : 'subscriptions'))}</select></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.amount = Number(data.amount || 0); data.day = Math.max(1, Math.min(31, Number(data.day || 1))); data.enabled = true;
+      if (!data.title.trim() || data.amount <= 0) return false;
+      if (item) Object.assign(item, data); else state.recurringRules.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
+      setTimeout(ensureRecurringObligations, 0);
+      return true;
+    });
+    $('#recurringType')?.addEventListener('change', event => { $('#recurringCategory').innerHTML = categoryOptions(event.target.value, event.target.value === 'income' ? 'salary' : 'subscriptions'); });
+  }
+
+  function calendarDayData(iso) {
+    return {
+      income: sum(state.transactions.filter(tx => tx.type === 'income' && tx.date === iso).map(tx => tx.amount)),
+      expense: sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === iso).map(tx => tx.amount)),
+      obligations: state.obligations.filter(item => item.status === 'open' && item.dueDate === iso)
+    };
+  }
+
+  function financialCalendarMarkup(key) {
+    const { start, end } = monthRange(key);
+    const firstOffset = (start.getDay() || 7) - 1;
+    const cells = [];
+    for (let i = 0; i < firstOffset; i += 1) cells.push('<div class="calendar-cell empty"></div>');
+    for (let day = 1; day <= end.getDate(); day += 1) {
+      const iso = localISO(new Date(start.getFullYear(), start.getMonth(), day));
+      const data = calendarDayData(iso);
+      cells.push(`<button type="button" class="calendar-cell ${iso === todayISO() ? 'today' : ''}" data-calendar-day="${iso}"><b>${day}</b><div>${data.income ? `<span class="cal-income">+${shortMoney(data.income)}</span>` : ''}${data.expense ? `<span class="cal-expense">−${shortMoney(data.expense)}</span>` : ''}${data.obligations.length ? `<i>${data.obligations.length}</i>` : ''}</div></button>`);
+    }
+    return `<div class="calendar-weekdays">${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(day => `<span>${day}</span>`).join('')}</div><div class="finance-calendar">${cells.join('')}</div><div id="calendarDayDetails" class="calendar-day-details"><span>Нажми на день, чтобы увидеть детали.</span></div>`;
+  }
+
+  function openFinancialCalendar(key = financeSelectedMonth) {
+    openModal('Финансовый календарь', `
+      <div class="field compact-month-field"><label>Месяц</label><input id="calendarMonth" type="month" value="${key}"></div>
+      <div id="calendarBody">${financialCalendarMarkup(key)}</div>
+      <div class="calendar-legend"><span class="cal-income">Доход</span><span class="cal-expense">Расход</span><span class="cal-obligation">Платёж</span></div>
+    `, null, { hideActions: true });
+    const bind = () => {
+      $$('.calendar-cell[data-calendar-day]', modalBody).forEach(button => button.addEventListener('click', () => {
+        const iso = button.dataset.calendarDay;
+        const data = calendarDayData(iso);
+        const operations = state.transactions.filter(tx => tx.date === iso);
+        const details = $('#calendarDayDetails');
+        details.innerHTML = `<h3>${longDateText(iso)}</h3><div class="calendar-summary"><span>Доход <b class="positive">${money(data.income)}</b></span><span>Расход <b class="negative">${money(data.expense)}</b></span></div>${operations.length ? operations.map(tx => `<div class="calendar-op"><span>${escapeHtml(tx.title)}</span><b class="${tx.type === 'income' ? 'positive' : 'negative'}">${tx.type === 'income' ? '+' : '−'}${money(tx.amount)}</b></div>`).join('') : '<p>Операций нет.</p>'}${data.obligations.map(item => `<div class="calendar-op planned"><span>${escapeHtml(item.title)}</span><b>${money(item.amount)}</b></div>`).join('')}`;
+      }));
+    };
+    bind();
+    $('#calendarMonth')?.addEventListener('change', event => { const body = $('#calendarBody'); body.innerHTML = financialCalendarMarkup(event.target.value); bind(); });
+  }
+
+  function storageSizeBytes() {
+    return new Blob([safeStorage.getItem(STORAGE_KEY) || '']).size;
+  }
+
+  function buildDiagnostics() {
+    const checks = [];
+    const ids = [];
+    ['tasks','accounts','transactions','obligations','projects','goals','habits','notes','recurringRules','workoutLogs'].forEach(collection => (state[collection] || []).forEach(item => ids.push(`${collection}:${item.id}`)));
+    const idValues = ids.map(value => value.split(':').slice(1).join(':'));
+    const duplicateIds = idValues.filter((id, index) => idValues.indexOf(id) !== index);
+    const duplicateTransactions = [];
+    const seen = new Map();
+    state.transactions.forEach(tx => { const fp = transactionFingerprint(tx); if (seen.has(fp)) duplicateTransactions.push(tx); else seen.set(fp, tx); });
+    const accountIds = new Set(state.accounts.map(item => item.id));
+    const orphanTransactions = state.transactions.filter(tx => !accountIds.has(tx.accountId));
+    const invalidTransactions = state.transactions.filter(tx => !Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date || ''));
+    const invalidGoals = state.goals.filter(goal => Number(goal.target || 0) <= 0);
+    const staleBackup = !state.profile.lastBackup || (Date.now() - new Date(state.profile.lastBackup).getTime()) > 14 * 86400000;
+    const add = (name, ok, detail, severity = 'warning') => checks.push({ name, ok, detail, severity });
+    add('Уникальные идентификаторы', !duplicateIds.length, duplicateIds.length ? `Повторов: ${duplicateIds.length}` : 'Дубликатов ID нет', 'danger');
+    add('Связи операций со счетами', !orphanTransactions.length, orphanTransactions.length ? `Без счёта: ${orphanTransactions.length}` : 'Все операции связаны со счетами', 'danger');
+    add('Корректность операций', !invalidTransactions.length, invalidTransactions.length ? `Ошибок: ${invalidTransactions.length}` : 'Суммы и даты корректны', 'danger');
+    add('Защита от дублей', !duplicateTransactions.length, duplicateTransactions.length ? `Похожих операций: ${duplicateTransactions.length}` : 'Повторяющихся операций не найдено');
+    add('Цели', !invalidGoals.length, invalidGoals.length ? `Целей с ошибкой: ${invalidGoals.length}` : 'Все цели имеют корректную сумму');
+    add('Резервная копия', !staleBackup, staleBackup ? 'Копия старше 14 дней или ещё не создавалась' : `Последняя: ${longDateText(state.profile.lastBackup)}`);
+    add('Размер локальной базы', storageSizeBytes() < 4_000_000, `${numberText(storageSizeBytes() / 1024)} КБ`, storageSizeBytes() < 4_000_000 ? 'ok' : 'danger');
+    return { checks, duplicateTransactions, orphanTransactions, invalidTransactions, score: Math.round(checks.filter(check => check.ok).length / checks.length * 100) };
+  }
+
+  function runSelfTests() {
+    const tests = [];
+    const test = (name, fn) => { try { const result = fn(); tests.push({ name, ok: result !== false, detail: result === false ? 'Не пройден' : 'Пройден' }); } catch (error) { tests.push({ name, ok: false, detail: error.message }); } };
+    test('Структура состояния', () => ['tasks','accounts','transactions','projects','goals','habits','history','trash','recurringRules','workoutLogs'].every(key => Array.isArray(state[key])));
+    test('Основной счёт существует', () => Boolean(getDefaultAccount()?.id));
+    test('Финансовая аналитика', () => Number.isFinite(getFinanceAnalytics().capital));
+    test('Экспортируемая копия', () => validateBackupData(extractBackupData(createBackupPayload(state))));
+    test('Парсер быстрого расхода', () => { const parsed = parseSmartExpense('550 обед'); return parsed.amount === 550 && parsed.category === 'cafes'; });
+    test('Календарный диапазон', () => monthRange(monthKey(new Date())).end >= monthRange(monthKey(new Date())).start);
+    test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
+    test('Темы интерфейса', () => ['emerald','graphite','light'].includes(state.profile.theme));
+    test('Уникальность счетов', () => new Set(state.accounts.map(item => item.id)).size === state.accounts.length);
+    test('Безопасное восстановление', () => Boolean(normalizeState(clone(state)).accounts.length));
+    return tests;
+  }
+
+  function openDiagnostics() {
+    const diagnostics = buildDiagnostics();
+    const tests = runSelfTests();
+    state.profile.lastDiagnosticsAt = new Date().toISOString();
+    saveState({ history: false, snapshot: false });
+    openModal('Диагностика системы', `
+      <div class="diagnostic-score"><strong>${diagnostics.score}%</strong><span>состояние базы</span></div>
+      <div class="diagnostic-list">${diagnostics.checks.map(check => `<div class="diagnostic-row ${check.ok ? 'ok' : check.severity}"><i>${check.ok ? '✓' : '!'}</i><span><b>${escapeHtml(check.name)}</b><small>${escapeHtml(check.detail)}</small></span></div>`).join('')}</div>
+      <details class="card self-tests"><summary>Автоматические тесты <b>${tests.filter(test => test.ok).length}/${tests.length}</b></summary>${tests.map(test => `<div class="test-row ${test.ok ? 'ok' : 'bad'}"><span>${test.ok ? '✓' : '×'} ${escapeHtml(test.name)}</span><small>${escapeHtml(test.detail)}</small></div>`).join('')}</details>
+      ${diagnostics.duplicateTransactions.length ? `<button type="button" class="btn secondary full" id="reviewDuplicates">Показать возможные дубли</button>` : ''}
+    `, null, { hideActions: true });
+    $('#reviewDuplicates')?.addEventListener('click', () => {
+      modalBody.innerHTML = `<div class="utility-list">${diagnostics.duplicateTransactions.map(transactionItem).join('')}</div>`;
+      $$('.delete-transaction', modalBody).forEach(button => button.addEventListener('click', () => deleteTransaction(button.dataset.id)));
+    });
+  }
+
+  function workoutLogItem(log) {
+    return `<div class="utility-row"><div><b>${escapeHtml(log.type)}</b><small>${longDateText(log.date)} · ${log.duration} мин · нагрузка ${log.effort}/5${log.notes ? ` · ${escapeHtml(log.notes)}` : ''}</small></div><button type="button" class="mini-action danger delete-workout-log" data-id="${log.id}">Удалить</button></div>`;
+  }
+
+  function openWorkoutJournal() {
+    const logs = state.workoutLogs.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    openModal('Журнал тренировок', `
+      <div class="workout-log-form">
+        <div class="form-grid"><div class="field"><label>Дата</label><input id="workoutLogDate" type="date" value="${todayISO()}"></div><div class="field"><label>Продолжительность</label><input id="workoutLogDuration" type="number" min="5" max="240" value="45"></div></div>
+        <div class="form-grid"><div class="field"><label>Тип</label><select id="workoutLogType"><option>Силовая тренировка</option><option>Кардио</option><option>Мобильность</option><option>Восстановление</option><option>Другое</option></select></div><div class="field"><label>Нагрузка 1–5</label><input id="workoutLogEffort" type="number" min="1" max="5" value="3"></div></div>
+        <div class="field"><label>Комментарий</label><input id="workoutLogNotes" placeholder="Что получилось, самочувствие"></div>
+        <button type="button" class="btn primary full" id="saveWorkoutLog">Записать тренировку</button>
+      </div>
+      <div class="utility-list workout-log-list">${logs.length ? logs.map(workoutLogItem).join('') : empty('Журнал пока пуст. Запишите первую тренировку.')}</div>
+    `, null, { hideActions: true });
+    $('#saveWorkoutLog')?.addEventListener('click', () => {
+      const log = { id: uid(), date: $('#workoutLogDate').value || todayISO(), duration: Math.max(5, Number($('#workoutLogDuration').value || 45)), type: $('#workoutLogType').value, effort: Math.max(1, Math.min(5, Number($('#workoutLogEffort').value || 3))), notes: $('#workoutLogNotes').value.trim(), createdAt: new Date().toISOString() };
+      state.workoutLogs.push(log);
+      const habit = state.habits.find(item => /спорт|трен/i.test(item.title));
+      if (habit) { habit.logs ||= {}; habit.logs[log.date] = true; }
+      saveState({ label: `Записана тренировка: ${log.type}` });
+      openWorkoutJournal();
+    });
+    $$('.delete-workout-log', modalBody).forEach(button => button.addEventListener('click', () => removeItem('workoutLogs', button.dataset.id, { reopen: 'workoutJournal' })));
+  }
+
+  function weeklyReviewDraft() {
+    const weekStart = startOfWeek(new Date());
+    const weekEnd = endOfWeek(new Date());
+    const income = sumTransactions('income', weekStart, weekEnd);
+    const expense = sumTransactions('expense', weekStart, weekEnd);
+    const taskStats = taskWeekStats(new Date(), false);
+    const completedTasks = state.tasks.filter(task => task.completedAt && new Date(task.completedAt) >= weekStart && new Date(task.completedAt) <= weekEnd).slice(0, 5);
+    const activeProjects = state.projects.filter(project => ['active','growth'].includes(project.status));
+    return {
+      weekStart: localISO(weekStart), income, saved: Math.max(0, income - expense),
+      wins: completedTasks.length ? `Выполнено задач: ${taskStats.done}. Ключевые: ${completedTasks.map(task => task.title).join('; ')}.` : `Выполнено задач: ${taskStats.done}.`,
+      failures: taskStats.total > taskStats.done ? `Не завершено задач: ${taskStats.total - taskStats.done}.` : 'Критичных незавершённых задач нет.',
+      timeLeaks: 'Заполни вручную: где было больше всего отвлечений или лишних действий?',
+      lesson: `Доход недели ${money(income)}, расходы ${money(expense)}. Активных проектов: ${activeProjects.length}.`,
+      priorities: activeProjects.slice(0,3).map(project => project.next || `Определить следующий шаг по проекту «${project.name}»`).join('\n') || 'Определить 3 главных результата следующей недели.'
+    };
+  }
+
+  function openAutoWeeklyReview() {
+    openReviewModal(null, weeklyReviewDraft());
   }
 
   function transactionsInRange(type, start, end) {
@@ -908,6 +1294,7 @@
   }
 
   function renderFinance() {
+    ensureRecurringObligations();
     const analytics = getFinanceAnalytics(financeSelectedMonth);
     const sources = incomeSourceTotals(analytics);
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
@@ -966,6 +1353,10 @@
     const moneySeries = monthlyMoneySeries(6);
     const recent = state.transactions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.id).localeCompare(String(a.id))).slice(0, 5);
     return `
+      <section class="finance-tool-grid">
+        <button class="card finance-tool" type="button" id="openFinancialCalendar"><span>▦</span><div><b>Финансовый календарь</b><small>Доходы, расходы и платежи по дням</small></div><i>›</i></button>
+        <button class="card finance-tool" type="button" id="openRecurringRules"><span>↻</span><div><b>Регулярные операции</b><small>${state.recurringRules.length} правил · план без двойного учёта</small></div><i>›</i></button>
+      </section>
       <section class="section finance-support-section">
         <div class="section-head"><h2>Динамика</h2><span class="badge">6 месяцев</span></div>
         <div class="card chart-card">${dualBarChart(moneySeries)}</div>
@@ -1132,6 +1523,8 @@
     $('#compareCurrent')?.addEventListener('change', event => { financeCompareCurrent = event.target.value; refreshInlineCompare(); });
     $('#compareBase')?.addEventListener('change', event => { financeCompareBase = event.target.value; refreshInlineCompare(); });
     $('#openMonthCompare')?.addEventListener('click', openMonthComparisonModal);
+    $('#openFinancialCalendar')?.addEventListener('click', () => openFinancialCalendar(financeSelectedMonth));
+    $('#openRecurringRules')?.addEventListener('click', openRecurringRules);
     $$('[data-add-transaction]').forEach(button => button.addEventListener('click', () => openTransactionModal(null, button.dataset.addTransaction)));
     $$('[data-finance-tab-jump]').forEach(button => button.addEventListener('click', () => { financeTab = button.dataset.financeTabJump; renderFinance(); }));
     $('#addAccount')?.addEventListener('click', () => openAccountModal());
@@ -1259,6 +1652,11 @@
     const profile = state.workoutProfile || freshState().workoutProfile;
     const workoutHabit = state.habits.find(habit => /спорт|трен/i.test(habit.title));
     const workoutRate = workoutHabit ? habitMonthPercent(workoutHabit) : 0;
+    const weekStartDate = startOfWeek(new Date());
+    const weekEndDate = endOfWeek(new Date());
+    const workoutLogsThisWeek = state.workoutLogs.filter(log => dateInRange(log.date, weekStartDate, weekEndDate));
+    const reviews = state.weeklyReviews.slice().sort((a,b)=>(b.weekStart||'').localeCompare(a.weekStart||''));
+    const currentReview = reviews.find(review => review.weekStart === localISO(weekStartDate));
     const projectRate = state.projects.length ? Math.round(state.projects.filter(project => ['active','growth'].includes(project.status)).length / state.projects.length * 100) : 0;
     const goalRate = activeGoals.length ? Math.round(sum(activeGoals.map(goal => Math.min(100, goalCurrent(goal) / Math.max(1, goal.target) * 100))) / activeGoals.length) : 0;
 
@@ -1281,8 +1679,8 @@
 
       <section class="card v11-workout-card">
         <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
-        <div class="workout-card-stats"><span><b>${profile.days}</b><small>раза в неделю</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
-        <button class="btn primary full" type="button" id="openWorkouts">Открыть план тренировок</button>
+        <div class="workout-card-stats"><span><b>${workoutLogsThisWeek.length}/${profile.days}</b><small>тренировок на неделе</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
+        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Открыть план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
       </section>
 
       <section class="section compact-section" id="goalDynamics">
@@ -1295,6 +1693,12 @@
         <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
 
+      <section class="section compact-section weekly-review-section">
+        <div class="section-head"><h2>Недельный разбор</h2><button class="link-btn" type="button" id="${currentReview ? 'editCurrentReview' : 'createAutoReview'}">${currentReview ? 'Изменить' : 'Создать автоматически'}</button></div>
+        <div class="list">${currentReview ? reviewItem(currentReview) : `<div class="card auto-review-card"><div><b>Черновик формируется из задач, финансов и проектов</b><p>Приложение заполнит цифры и факты. Тебе останется добавить личный вывод.</p></div><button class="btn primary" type="button" id="createAutoReviewCard">Создать разбор</button></div>`}</div>
+        ${reviews.length > 1 ? `<details class="card review-history"><summary>Предыдущие разборы <b>${reviews.length - 1}</b></summary><div class="list">${reviews.filter(review => review.id !== currentReview?.id).slice(0,4).map(reviewItem).join('')}</div></details>` : ''}
+      </section>
+
       <section class="section compact-section">
         <div class="section-head"><h2>Динамика денег</h2><span class="badge">${growthRange === 'year' ? '12 месяцев' : growthRange === 'week' ? 'короткий период' : '6 месяцев'}</span></div>
         <div class="card chart-card">${dualBarChart(moneySeries)}</div>
@@ -1305,6 +1709,10 @@
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
     $('#openWorkouts')?.addEventListener('click', openWorkoutModal);
+    $('#openWorkoutJournal')?.addEventListener('click', openWorkoutJournal);
+    $('#createAutoReview')?.addEventListener('click', openAutoWeeklyReview);
+    $('#createAutoReviewCard')?.addEventListener('click', openAutoWeeklyReview);
+    $('#editCurrentReview')?.addEventListener('click', () => openReviewModal(currentReview));
     $('#jumpGoals')?.addEventListener('click', () => $('#goalDynamics')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     $('#jumpHabits')?.addEventListener('click', () => $('#habitDynamics')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -1371,15 +1779,21 @@
     render();
   }
 
-  function removeItem(collection, id) {
-    if (!confirm('Удалить запись?')) return;
+  function removeItem(collection, id, options = {}) {
+    const item = state[collection]?.find(entry => entry.id === id);
+    if (!item || !confirm(`Переместить «${itemTitle(collection, item)}» в корзину?`)) return;
+    let related = [];
     if (collection === 'projects') {
-      state.transactions.filter(item => item.projectId === id && item.autoProjectIncome).forEach(item => applyTransactionToAccount(item, -1));
-      state.transactions = state.transactions.filter(item => !(item.projectId === id && item.autoProjectIncome));
+      related = state.transactions.filter(entry => entry.projectId === id && entry.autoProjectIncome);
+      related.forEach(entry => applyTransactionToAccount(entry, -1));
+      state.transactions = state.transactions.filter(entry => !(entry.projectId === id && entry.autoProjectIncome));
     }
-    state[collection] = state[collection].filter(item => item.id !== id);
-    saveState();
-    render();
+    if (collection === 'transactions') applyTransactionToAccount(item, -1);
+    pushToTrash(collection, item, related);
+    state[collection] = state[collection].filter(entry => entry.id !== id);
+    saveState({ label: `Удалено: ${itemTitle(collection, item)}` });
+    if (options.reopen === 'workoutJournal') openWorkoutJournal(); else render();
+    toast('Перемещено в корзину');
   }
 
   function applyTransactionToAccount(transaction, direction = 1) {
@@ -1391,12 +1805,7 @@
   }
 
   function deleteTransaction(id) {
-    const transaction = state.transactions.find(item => item.id === id);
-    if (!transaction || !confirm('Удалить операцию? Баланс связанного счёта будет пересчитан.')) return;
-    applyTransactionToAccount(transaction, -1);
-    state.transactions = state.transactions.filter(item => item.id !== id);
-    saveState();
-    render();
+    removeItem('transactions', id);
   }
 
   function deleteAccount(id) {
@@ -1424,6 +1833,8 @@
     const categoryButtons = EXPENSE_CATEGORIES.slice(0, 8).map(([value, label], index) => `<button type="button" class="expense-category-chip ${value === (state.profile.lastExpenseCategory || 'groceries') ? 'active' : ''}" data-expense-category="${value}">${escapeHtml(label)}</button>`).join('');
     openModal('Быстрый расход', `
       <div class="quick-expense-form">
+        <div class="smart-expense-line"><input id="smartExpenseInput" type="text" inputmode="text" placeholder="Например: 550 обед"><button type="button" id="parseSmartExpense">Распознать</button></div>
+        <small class="smart-expense-hint">Сумма и категория заполнятся автоматически.</small>
         <div class="quick-amount-wrap"><span>−</span><input id="quickExpenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"><b>₽</b></div>
         <div class="quick-amounts"><button type="button" data-add-amount="100">+100</button><button type="button" data-add-amount="500">+500</button><button type="button" data-add-amount="1000">+1 000</button></div>
         <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(state.profile.lastExpenseCategory || 'groceries')}">
@@ -1440,14 +1851,27 @@
       const amount = Number(data.amount || 0);
       if (amount <= 0) return false;
       const category = data.category || 'other_expense';
-      const transaction = { id: uid(), title: String(data.title || '').trim() || categoryLabel(category), type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '' };
+      const transaction = { id: uid(), title: String(data.title || '').trim() || categoryLabel(category), type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '', createdAt: new Date().toISOString() };
+      if (!confirmTransactionNotDuplicate(transaction)) return false;
       state.transactions.push(transaction);
       applyTransactionToAccount(transaction, 1);
       state.profile.lastExpenseCategory = category;
       state.profile.lastExpenseAccountId = transaction.accountId;
       return true;
     }, { submitText: 'Сохранить расход' });
-    setTimeout(() => $('#quickExpenseAmount')?.focus(), 80);
+    const applySmartExpense = () => {
+      const parsed = parseSmartExpense($('#smartExpenseInput')?.value || '');
+      if (!parsed.amount) { toast('Сначала укажи сумму, например: 550 обед'); return; }
+      $('#quickExpenseAmount').value = parsed.amount;
+      const titleInput = modalForm.elements.title;
+      if (titleInput) titleInput.value = parsed.title;
+      $('#quickExpenseCategory').value = parsed.category;
+      $$('[data-expense-category]', modalBody).forEach(item => item.classList.toggle('active', item.dataset.expenseCategory === parsed.category));
+      toast(`Распознано: ${money(parsed.amount)} · ${categoryLabel(parsed.category)}`);
+    };
+    $('#parseSmartExpense')?.addEventListener('click', applySmartExpense);
+    $('#smartExpenseInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applySmartExpense(); } });
+    setTimeout(() => $('#smartExpenseInput')?.focus(), 80);
     $$('[data-expense-category]', modalBody).forEach(button => button.addEventListener('click', () => {
       $$('[data-expense-category]', modalBody).forEach(item => item.classList.remove('active'));
       button.classList.add('active');
@@ -1573,14 +1997,15 @@
       data.amount = Number(data.amount || 0);
       if (!data.title.trim() || data.amount <= 0) return false;
       if (data.type === 'income') { data.necessity = ''; data.scope = ''; }
+      const candidate = { id: item?.id || uid(), ...data, createdAt: item?.createdAt || new Date().toISOString() };
+      if (!confirmTransactionNotDuplicate(candidate, item?.id || '')) return false;
       if (item) {
         applyTransactionToAccount(item, -1);
-        Object.assign(item, data);
+        Object.assign(item, candidate);
         applyTransactionToAccount(item, 1);
       } else {
-        const transaction = { id: uid(), ...data };
-        state.transactions.push(transaction);
-        applyTransactionToAccount(transaction, 1);
+        state.transactions.push(candidate);
+        applyTransactionToAccount(candidate, 1);
       }
       return true;
     });
@@ -1634,12 +2059,13 @@
     const isIncome = item.type === 'expected';
     openModal(isIncome ? 'Получить доход' : 'Оплатить обязательство', `
       <div class="insight ${isIncome ? '' : 'warning'}">Будет создана финансовая операция на ${money(item.amount)} и обязательство закроется.</div>
-      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions('')}</select></div>
+      <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(item.accountId || '')}</select></div>
       <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
       <div class="field"><label>Название операции</label><input name="title" required value="${escapeHtml(item.title)}"></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
-      const transaction = { id: uid(), title: data.title, type: isIncome ? 'income' : 'expense', amount: Number(item.amount || 0), date: data.date || todayISO(), category: isIncome ? 'other_income' : 'debt_payment', accountId: data.accountId || '', notes: `Закрытие: ${item.title}` };
+      const transaction = { id: uid(), title: data.title, type: isIncome ? 'income' : 'expense', amount: Number(item.amount || 0), date: data.date || todayISO(), category: item.category || (isIncome ? 'other_income' : 'debt_payment'), accountId: data.accountId || item.accountId || '', notes: `Закрытие: ${item.title}`, createdAt: new Date().toISOString(), recurringRuleId: item.recurringRuleId || '' };
+      if (!confirmTransactionNotDuplicate(transaction)) return false;
       state.transactions.push(transaction);
       applyTransactionToAccount(transaction, 1);
       item.status = isIncome ? 'received' : 'paid';
@@ -1765,18 +2191,18 @@
     });
   }
 
-  function openReviewModal(item = null) {
+  function openReviewModal(item = null, preset = null) {
     openModal(item ? 'Изменить недельный разбор' : 'Недельный разбор', `
-      <div class="field"><label>Неделя начинается</label><input name="weekStart" type="date" value="${item?.weekStart || localISO(startOfWeek(new Date()))}"></div>
+      <div class="field"><label>Неделя начинается</label><input name="weekStart" type="date" value="${item?.weekStart || preset?.weekStart || localISO(startOfWeek(new Date()))}"></div>
       <div class="form-grid">
-        <div class="field"><label>Заработано, ₽</label><input name="income" type="number" min="0" value="${item?.income ?? 0}"></div>
-        <div class="field"><label>Отложено, ₽</label><input name="saved" type="number" min="0" value="${item?.saved ?? 0}"></div>
+        <div class="field"><label>Заработано, ₽</label><input name="income" type="number" min="0" value="${item?.income ?? preset?.income ?? 0}"></div>
+        <div class="field"><label>Отложено, ₽</label><input name="saved" type="number" min="0" value="${item?.saved ?? preset?.saved ?? 0}"></div>
       </div>
-      <div class="field"><label>Что сделал и какой результат получил</label><textarea name="wins" placeholder="Не занятость, а фактический результат">${escapeHtml(item?.wins || '')}</textarea></div>
-      <div class="field"><label>Что провалил</label><textarea name="failures">${escapeHtml(item?.failures || '')}</textarea></div>
-      <div class="field"><label>Куда слил время</label><textarea name="timeLeaks">${escapeHtml(item?.timeLeaks || '')}</textarea></div>
-      <div class="field"><label>Главный вывод</label><textarea name="lesson">${escapeHtml(item?.lesson || '')}</textarea></div>
-      <div class="field"><label>3 приоритета следующей недели</label><textarea name="priorities">${escapeHtml(item?.priorities || '')}</textarea></div>
+      <div class="field"><label>Что сделал и какой результат получил</label><textarea name="wins" placeholder="Не занятость, а фактический результат">${escapeHtml(item?.wins || preset?.wins || '')}</textarea></div>
+      <div class="field"><label>Что провалил</label><textarea name="failures">${escapeHtml(item?.failures || preset?.failures || '')}</textarea></div>
+      <div class="field"><label>Куда слил время</label><textarea name="timeLeaks">${escapeHtml(item?.timeLeaks || preset?.timeLeaks || '')}</textarea></div>
+      <div class="field"><label>Главный вывод</label><textarea name="lesson">${escapeHtml(item?.lesson || preset?.lesson || '')}</textarea></div>
+      <div class="field"><label>3 приоритета следующей недели</label><textarea name="priorities">${escapeHtml(item?.priorities || preset?.priorities || '')}</textarea></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.income = Number(data.income || 0);
@@ -1865,7 +2291,7 @@
       $$('.knowledge-note').forEach(note => note.hidden = note.dataset.folderId !== button.dataset.folder);
     }));
     $$('.edit-note').forEach(button => button.addEventListener('click', () => openKnowledgeNoteModal(state.notes.find(note => note.id === button.dataset.id))));
-    $$('.delete-note').forEach(button => button.addEventListener('click', () => { if (!confirm('Удалить запись?')) return; state.notes = state.notes.filter(note => note.id !== button.dataset.id); saveState(); modal.close(); renderKnowledgeBase(); }));
+    $$('.delete-note').forEach(button => button.addEventListener('click', () => { const note = state.notes.find(item => item.id === button.dataset.id); if (!note || !confirm(`Переместить «${note.title}» в корзину?`)) return; pushToTrash('notes', note); state.notes = state.notes.filter(item => item.id !== note.id); saveState({ label: `Удалена заметка: ${note.title}` }); modal.close(); renderKnowledgeBase(); }));
   }
 
   function openKnowledgeNoteModal(item = null) {
@@ -2309,13 +2735,20 @@
           <button class="settings-row" type="button" id="exportChatGPT"><i class="settings-icon">✦</i><span>Отчёт для ChatGPT<small>Финансы, задачи, цели, тренировки и заметки</small></span><b>›</b></button>
         </section>
 
+        <section class="settings-list card exact-settings-list stability-settings">
+          <button class="settings-row" type="button" id="openHistory"><i class="settings-icon">↶</i><span>История изменений<small>${state.history.length} сохранённых состояний</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="openTrash"><i class="settings-icon">⌫</i><span>Корзина<small>${state.trash.length} удалённых записей</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="openDiagnostics"><i class="settings-icon">✓</i><span>Диагностика системы<small>${state.profile.lastDiagnosticsAt ? `Последняя: ${longDateText(state.profile.lastDiagnosticsAt.slice(0,10))}` : 'Проверка базы и автоматические тесты'}</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="openRecurringFromSettings"><i class="settings-icon">↻</i><span>Регулярные операции<small>${state.recurringRules.length} правил</small></span><b>›</b></button>
+        </section>
+
         <section class="settings-list card exact-settings-list">
           <button class="settings-row" type="button" id="openKnowledgeBase"><i class="settings-icon">◫</i><span>База мыслей<small>${state.notes.length} записей · ${state.noteFolders.length} папок</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="installHelp"><i class="settings-icon">▯</i><span>Установка на iPhone<small>Добавить на экран «Домой»</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11</p>
+        <p class="app-version">Alexander OS V11.1 · Stability & Intelligence</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -2323,6 +2756,10 @@
     $('#financePreferences')?.addEventListener('click', openFinancePreferences);
     $('#lockNow')?.addEventListener('click', () => lockApp());
     $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
+    $('#openHistory')?.addEventListener('click', openHistoryManager);
+    $('#openTrash')?.addEventListener('click', openTrashManager);
+    $('#openDiagnostics')?.addEventListener('click', openDiagnostics);
+    $('#openRecurringFromSettings')?.addEventListener('click', openRecurringRules);
     $('#notificationSettings')?.addEventListener('click', requestNotifications);
     $('#installHelp')?.addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить».'));
     $('#exportData')?.addEventListener('click', exportData);
@@ -2395,7 +2832,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '10.4',
+      appVersion: '11.1',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -2442,7 +2879,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '10.4',
+      appVersion: '11.1',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -2457,12 +2894,13 @@
   function validateBackupData(data) {
     if (!data || typeof data !== 'object') return false;
     const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
+    const optionalArrays = ['history', 'trash', 'recurringRules', 'workoutLogs'];
     if (!data.profile || typeof data.profile !== 'object') return false;
-    return requiredArrays.every(key => Array.isArray(data[key]));
+    return requiredArrays.every(key => Array.isArray(data[key])) && optionalArrays.every(key => data[key] === undefined || Array.isArray(data[key]));
   }
 
   function backupSummary(data) {
-    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок`;
+    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок, ${(data.workoutLogs || []).length} тренировок`;
   }
 
   async function exportData() {
@@ -2583,6 +3021,14 @@ ${reportList(state.habits, habit => `- ${habit.title}: месяц ${habitMonthPe
 - Уровень: ${workoutLevelLabel(state.workoutProfile?.level || 'beginner')}
 - План: ${state.workoutProfile?.days || 3} тренировок в неделю
 
+### Журнал тренировок
+
+${reportList(state.workoutLogs.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,30), log => `- ${longDateText(log.date)}: ${log.type}, ${log.duration} минут, нагрузка ${log.effort}/5; ${log.notes || 'без комментария'}`)}
+
+## Регулярные операции
+
+${reportList(state.recurringRules, rule => `- ${rule.title}: ${rule.type === 'income' ? 'доход' : 'расход'} ${money(rule.amount)}, каждый месяц ${rule.day}-го числа, категория ${categoryLabel(rule.category)}`)}
+
 ## Автоматические выводы Alexander OS
 
 ${reportList(insights, item => `- ${item.text}`)}
@@ -2700,7 +3146,11 @@ ${JSON.stringify(state, null, 2)}
     }
   });
 
-  saveState();
+  saveState({ history: false, snapshot: false });
+  ensureRecurringObligations();
   render();
+  const reviewWeek = localISO(startOfWeek(new Date()));
+  const hasCurrentReview = state.weeklyReviews.some(review => review.weekStart === reviewWeek);
+  if (!hasCurrentReview && [0,1].includes(new Date().getDay())) setTimeout(() => toast('Недельный разбор готов к созданию в разделе «Прогресс»'), 900);
   if (security.pinEnabled || security.faceIdEnabled) lockApp();
 })();
