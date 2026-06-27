@@ -1,24 +1,41 @@
-Alexander OS V11.3 - QA REPORT
+Alexander OS V11.4 - QA REPORT
+Date: 2026-06-27
 
-Проверено автоматически на мобильной ширине 390 px:
-- Главная открывается и отображает контент.
-- Финансы открываются и отображают контент.
-- Задачи открываются и отображают контент.
-- Проекты открываются и отображают контент.
-- Прогресс открывается и отображает контент.
-- Нижнее меню содержит 5 вкладок.
-- Настройки открываются нажатием на профиль.
-- Класс и стили модальной панели настроек применяются корректно.
-- Настройки прокручиваются внутри собственной области.
-- Кнопка закрытия остаётся видимой после прокрутки и закрывает модалку.
-- В настройках доступны 4 темы: Изумрудная, Неон лайм, Графитовая, Светлая.
-- Все 4 темы переключаются без закрытия модалки и без ошибок JavaScript.
-- На всех 5 вкладках и во всех 4 темах отсутствует горизонтальная прокрутка.
-- Между графиком прогресса и карточками показателей добавлен отдельный отступ.
-- Иконка привычек заменена на векторную и отображается корректно.
-- JavaScript app.js и Service Worker прошли синтаксическую проверку.
-- CSS прошёл проверку парности блоков.
-- Ошибок выполнения в браузерном тесте не обнаружено.
+Checks completed:
+1. app.js syntax: PASS
+2. sw.js syntax: PASS
+3. manifest.webmanifest JSON: PASS
+4. Required GitHub Pages files: PASS
+5. PWA cache version updated to V11.4: PASS
+6. State migration keeps old user data: PASS
+7. Custom expense categories normalize correctly: PASS
+8. Custom categories are included in backup/import data: PASS
+9. Custom categories appear in regular and recurring expense selectors: PASS
+10. Quick recognition tests: PASS
 
-Примечание:
-Системные функции iOS, Face ID, уведомления и установка PWA окончательно проверяются на реальном iPhone после публикации по HTTPS.
+Recognition cases tested:
+- "550 обед" -> 550 ₽, Кафе и доставка
+- "Кредит 1 300" -> 1 300 ₽, Долги и кредиты
+- "кофе 1,5к" -> 1 500 ₽, Кафе и доставка
+- "2500 шиномонтаж" -> 2 500 ₽, custom category "Автомобиль"
+- "бензин 3 200 ₽" -> 3 200 ₽, custom category "Автомобиль"
+- "такси 640р" -> 640 ₽, Такси
+- "продукты 2 тыс" -> 2 000 ₽, Продукты
+
+Built-in diagnostics: 11/11 PASS
+- State structure
+- Default account
+- Finance analytics
+- Exportable backup
+- Smart expense parser
+- Calendar range
+- Workout plan
+- Themes
+- Unique accounts
+- Expense categories
+- Safe restore
+
+Notes:
+- Existing data is preserved through normalizeState migration.
+- A deleted custom category safely reassigns linked records to "Другое".
+- Real iPhone/Safari behavior still depends on the installed PWA cache refreshing after GitHub Pages deployment.

@@ -3540,3 +3540,31 @@ dialog.modal.settings-dialog {
   .settings-dialog .settings-row { min-height: 55px; }
   .v11-progress-grid { margin-top: 19px; }
 }
+
+/* =====================================================
+   Alexander OS V11.4 - custom expense categories
+   ===================================================== */
+#quickCategoryArea { display:grid; gap:10px; }
+.expense-category-chip { position:relative; display:grid; place-items:center; overflow:hidden; }
+.expense-category-chip span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-height:1.18; overflow:hidden; }
+.expense-category-chip.custom { background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--surface-3)),var(--surface-3)); }
+.expense-category-chip.custom i { position:absolute; top:5px; right:7px; color:var(--accent); font-size:11px; font-style:normal; }
+.category-more { border:1px solid var(--line); border-radius:14px; background:var(--surface-2); overflow:hidden; }
+.category-more summary { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:42px; padding:0 12px; color:var(--text); font-size:11px; font-weight:800; cursor:pointer; list-style:none; }
+.category-more summary::-webkit-details-marker { display:none; }
+.category-more summary span { min-width:24px; height:24px; display:grid; place-items:center; border-radius:99px; background:var(--accent-soft); color:var(--accent); font-size:9px; }
+.category-more[open] summary { border-bottom:1px solid var(--line); }
+.category-more .expense-category-grid { padding:9px; }
+.category-tools { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.category-tools button { min-height:40px; padding:8px 10px; border:1px solid var(--line); border-radius:13px; background:var(--surface-2); color:var(--accent); font-weight:800; cursor:pointer; }
+.category-tools button:only-child { grid-column:1/-1; }
+.custom-category-editor { display:grid; gap:10px; padding:12px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)); border-radius:16px; background:linear-gradient(145deg,var(--accent-soft),transparent),var(--surface-2); }
+.custom-category-list { display:grid; gap:7px; }
+.custom-category-list > div { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px 11px; border:1px solid var(--line); border-radius:13px; background:var(--surface-2); }
+.custom-category-list b,.custom-category-list small { display:block; }
+.custom-category-list small { margin-top:3px; color:var(--muted); font-size:8px; line-height:1.35; }
+.custom-category-list button { width:30px; height:30px; border:1px solid var(--line); border-radius:10px; background:var(--surface-3); color:var(--danger); font-size:17px; cursor:pointer; }
+@media (max-width:520px) {
+  .category-tools { grid-template-columns:1fr 1fr; }
+  .custom-category-editor { padding:10px; }
+}

@@ -90,10 +90,28 @@
   ];
   const ALL_CATEGORIES = new Map([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES]);
   const CATEGORY_REDUCIBLE = new Set(['cafes', 'taxi', 'subscriptions', 'clothing', 'entertainment', 'travel', 'other_expense']);
+  const BUILTIN_EXPENSE_KEYWORDS = {
+    groceries: ['продукт', 'супермаркет', 'магазин', 'пятероч', 'перекрест', 'вкусвилл', 'магнит', 'ашан', 'лента', 'самокат', 'овощ', 'молок', 'хлеб'],
+    cafes: ['кафе', 'ресторан', 'кофе', 'обед', 'ужин', 'завтрак', 'доставка еды', 'яндекс еда', 'delivery club', 'бургер', 'пицц', 'суши'],
+    transport: ['метро', 'автобус', 'транспорт', 'проезд', 'электрич', 'бензин', 'топливо', 'парковк', 'мойка'],
+    taxi: ['такси', 'яндекс go', 'яндекс такси', 'uber', 'ситимобил'],
+    housing: ['аренд', 'жкх', 'квартплат', 'коммунал', 'квартир', 'электричеств', 'вода', 'газ', 'ремонт дома'],
+    subscriptions: ['подписк', 'интернет', 'мобильная связь', 'связь', 'телефон', 'spotify', 'youtube', 'apple music', 'icloud', 'telegram premium'],
+    health: ['аптек', 'врач', 'анализ', 'лекар', 'стоматолог', 'клиник', 'медицин', 'витамин'],
+    clothing: ['одежд', 'обув', 'куртк', 'футболк', 'джинс', 'рубашк', 'кроссовк'],
+    entertainment: ['кино', 'игр', 'развлеч', 'концерт', 'театр', 'аттракцион'],
+    education: ['курс', 'книга', 'обучен', 'skillbox', 'университет', 'лекци'],
+    business: ['реклама', 'директ', 'домен', 'хостинг', 'сервис', 'crm', 'подрядчик', 'дизайнер', 'маркетинг'],
+    gifts: ['подарок', 'цветы', 'сюрприз'],
+    debt_payment: ['кредит', 'займ', 'долг', 'ипотек', 'рассрочк', 'платеж банку', 'погашен'],
+    travel: ['билет', 'отель', 'гостиниц', 'поездк', 'путешеств', 'авиабилет', 'тур'],
+    other_expense: []
+  };
+  const EXPENSE_STOP_WORDS = new Set(['расход', 'покупка', 'оплата', 'заплатил', 'заплатила', 'сегодня', 'вчера', 'руб', 'рубль', 'рублей', 'р', 'на', 'за', 'для', 'и', 'в', 'во', 'по', 'от']);
 
   function freshState() {
     return {
-      version: 11.1,
+      version: 11.4,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -111,7 +129,8 @@
         lockOnBackground: true,
         recurringReminderDays: 3,
         lastWeeklyReviewWeek: '',
-        lastDiagnosticsAt: null
+        lastDiagnosticsAt: null,
+        expenseCategoryAliases: {}
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -148,6 +167,7 @@
       history: [],
       trash: [],
       recurringRules: [],
+      customExpenseCategories: [],
       workoutLogs: [],
       snapshots: []
     };
@@ -189,7 +209,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11.1,
+      version: 11.4,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -205,6 +225,7 @@
       history: Array.isArray(raw.history) ? raw.history : [],
       trash: Array.isArray(raw.trash) ? raw.trash : [],
       recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
+      customExpenseCategories: Array.isArray(raw.customExpenseCategories) ? raw.customExpenseCategories : [],
       workoutLogs: Array.isArray(raw.workoutLogs) ? raw.workoutLogs : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
@@ -227,6 +248,13 @@
     result.history = result.history.slice(0, 12).map(entry => ({ id: entry.id || uid(), label: entry.label || 'Изменение данных', createdAt: entry.createdAt || new Date().toISOString(), snapshot: entry.snapshot || {} }));
     result.trash = result.trash.map(entry => ({ id: entry.id || uid(), collection: entry.collection || '', label: entry.label || 'Удалённая запись', deletedAt: entry.deletedAt || new Date().toISOString(), item: entry.item || {}, related: Array.isArray(entry.related) ? entry.related : [] }));
     result.recurringRules = result.recurringRules.map(rule => ({ id: rule.id || uid(), title: rule.title || 'Регулярная операция', type: rule.type === 'income' ? 'income' : 'expense', amount: Number(rule.amount || 0), category: rule.category || (rule.type === 'income' ? 'salary' : 'subscriptions'), accountId: rule.accountId || '', day: Math.max(1, Math.min(31, Number(rule.day || 1))), enabled: rule.enabled !== false, createdAt: rule.createdAt || new Date().toISOString() }));
+    result.customExpenseCategories = result.customExpenseCategories.map(category => ({
+      id: String(category.id || `custom_${uid()}`).startsWith('custom_') ? String(category.id || `custom_${uid()}`) : `custom_${category.id || uid()}`,
+      name: String(category.name || 'Своя категория').trim().slice(0, 32),
+      keywords: Array.isArray(category.keywords) ? category.keywords.map(value => String(value).trim().toLowerCase()).filter(Boolean).slice(0, 30) : [],
+      createdAt: category.createdAt || new Date().toISOString()
+    })).filter((category, index, list) => category.name && list.findIndex(item => item.id === category.id) === index);
+    result.profile.expenseCategoryAliases = result.profile.expenseCategoryAliases && typeof result.profile.expenseCategoryAliases === 'object' ? result.profile.expenseCategoryAliases : {};
     result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Силовая тренировка', duration: Number(log.duration || 45), effort: Number(log.effort || 3), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
     return ensureAccountIntegrity(result);
   }
@@ -302,7 +330,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 11.1;
+    state.version = 11.4;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -441,30 +469,98 @@
   }
 
   function smartExpenseCategory(textValue) {
-    const text = String(textValue || '').toLowerCase();
-    const rules = [
-      ['cafes', ['обед','кофе','кафе','доставка','ресторан','завтрак','ужин']],
-      ['groceries', ['продукт','магазин','пятероч','перекрест','вкусвилл','супермаркет']],
-      ['transport', ['метро','автобус','транспорт','проезд','электрич']],
-      ['taxi', ['такси','яндекс go','uber']],
-      ['subscriptions', ['подписк','интернет','связь','телефон']],
-      ['health', ['аптек','врач','анализ','лекар']],
-      ['clothing', ['одежд','обув','куртк','футболк']],
-      ['education', ['курс','книга','обучен']],
-      ['business', ['реклама','директ','домен','хостинг','сервис']],
-      ['entertainment', ['кино','игр','развлеч']],
-      ['housing', ['аренд','жкх','квартир']],
-      ['travel', ['билет','отель','поездк','путешеств']]
-    ];
-    return rules.find(([, words]) => words.some(word => text.includes(word)))?.[0] || state.profile.lastExpenseCategory || 'other_expense';
+    const text = normalizeExpenseText(textValue);
+    if (!text) return state.profile.lastExpenseCategory || 'other_expense';
+    let best = { id: state.profile.lastExpenseCategory || 'other_expense', score: 0, longest: 0 };
+    expenseCategoryList().forEach(([categoryId]) => {
+      let score = 0;
+      let longest = 0;
+      const customPriority = categoryId.startsWith('custom_') ? 12 : 0;
+      expenseCategoryKeywords(categoryId).forEach(keyword => {
+        if (!keyword) return;
+        if (text === keyword) {
+          score += 100 + keyword.length + customPriority;
+          longest = Math.max(longest, keyword.length);
+          return;
+        }
+        if (text.includes(keyword)) {
+          score += 20 + Math.min(keyword.length, 18) + customPriority;
+          longest = Math.max(longest, keyword.length);
+          return;
+        }
+        const keywordTokens = keyword.split(' ').filter(Boolean);
+        if (keywordTokens.length > 1 && keywordTokens.every(token => text.includes(token))) {
+          score += 12 + keywordTokens.length * 3 + customPriority;
+          longest = Math.max(longest, keyword.length);
+        }
+      });
+      if (score > best.score || (score === best.score && longest > best.longest)) best = { id: categoryId, score, longest };
+    });
+    return best.score > 0 ? best.id : (state.profile.lastExpenseCategory || 'other_expense');
+  }
+
+  function parseSmartAmount(rawValue) {
+    const raw = normalizeExpenseText(rawValue).replace(/ /g, ' ');
+    const regex = /(\d{1,3}(?:\s\d{3})+|\d+(?:[.,]\d{1,2})?)\s*(тыс(?:\.|яч[аи]?)?|к|k|₽|р(?:\.|уб(?:\.|ля|лей)?)?)?/giu;
+    const candidates = [];
+    let match;
+    while ((match = regex.exec(raw))) {
+      const compact = match[1].replace(/\s/g, '').replace(',', '.');
+      let value = Number(compact);
+      const suffix = String(match[2] || '').toLowerCase();
+      if (!Number.isFinite(value)) continue;
+      if (/^(тыс|к|k)/i.test(suffix)) value *= 1000;
+      const yearLike = Number.isInteger(value) && value >= 2000 && value <= 2100 && !suffix;
+      const score = (suffix ? 5 : 0) + (value >= 10 ? 2 : 0) + (value >= 100 ? 1 : 0) - (yearLike ? 4 : 0);
+      candidates.push({ value, score, index: match.index, raw: match[0] });
+    }
+    if (!candidates.length) return { amount: 0, matched: '' };
+    candidates.sort((a, b) => b.score - a.score || b.value - a.value || a.index - b.index);
+    return { amount: Math.round(candidates[0].value * 100) / 100, matched: candidates[0].raw };
   }
 
   function parseSmartExpense(value) {
-    const raw = String(value || '').trim().replace(',', '.');
-    const amountMatch = raw.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s|$)/);
-    const amount = amountMatch ? Number(amountMatch[1]) : 0;
-    const title = raw.replace(amountMatch?.[0] || '', ' ').replace(/\s+/g, ' ').trim();
-    return { amount, title: title || 'Расход', category: smartExpenseCategory(title) };
+    const raw = String(value || '').trim();
+    const amountResult = parseSmartAmount(raw);
+    const escaped = amountResult.matched.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const title = raw
+      .replace(escaped ? new RegExp(escaped, 'i') : /$^/, ' ')
+      .replace(/\b(руб(?:лей|ля)?|р|₽)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cleanedTitle = title || 'Расход';
+    return { amount: amountResult.amount, title: cleanedTitle, category: smartExpenseCategory(cleanedTitle) };
+  }
+
+  function createCustomExpenseCategory(nameValue, keywordsValue = '') {
+    const name = String(nameValue || '').trim().replace(/\s+/g, ' ').slice(0, 32);
+    if (name.length < 2) throw new Error('Название категории должно содержать минимум 2 символа.');
+    const duplicate = expenseCategoryList().find(([, label]) => normalizeExpenseText(label) === normalizeExpenseText(name));
+    if (duplicate) return duplicate[0];
+    const keywords = String(keywordsValue || '')
+      .split(/[,;\n]/)
+      .map(value => normalizeExpenseText(value))
+      .filter(Boolean)
+      .slice(0, 30);
+    const category = { id: `custom_${uid()}`, name, keywords: [...new Set([name, ...keywords])], createdAt: new Date().toISOString() };
+    state.customExpenseCategories.push(category);
+    saveState();
+    return category.id;
+  }
+
+  function deleteCustomExpenseCategory(categoryId) {
+    const category = customExpenseCategoryById(categoryId);
+    if (!category) return false;
+    const usage = state.transactions.filter(transaction => transaction.category === categoryId).length + state.recurringRules.filter(rule => rule.category === categoryId).length;
+    if (!confirm(usage ? `Категория «${category.name}» используется в ${usage} записях. Перенести их в «Другое» и удалить категорию?` : `Удалить категорию «${category.name}»?`)) return false;
+    state.transactions.forEach(transaction => { if (transaction.category === categoryId) transaction.category = 'other_expense'; });
+    state.recurringRules.forEach(rule => { if (rule.category === categoryId) rule.category = 'other_expense'; });
+    state.obligations.forEach(item => { if (item.category === categoryId) item.category = 'other_expense'; });
+    state.customExpenseCategories = state.customExpenseCategories.filter(item => item.id !== categoryId);
+    if (state.profile.lastExpenseCategory === categoryId) state.profile.lastExpenseCategory = 'other_expense';
+    delete state.profile.expenseCategoryAliases?.[categoryId];
+    saveState();
+    return true;
   }
 
   function recurringDueDate(rule, key = monthKey(new Date())) {
@@ -576,7 +672,7 @@
   function buildDiagnostics() {
     const checks = [];
     const ids = [];
-    ['tasks','accounts','transactions','obligations','projects','goals','habits','notes','recurringRules','workoutLogs'].forEach(collection => (state[collection] || []).forEach(item => ids.push(`${collection}:${item.id}`)));
+    ['tasks','accounts','transactions','obligations','projects','goals','habits','notes','recurringRules','customExpenseCategories','workoutLogs'].forEach(collection => (state[collection] || []).forEach(item => ids.push(`${collection}:${item.id}`)));
     const idValues = ids.map(value => value.split(':').slice(1).join(':'));
     const duplicateIds = idValues.filter((id, index) => idValues.indexOf(id) !== index);
     const duplicateTransactions = [];
@@ -601,15 +697,16 @@
   function runSelfTests() {
     const tests = [];
     const test = (name, fn) => { try { const result = fn(); tests.push({ name, ok: result !== false, detail: result === false ? 'Не пройден' : 'Пройден' }); } catch (error) { tests.push({ name, ok: false, detail: error.message }); } };
-    test('Структура состояния', () => ['tasks','accounts','transactions','projects','goals','habits','history','trash','recurringRules','workoutLogs'].every(key => Array.isArray(state[key])));
+    test('Структура состояния', () => ['tasks','accounts','transactions','projects','goals','habits','history','trash','recurringRules','customExpenseCategories','workoutLogs'].every(key => Array.isArray(state[key])));
     test('Основной счёт существует', () => Boolean(getDefaultAccount()?.id));
     test('Финансовая аналитика', () => Number.isFinite(getFinanceAnalytics().capital));
     test('Экспортируемая копия', () => validateBackupData(extractBackupData(createBackupPayload(state))));
-    test('Парсер быстрого расхода', () => { const parsed = parseSmartExpense('550 обед'); return parsed.amount === 550 && parsed.category === 'cafes'; });
+    test('Парсер быстрого расхода', () => { const first = parseSmartExpense('550 обед'); const second = parseSmartExpense('Кредит 1 300'); const third = parseSmartExpense('кофе 1,5к'); return first.amount === 550 && first.category === 'cafes' && second.amount === 1300 && second.category === 'debt_payment' && third.amount === 1500 && third.category === 'cafes'; });
     test('Календарный диапазон', () => monthRange(monthKey(new Date())).end >= monthRange(monthKey(new Date())).start);
     test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
-    test('Темы интерфейса', () => ['emerald','graphite','light','neonlime'].includes(state.profile.theme));
+    test('Темы интерфейса', () => ['emerald','graphite','light','future','neonlime'].includes(state.profile.theme));
     test('Уникальность счетов', () => new Set(state.accounts.map(item => item.id)).size === state.accounts.length);
+    test('Категории расходов', () => new Set(expenseCategoryList().map(([id]) => id)).size === expenseCategoryList().length);
     test('Безопасное восстановление', () => Boolean(normalizeState(clone(state)).accounts.length));
     return tests;
   }
@@ -809,8 +906,53 @@
     return insights.slice(0, 4);
   }
 
+  function customExpenseCategoryById(id) {
+    return (state.customExpenseCategories || []).find(category => category.id === id) || null;
+  }
+
+  function expenseCategoryList() {
+    return [...EXPENSE_CATEGORIES, ...(state.customExpenseCategories || []).map(category => [category.id, category.name])];
+  }
+
   function categoryLabel(key) {
-    return ALL_CATEGORIES.get(key) || 'Другое';
+    return ALL_CATEGORIES.get(key) || customExpenseCategoryById(key)?.name || 'Другое';
+  }
+
+  function normalizeExpenseText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/[«»“”„]/g, ' ')
+      .replace(/[^a-zа-я0-9+.,₽\s-]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function expensePhraseTokens(value) {
+    return normalizeExpenseText(value)
+      .split(' ')
+      .map(token => token.replace(/^[+.,-]+|[+.,-]+$/g, ''))
+      .filter(token => token.length >= 3 && !/^\d/.test(token) && !EXPENSE_STOP_WORDS.has(token));
+  }
+
+  function expenseCategoryKeywords(categoryId) {
+    const custom = customExpenseCategoryById(categoryId);
+    const aliases = Array.isArray(state.profile.expenseCategoryAliases?.[categoryId]) ? state.profile.expenseCategoryAliases[categoryId] : [];
+    const base = custom ? [custom.name, ...(custom.keywords || [])] : [categoryLabel(categoryId), ...(BUILTIN_EXPENSE_KEYWORDS[categoryId] || [])];
+    return [...new Set([...base, ...aliases].map(normalizeExpenseText).filter(Boolean))];
+  }
+
+  function learnExpenseCategory(value, categoryId) {
+    const tokens = expensePhraseTokens(value).slice(0, 8);
+    if (!tokens.length || !categoryId) return;
+    const custom = customExpenseCategoryById(categoryId);
+    if (custom) {
+      custom.keywords = [...new Set([...(custom.keywords || []), ...tokens])].slice(0, 30);
+      return;
+    }
+    state.profile.expenseCategoryAliases ||= {};
+    const current = Array.isArray(state.profile.expenseCategoryAliases[categoryId]) ? state.profile.expenseCategoryAliases[categoryId] : [];
+    state.profile.expenseCategoryAliases[categoryId] = [...new Set([...current, ...tokens])].slice(-30);
   }
 
   function accountTypeText(type) {
@@ -1829,54 +1971,114 @@
     openOtherActionsMenu();
   }
 
+  function quickCategoryButton(categoryId, label, selected, custom = false) {
+    return `<button type="button" class="expense-category-chip ${selected === categoryId ? 'active' : ''} ${custom ? 'custom' : ''}" data-expense-category="${escapeHtml(categoryId)}"><span>${escapeHtml(label)}</span>${custom ? '<i aria-hidden="true">•</i>' : ''}</button>`;
+  }
+
+  function quickExpenseCategoryMarkup(selected) {
+    const custom = state.customExpenseCategories || [];
+    const preferredIds = [...new Set([selected, ...custom.map(item => item.id), 'groceries', 'cafes', 'transport', 'taxi', 'housing', 'subscriptions', 'health', 'clothing'])].filter(Boolean);
+    const all = expenseCategoryList();
+    const preferred = preferredIds.map(id => all.find(([value]) => value === id)).filter(Boolean);
+    const rest = all.filter(([id]) => !preferredIds.includes(id));
+    return `
+      <div class="expense-category-grid category-favorites">${preferred.map(([id, label]) => quickCategoryButton(id, label, selected, id.startsWith('custom_'))).join('')}</div>
+      ${rest.length ? `<details class="category-more"><summary>Все категории <span>${rest.length}</span></summary><div class="expense-category-grid">${rest.map(([id, label]) => quickCategoryButton(id, label, selected, id.startsWith('custom_'))).join('')}</div></details>` : ''}
+      <div class="category-tools"><button type="button" id="toggleCustomCategory">+ Своя категория</button>${custom.length ? '<button type="button" id="toggleCustomCategoryList">Мои категории</button>' : ''}</div>
+      <div class="custom-category-editor" id="customCategoryEditor" hidden>
+        <div class="field"><label>Название категории</label><input id="customCategoryName" type="text" maxlength="32" placeholder="Например, Автомобиль"></div>
+        <div class="field"><label>Слова для распознавания <small>через запятую</small></label><input id="customCategoryKeywords" type="text" placeholder="бензин, мойка, сервис"></div>
+        <button type="button" class="btn primary full" id="saveCustomCategory">Добавить категорию</button>
+      </div>
+      <div class="custom-category-list" id="customCategoryList" hidden>${custom.map(category => `<div><span><b>${escapeHtml(category.name)}</b><small>${escapeHtml((category.keywords || []).slice(0, 5).join(', ') || 'Распознавание по названию')}</small></span><button type="button" data-delete-custom-category="${category.id}" aria-label="Удалить ${escapeHtml(category.name)}">×</button></div>`).join('')}</div>`;
+  }
+
   function openQuickExpenseModal() {
-    const categoryButtons = EXPENSE_CATEGORIES.slice(0, 8).map(([value, label], index) => `<button type="button" class="expense-category-chip ${value === (state.profile.lastExpenseCategory || 'groceries') ? 'active' : ''}" data-expense-category="${value}">${escapeHtml(label)}</button>`).join('');
+    const initialCategory = expenseCategoryList().some(([id]) => id === state.profile.lastExpenseCategory) ? state.profile.lastExpenseCategory : 'groceries';
     openModal('Быстрый расход', `
       <div class="quick-expense-form">
-        <div class="smart-expense-line"><input id="smartExpenseInput" type="text" inputmode="text" placeholder="Например: 550 обед"><button type="button" id="parseSmartExpense">Распознать</button></div>
-        <small class="smart-expense-hint">Сумма и категория заполнятся автоматически.</small>
+        <div class="smart-expense-line"><input id="smartExpenseInput" type="text" inputmode="text" autocomplete="off" placeholder="Например: кредит 1300"><button type="button" id="parseSmartExpense">Распознать</button></div>
+        <small class="smart-expense-hint">Можно написать «кредит 1300», «1,5к кофе» или название своей категории.</small>
         <div class="quick-amount-wrap"><span>−</span><input id="quickExpenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"><b>₽</b></div>
         <div class="quick-amounts"><button type="button" data-add-amount="100">+100</button><button type="button" data-add-amount="500">+500</button><button type="button" data-add-amount="1000">+1 000</button></div>
-        <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(state.profile.lastExpenseCategory || 'groceries')}">
-        <div class="field"><label>Категория</label><div class="expense-category-grid">${categoryButtons}</div></div>
+        <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(initialCategory)}">
+        <div class="field"><label>Категория</label><div id="quickCategoryArea">${quickExpenseCategoryMarkup(initialCategory)}</div></div>
         <div class="form-grid">
           <div class="field"><label>Счёт</label><select name="accountId">${accountOptions(state.profile.lastExpenseAccountId || '')}</select></div>
           <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
         </div>
-        <div class="field"><label>Комментарий <small>необязательно</small></label><input name="title" placeholder="Например, обед или такси"></div>
+        <div class="field"><label>Комментарий <small>необязательно</small></label><input name="title" placeholder="Например, кредит или такси"></div>
         <button class="quick-more-actions" type="button" id="openOtherActions">Доход, задача или счёт</button>
       </div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       const amount = Number(data.amount || 0);
       if (amount <= 0) return false;
-      const category = data.category || 'other_expense';
-      const transaction = { id: uid(), title: String(data.title || '').trim() || categoryLabel(category), type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '', createdAt: new Date().toISOString() };
+      const category = expenseCategoryList().some(([id]) => id === data.category) ? data.category : 'other_expense';
+      const title = String(data.title || '').trim() || categoryLabel(category);
+      const transaction = { id: uid(), title, type: 'expense', amount, date: data.date || todayISO(), category, accountId: data.accountId || getDefaultAccount().id, notes: '', necessity: 'unknown', scope: 'personal', projectId: '', createdAt: new Date().toISOString() };
       if (!confirmTransactionNotDuplicate(transaction)) return false;
       state.transactions.push(transaction);
       applyTransactionToAccount(transaction, 1);
       state.profile.lastExpenseCategory = category;
       state.profile.lastExpenseAccountId = transaction.accountId;
+      learnExpenseCategory(`${$('#smartExpenseInput')?.value || ''} ${title}`, category);
       return true;
     }, { submitText: 'Сохранить расход' });
+
+    const bindCategoryArea = () => {
+      const area = $('#quickCategoryArea');
+      if (!area) return;
+      $$('[data-expense-category]', area).forEach(button => button.addEventListener('click', () => {
+        $$('[data-expense-category]', area).forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        $('#quickExpenseCategory').value = button.dataset.expenseCategory;
+      }));
+      $('#toggleCustomCategory')?.addEventListener('click', () => {
+        const editor = $('#customCategoryEditor');
+        editor.hidden = !editor.hidden;
+        if (!editor.hidden) setTimeout(() => $('#customCategoryName')?.focus(), 20);
+      });
+      $('#toggleCustomCategoryList')?.addEventListener('click', () => {
+        const list = $('#customCategoryList');
+        list.hidden = !list.hidden;
+      });
+      $('#saveCustomCategory')?.addEventListener('click', () => {
+        try {
+          const categoryId = createCustomExpenseCategory($('#customCategoryName')?.value, $('#customCategoryKeywords')?.value);
+          $('#quickExpenseCategory').value = categoryId;
+          area.innerHTML = quickExpenseCategoryMarkup(categoryId);
+          bindCategoryArea();
+          toast(`Категория «${categoryLabel(categoryId)}» добавлена`);
+        } catch (error) {
+          alert(error.message || 'Не удалось добавить категорию.');
+        }
+      });
+      $$('[data-delete-custom-category]', area).forEach(button => button.addEventListener('click', () => {
+        if (!deleteCustomExpenseCategory(button.dataset.deleteCustomCategory)) return;
+        const selected = $('#quickExpenseCategory').value === button.dataset.deleteCustomCategory ? 'other_expense' : $('#quickExpenseCategory').value;
+        $('#quickExpenseCategory').value = selected;
+        area.innerHTML = quickExpenseCategoryMarkup(selected);
+        bindCategoryArea();
+        toast('Категория удалена');
+      }));
+    };
+
     const applySmartExpense = () => {
       const parsed = parseSmartExpense($('#smartExpenseInput')?.value || '');
-      if (!parsed.amount) { toast('Сначала укажи сумму, например: 550 обед'); return; }
+      if (!parsed.amount) { toast('Укажи сумму, например: кредит 1300'); return; }
       $('#quickExpenseAmount').value = parsed.amount;
       const titleInput = modalForm.elements.title;
       if (titleInput) titleInput.value = parsed.title;
       $('#quickExpenseCategory').value = parsed.category;
-      $$('[data-expense-category]', modalBody).forEach(item => item.classList.toggle('active', item.dataset.expenseCategory === parsed.category));
+      $('#quickCategoryArea').innerHTML = quickExpenseCategoryMarkup(parsed.category);
+      bindCategoryArea();
       toast(`Распознано: ${money(parsed.amount)} · ${categoryLabel(parsed.category)}`);
     };
+    bindCategoryArea();
     $('#parseSmartExpense')?.addEventListener('click', applySmartExpense);
     $('#smartExpenseInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applySmartExpense(); } });
     setTimeout(() => $('#smartExpenseInput')?.focus(), 80);
-    $$('[data-expense-category]', modalBody).forEach(button => button.addEventListener('click', () => {
-      $$('[data-expense-category]', modalBody).forEach(item => item.classList.remove('active'));
-      button.classList.add('active');
-      $('#quickExpenseCategory').value = button.dataset.expenseCategory;
-    }));
     $$('[data-add-amount]', modalBody).forEach(button => button.addEventListener('click', () => {
       const input = $('#quickExpenseAmount');
       input.value = Number(input.value || 0) + Number(button.dataset.addAmount || 0);
@@ -1967,7 +2169,7 @@
   }
 
   function categoryOptions(type, selected = '') {
-    const list = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const list = type === 'income' ? INCOME_CATEGORIES : expenseCategoryList();
     return list.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
   }
 
@@ -2748,7 +2950,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.3 · Neon Lime</p>
+        <p class="app-version">Alexander OS V11.4 · Categories</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -2839,7 +3041,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.1',
+      appVersion: '11.4',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -2886,7 +3088,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.1',
+      appVersion: '11.4',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -2901,13 +3103,13 @@
   function validateBackupData(data) {
     if (!data || typeof data !== 'object') return false;
     const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
-    const optionalArrays = ['history', 'trash', 'recurringRules', 'workoutLogs'];
+    const optionalArrays = ['history', 'trash', 'recurringRules', 'customExpenseCategories', 'workoutLogs'];
     if (!data.profile || typeof data.profile !== 'object') return false;
     return requiredArrays.every(key => Array.isArray(data[key])) && optionalArrays.every(key => data[key] === undefined || Array.isArray(data[key]));
   }
 
   function backupSummary(data) {
-    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок, ${(data.workoutLogs || []).length} тренировок`;
+    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок, ${(data.customExpenseCategories || []).length} своих категорий, ${(data.workoutLogs || []).length} тренировок`;
   }
 
   async function exportData() {
