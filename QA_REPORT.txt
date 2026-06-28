@@ -1,4 +1,4 @@
-Alexander OS V11.4 - QA REPORT
+Alexander OS V11.5 - QA REPORT
 Date: 2026-06-27
 
 Checks completed:
@@ -6,7 +6,7 @@ Checks completed:
 2. sw.js syntax: PASS
 3. manifest.webmanifest JSON: PASS
 4. Required GitHub Pages files: PASS
-5. PWA cache version updated to V11.4: PASS
+5. PWA cache version updated to V11.5: PASS
 6. State migration keeps old user data: PASS
 7. Custom expense categories normalize correctly: PASS
 8. Custom categories are included in backup/import data: PASS
@@ -39,3 +39,12 @@ Notes:
 - Existing data is preserved through normalizeState migration.
 - A deleted custom category safely reassigns linked records to "Другое".
 - Real iPhone/Safari behavior still depends on the installed PWA cache refreshing after GitHub Pages deployment.
+
+
+V11.5 VIDEO WORKOUTS CHECKLIST
+- [x] 4 вкладки внутри тренировок: план, каталог, видео-лента, избранное
+- [x] 9 упражнений с видео, техникой и вариантами
+- [x] Одновременно активен один YouTube-плеер
+- [x] Фильтры по группам мышц
+- [x] Избранное сохраняется в состоянии и резервной копии
+- [x] Остальные разделы приложения не изменены

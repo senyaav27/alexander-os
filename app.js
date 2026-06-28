@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 11.4,
+      version: 11.5,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -169,6 +169,7 @@
       recurringRules: [],
       customExpenseCategories: [],
       workoutLogs: [],
+      workoutFavorites: [],
       snapshots: []
     };
   }
@@ -209,7 +210,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11.4,
+      version: 11.5,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -227,6 +228,7 @@
       recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
       customExpenseCategories: Array.isArray(raw.customExpenseCategories) ? raw.customExpenseCategories : [],
       workoutLogs: Array.isArray(raw.workoutLogs) ? raw.workoutLogs : [],
+      workoutFavorites: Array.isArray(raw.workoutFavorites) ? raw.workoutFavorites : [],
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
@@ -256,6 +258,7 @@
     })).filter((category, index, list) => category.name && list.findIndex(item => item.id === category.id) === index);
     result.profile.expenseCategoryAliases = result.profile.expenseCategoryAliases && typeof result.profile.expenseCategoryAliases === 'object' ? result.profile.expenseCategoryAliases : {};
     result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Силовая тренировка', duration: Number(log.duration || 45), effort: Number(log.effort || 3), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
+    result.workoutFavorites = [...new Set(result.workoutFavorites.map(String))];
     return ensureAccountIntegrity(result);
   }
 
@@ -330,7 +333,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 11.4;
+    state.version = 11.5;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -1822,7 +1825,7 @@
       <section class="card v11-workout-card">
         <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
         <div class="workout-card-stats"><span><b>${workoutLogsThisWeek.length}/${profile.days}</b><small>тренировок на неделе</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
-        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Открыть план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
+        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Видео и план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
       </section>
 
       <section class="section compact-section" id="goalDynamics">
@@ -2122,7 +2125,7 @@
   function closeModal() {
     modalAction = null;
     modalForm.reset();
-    modal.classList.remove('workout-dialog', 'settings-dialog');
+    modal.classList.remove('workout-dialog', 'video-workout-dialog', 'settings-dialog');
     if (modal.open) modal.close();
   }
 
@@ -2776,15 +2779,74 @@
   }
 
 
+  const WORKOUT_GROUPS = [
+    ['all', 'Все'], ['chest', 'Грудь'], ['back', 'Спина'], ['legs', 'Ноги'], ['shoulders', 'Плечи'], ['arms', 'Руки'], ['core', 'Корпус'], ['glutes', 'Ягодицы']
+  ];
+
   const WORKOUT_EXERCISES = [
-    { id:'squat', group:'legs', title:'Приседания', sets:'3 подхода', reps:'8–12 повторений', note:'Стопы на ширине плеч. Колени движутся по направлению носков. Спина остаётся нейтральной.', icon:'squat' },
-    { id:'pushup', group:'chest', title:'Отжимания', sets:'3 подхода', reps:'6–15 повторений', note:'Корпус держи прямой линией. Локти направляй назад под комфортным углом. Не проваливай поясницу.', icon:'pushup' },
-    { id:'row', group:'back', title:'Тяга в наклоне', sets:'3 подхода', reps:'8–12 повторений', note:'Отведи таз назад, сохрани прямую спину и тяни вес к нижним рёбрам. Не поднимай плечи к ушам.', icon:'row' },
-    { id:'lunge', group:'legs', title:'Выпады назад', sets:'3 подхода', reps:'8–10 на ногу', note:'Шагай назад достаточно далеко, чтобы передняя стопа полностью оставалась на полу. Двигайся плавно.', icon:'lunge' },
-    { id:'plank', group:'core', title:'Планка', sets:'3 подхода', reps:'20–45 секунд', note:'Локти под плечами. Напряги живот и ягодицы. Заверши подход, если поясница начинает прогибаться.', icon:'plank' },
-    { id:'press', group:'shoulders', title:'Жим над головой', sets:'3 подхода', reps:'8–12 повторений', note:'Не прогибайся в пояснице. Поднимай вес вертикально и контролируй возвращение.', icon:'press' },
-    { id:'curl', group:'arms', title:'Сгибание рук', sets:'2–3 подхода', reps:'10–15 повторений', note:'Локти держи рядом с корпусом. Не раскачивайся и не бросай вес вниз.', icon:'curl' },
-    { id:'bridge', group:'glutes', title:'Ягодичный мост', sets:'3 подхода', reps:'12–15 повторений', note:'Толкайся пятками, поднимай таз до прямой линии корпуса и не переразгибай поясницу.', icon:'bridge' }
+    {
+      id:'squat', group:'legs', title:'Приседания с весом тела', sets:'3 подхода', reps:'8–12 повторений',
+      note:'Поставь стопы примерно на ширине плеч. Отведи таз назад и вниз, сохраняя стопы полностью на полу. Колени направляй по линии носков.',
+      mistakes:['Колени заваливаются внутрь','Пятки отрываются от пола','Движение выполняется слишком быстро'],
+      easier:'Приседание до стула', harder:'Гоблет-присед с лёгким весом', muscles:'Ноги и ягодицы', icon:'squat',
+      videoId:'P-yaD24bUE8', source:'Техника приседаний', videoLabel:'Пошаговый разбор'
+    },
+    {
+      id:'pushup', group:'chest', title:'Отжимания', sets:'3 подхода', reps:'6–15 повторений',
+      note:'Сохраняй прямую линию от головы до пяток. Ладони немного шире плеч. Опускай корпус контролируемо и не проваливай поясницу.',
+      mistakes:['Локти сильно разведены в стороны','Таз опускается раньше корпуса','Шея вытягивается вперёд'],
+      easier:'Отжимания от высокой опоры', harder:'Медленное опускание на 3 секунды', muscles:'Грудь, трицепс и корпус', icon:'pushup',
+      videoId:'GX87fbBd78A', source:'E3 Rehab', videoLabel:'Полная техника и прогрессии'
+    },
+    {
+      id:'row', group:'back', title:'Тяга в наклоне', sets:'3 подхода', reps:'8–12 повторений',
+      note:'Отведи таз назад, сохрани нейтральную спину и тяни вес к нижним рёбрам. Плечи не поднимай к ушам.',
+      mistakes:['Спина округляется','Корпус раскачивается','Вес тянется только руками'],
+      easier:'Тяга одной рукой с опорой', harder:'Пауза в верхней точке', muscles:'Спина и задняя поверхность плеч', icon:'row',
+      videoId:'bm0_q9bR_HA', source:'Техника тяги', videoLabel:'Контроль корпуса и лопаток'
+    },
+    {
+      id:'lunge', group:'legs', title:'Выпады назад', sets:'3 подхода', reps:'8–10 на ногу',
+      note:'Шагни назад достаточно далеко, чтобы передняя стопа оставалась полностью на полу. Опускайся плавно и отталкивайся серединой передней стопы.',
+      mistakes:['Переднее колено заваливается внутрь','Слишком короткий шаг','Потеря равновесия из-за спешки'],
+      easier:'Выпад с опорой рукой', harder:'Выпад с лёгкими гантелями', muscles:'Ноги и ягодицы', icon:'lunge',
+      videoId:'94AXT7D3bKY', source:'Airrosti Rehab Centers', videoLabel:'Техника обратного выпада'
+    },
+    {
+      id:'plank', group:'core', title:'Планка на предплечьях', sets:'3 подхода', reps:'20–45 секунд',
+      note:'Поставь локти под плечами, напряги живот и ягодицы. Тело образует прямую линию. Закончи подход до того, как поясница начнёт прогибаться.',
+      mistakes:['Поясница провисает','Таз поднят слишком высоко','Задерживается дыхание'],
+      easier:'Планка с колен', harder:'Дольше удерживать при идеальной форме', muscles:'Корпус, плечи и ягодицы', icon:'plank',
+      videoId:'mwlp75MS6Rg', source:'NASM', videoLabel:'Правильная планка'
+    },
+    {
+      id:'sideplank', group:'core', title:'Боковая планка', sets:'2–3 подхода', reps:'15–35 секунд на сторону',
+      note:'Локоть держи под плечом. Подними таз и сохрани корпус прямым. Не разворачивай грудную клетку к полу.',
+      mistakes:['Плечо уходит к уху','Таз опускается','Корпус вращается вперёд'],
+      easier:'Боковая планка с согнутыми коленями', harder:'Подъём верхней ноги', muscles:'Боковая поверхность корпуса', icon:'plank',
+      videoId:'44ND4bOB-T0', source:'NASM', videoLabel:'Техника боковой планки'
+    },
+    {
+      id:'press', group:'shoulders', title:'Жим гантелей над головой', sets:'3 подхода', reps:'8–12 повторений',
+      note:'Напряги корпус и не переразгибай поясницу. Поднимай вес вертикально, не выталкивая голову вперёд.',
+      mistakes:['Сильный прогиб в пояснице','Плечи поднимаются к ушам','Вес опускается без контроля'],
+      easier:'Жим сидя с лёгкими гантелями', harder:'Пауза в верхней точке', muscles:'Плечи и трицепс', icon:'press',
+      videoId:'MMjBnEBnZKM', source:'Техника жима', videoLabel:'Безопасная траектория'
+    },
+    {
+      id:'curl', group:'arms', title:'Сгибание рук со штангой', sets:'2–3 подхода', reps:'10–15 повторений',
+      note:'Локти держи рядом с корпусом. Поднимай вес без раскачивания и медленно возвращай его вниз.',
+      mistakes:['Корпус раскачивается','Локти уходят вперёд','Вес бросается вниз'],
+      easier:'Лёгкие гантели поочерёдно', harder:'Медленная негативная фаза', muscles:'Бицепс и предплечья', icon:'curl',
+      videoId:'pQfJR-sSIvA', source:'NASM', videoLabel:'Правильное сгибание рук'
+    },
+    {
+      id:'bridge', group:'glutes', title:'Ягодичный мост', sets:'3 подхода', reps:'12–15 повторений',
+      note:'Толкайся пятками, поднимай таз до прямой линии корпуса и не переразгибай поясницу. В верхней точке напряги ягодицы.',
+      mistakes:['Толчок идёт носками','Поясница переразгибается','Колени расходятся или заваливаются'],
+      easier:'Меньшая амплитуда', harder:'Одноногий мост после освоения базы', muscles:'Ягодицы и задняя поверхность бедра', icon:'bridge',
+      videoId:'SKOMwg1JLrU', source:'Техника ягодичного моста', videoLabel:'Положение таза и корпуса'
+    }
   ];
 
   function workoutGoalLabel(value) {
@@ -2814,7 +2876,7 @@
     const templates = [
       { title:'Full body A', subtitle:'Ноги, грудь, спина и корпус', ids:['squat','pushup','row','plank'] },
       { title:'Full body B', subtitle:'Ноги, плечи, ягодицы и руки', ids:['lunge','press','bridge','curl'] },
-      { title:'Мобильность и кардио', subtitle:'Ходьба, лёгкая подвижность и восстановление', ids:['plank','bridge'] },
+      { title:'Мобильность и корпус', subtitle:'Контроль движения и восстановление', ids:['plank','sideplank','bridge'] },
       { title:'Сила всего тела', subtitle:'Контролируемая техника без отказа', ids:['squat','row','pushup','press'] },
       { title:'Функциональная тренировка', subtitle:'Выносливость и координация', ids:['lunge','pushup','plank','bridge'] }
     ];
@@ -2828,55 +2890,243 @@
       <article><span>🥚</span><b>Белок регулярно</b><small>Добавляй яйца, рыбу, птицу, бобовые, творог или другой удобный источник.</small></article>
       <article><span>💧</span><b>Вода</b><small>Пей в течение дня и дополнительно после активной тренировки.</small></article>
       <article><span>🍚</span><b>Энергия для занятий</b><small>Перед тренировкой подойдёт обычный приём пищи без переедания.</small></article>
-    </div><p class="workout-disclaimer">Цель: ${escapeHtml(goal)}. План не назначает жёстких диет и не заменяет врача или тренера. При боли, травме или хроническом заболевании остановись и обратись к специалисту.</p>`;
+    </div><p class="workout-disclaimer">Цель: ${escapeHtml(goal)}. Рекомендации общие и не заменяют врача или тренера. При боли, травме, головокружении или резком ухудшении самочувствия остановись.</p>`;
+  }
+
+  function workoutGroupLabel(group) {
+    return Object.fromEntries(WORKOUT_GROUPS)[group] || 'Упражнение';
+  }
+
+  function workoutYoutubeUrl(item) {
+    return `https://www.youtube.com/watch?v=${item.videoId}`;
+  }
+
+  function workoutThumbUrl(item) {
+    return `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
+  }
+
+  function workoutVideoPosterInner(item, compact = false) {
+    return `<img loading="lazy" src="${workoutThumbUrl(item)}" alt="Видео: ${escapeHtml(item.title)}"><span class="video-shade"></span><button type="button" class="workout-play ${compact ? 'compact' : ''}" data-play-workout-video="${item.id}" aria-label="Воспроизвести ${escapeHtml(item.title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5Z"/></svg></button><span class="video-source">${escapeHtml(item.source)}</span>`;
+  }
+
+  function workoutVideoShell(item, compact = false) {
+    return `<div class="workout-video-shell ${compact ? 'compact' : ''}" data-video-shell="${item.id}">${workoutVideoPosterInner(item, compact)}</div>`;
+  }
+
+  function workoutFavoriteButton(item) {
+    const active = (state.workoutFavorites || []).includes(item.id);
+    return `<button type="button" class="workout-favorite ${active ? 'active' : ''}" data-toggle-workout-favorite="${item.id}" aria-pressed="${active}" aria-label="${active ? 'Убрать из избранного' : 'Добавить в избранное'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg></button>`;
+  }
+
+  function workoutVideoCard(item) {
+    return `<article class="workout-video-card" data-workout-item="${item.id}">
+      ${workoutVideoShell(item)}
+      <div class="workout-video-copy">
+        <div class="workout-video-title"><div><span>${escapeHtml(workoutGroupLabel(item.group))}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.muscles)} · ${escapeHtml(item.videoLabel)}</p></div>${workoutFavoriteButton(item)}</div>
+        <div class="workout-video-metrics"><span>${escapeHtml(item.sets)}</span><span>${escapeHtml(item.reps)}</span></div>
+        <details class="workout-technique"><summary>Техника и частые ошибки <i>⌄</i></summary><p>${escapeHtml(item.note)}</p><b>Частые ошибки</b><ul>${item.mistakes.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul><div class="workout-variants"><span><small>Проще</small>${escapeHtml(item.easier)}</span><span><small>Сложнее</small>${escapeHtml(item.harder)}</span></div></details>
+        <div class="workout-video-actions"><button type="button" class="btn primary" data-play-workout-video="${item.id}">Смотреть</button><button type="button" class="btn secondary" data-open-workout-youtube="${item.id}">Открыть в YouTube</button></div>
+      </div>
+    </article>`;
   }
 
   function workoutExerciseCards(group = 'all') {
-    return WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group).map(item => `
-      <details class="exercise-card" data-exercise-group="${item.group}">
-        <summary><span class="exercise-thumb">${workoutIconSvg(item.icon)}</span><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.sets)} · ${escapeHtml(item.reps)}</small></span><i>⌄</i></summary>
-        <div class="exercise-details"><p>${escapeHtml(item.note)}</p><div class="exercise-safety">Начинай с комфортной нагрузки. Техника важнее веса и скорости.</div></div>
-      </details>`).join('');
+    const items = WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group);
+    return items.length ? items.map(workoutVideoCard).join('') : empty('Для этой группы пока нет видео.');
   }
 
-  function openWorkoutModal() {
+  function workoutReelCard(item) {
+    return `<article class="workout-reel" data-workout-item="${item.id}">
+      ${workoutVideoShell(item)}
+      <div class="workout-reel-copy"><div><span>${escapeHtml(workoutGroupLabel(item.group))}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.muscles)}</p></div>${workoutFavoriteButton(item)}</div>
+      <div class="workout-reel-meta"><span>${escapeHtml(item.sets)}</span><span>${escapeHtml(item.reps)}</span></div>
+      <button type="button" class="btn primary full" data-play-workout-video="${item.id}">Запустить видео</button>
+    </article>`;
+  }
+
+  function workoutReelsMarkup(group = 'all') {
+    const items = WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group);
+    return items.length ? items.map(workoutReelCard).join('') : empty('Для этой группы пока нет видео.');
+  }
+
+  function workoutFavoritesMarkup() {
+    const ids = new Set(state.workoutFavorites || []);
+    const items = WORKOUT_EXERCISES.filter(item => ids.has(item.id));
+    return items.length ? items.map(workoutVideoCard).join('') : `<div class="workout-empty-favorites"><span>☆</span><h3>Избранное пусто</h3><p>Нажимай на звезду у упражнения, чтобы быстро возвращаться к нему.</p></div>`;
+  }
+
+  function workoutFiltersMarkup(target, selected = 'all') {
+    return `<div class="exercise-filters workout-video-filters">${WORKOUT_GROUPS.map(([key,label]) => `<button type="button" class="chip ${selected===key?'active':''}" data-workout-filter="${key}" data-filter-target="${target}">${label}</button>`).join('')}</div>`;
+  }
+
+  function openWorkoutModal(initialTab = 'plan') {
     const profile = { ...freshState().workoutProfile, ...(state.workoutProfile || {}) };
     const plan = workoutPlan(profile);
     openModal('Тренировки', `
-      <section class="workout-profile-grid">
-        <label><span>Рост, см</span><input name="height" type="number" min="100" max="230" value="${profile.height}"></label>
-        <label><span>Возраст</span><input name="age" type="number" min="12" max="90" value="${profile.age}"></label>
-        <label><span>Вес, кг</span><input name="weight" type="number" min="30" max="250" step="0.1" value="${profile.weight}"></label>
-        <label><span>Цель</span><select name="goal"><option value="health" ${profile.goal==='health'?'selected':''}>Общее здоровье</option><option value="strength" ${profile.goal==='strength'?'selected':''}>Сила</option><option value="endurance" ${profile.goal==='endurance'?'selected':''}>Выносливость</option><option value="mobility" ${profile.goal==='mobility'?'selected':''}>Подвижность</option></select></label>
-        <label><span>Уровень</span><select name="level"><option value="beginner" ${profile.level==='beginner'?'selected':''}>Начальный</option><option value="intermediate" ${profile.level==='intermediate'?'selected':''}>Средний</option><option value="advanced" ${profile.level==='advanced'?'selected':''}>Опытный</option></select></label>
-        <label><span>Тренировок в неделю</span><select name="days">${[2,3,4,5].map(day => `<option value="${day}" ${Number(profile.days)===day?'selected':''}>${day}</option>`).join('')}</select></label>
+      <nav class="workout-hub-tabs" aria-label="Разделы тренировок">
+        ${[['plan','Мой план'],['catalog','Каталог'],['reels','Видео-лента'],['favorites','Избранное']].map(([key,label]) => `<button type="button" class="${initialTab===key?'active':''}" data-workout-tab="${key}">${label}</button>`).join('')}
+      </nav>
+
+      <section class="workout-tab-panel" data-workout-panel="plan" ${initialTab==='plan'?'':'hidden'}>
+        <section class="workout-profile-grid">
+          <label><span>Рост, см</span><input name="height" type="number" min="100" max="230" value="${profile.height}"></label>
+          <label><span>Возраст</span><input name="age" type="number" min="12" max="90" value="${profile.age}"></label>
+          <label><span>Вес, кг</span><input name="weight" type="number" min="30" max="250" step="0.1" value="${profile.weight}"></label>
+          <label><span>Цель</span><select name="goal"><option value="health" ${profile.goal==='health'?'selected':''}>Общее здоровье</option><option value="strength" ${profile.goal==='strength'?'selected':''}>Сила</option><option value="endurance" ${profile.goal==='endurance'?'selected':''}>Выносливость</option><option value="mobility" ${profile.goal==='mobility'?'selected':''}>Подвижность</option></select></label>
+          <label><span>Уровень</span><select name="level"><option value="beginner" ${profile.level==='beginner'?'selected':''}>Начальный</option><option value="intermediate" ${profile.level==='intermediate'?'selected':''}>Средний</option><option value="advanced" ${profile.level==='advanced'?'selected':''}>Опытный</option></select></label>
+          <label><span>Тренировок в неделю</span><select name="days">${[2,3,4,5].map(day => `<option value="${day}" ${Number(profile.days)===day?'selected':''}>${day}</option>`).join('')}</select></label>
+        </section>
+
+        <section class="workout-recommendation" id="workoutRecommendation">
+          <div><small>Рекомендация</small><strong>${profile.days} тренировки в неделю</strong><p>${workoutLevelLabel(profile.level)} уровень · ${workoutGoalLabel(profile.goal)} · 40–60 минут.</p></div>
+          <span class="workout-ring">${profile.days}</span>
+        </section>
+
+        <section class="workout-section">
+          <div class="section-head"><h3>План на неделю</h3><span class="badge">гибкий</span></div>
+          <div class="workout-week" id="workoutWeek">${plan.map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<button type="button" data-open-exercise-video="${exercise.id}"><span>${escapeHtml(exercise.title)}</span><small>${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</small><i>▶</i></button>`; }).join('')}</div></details>`).join('')}</div>
+        </section>
+
+        <section class="workout-section"><div class="section-head"><h3>Питание и восстановление</h3></div>${workoutNutritionMarkup(profile)}</section>
+
+        <section class="workout-section faq-section"><div class="section-head"><h3>Часто задаваемые вопросы</h3></div>
+          <details><summary>Как часто тренироваться?<i>⌄</i></summary><p>Начни с 2–3 тренировок в неделю. Добавляй день только после того, как восстановление и техника остаются стабильными.</p></details>
+          <details><summary>Что делать, если пропустил занятие?<i>⌄</i></summary><p>Продолжи со следующего запланированного дня. Не нужно выполнять две тяжёлые тренировки подряд, чтобы «догнать» график.</p></details>
+          <details><summary>Когда увеличивать нагрузку?<i>⌄</i></summary><p>Когда все повторения выполняются уверенно и с одинаковой техникой, добавь 1–2 повторения или небольшой вес.</p></details>
+          <details><summary>Нужна ли разминка?<i>⌄</i></summary><p>Да. 5–10 минут лёгкого движения и несколько подготовительных повторений перед первым тяжёлым упражнением.</p></details>
+        </section>
+        <button type="button" class="btn primary full workout-save-profile" id="saveWorkoutProfile">Сохранить мой план</button>
       </section>
 
-      <section class="workout-recommendation" id="workoutRecommendation">
-        <div><small>Рекомендация</small><strong>${profile.days} тренировки в неделю</strong><p>${workoutLevelLabel(profile.level)} уровень · ${workoutGoalLabel(profile.goal)} · 40–60 минут.</p></div>
-        <span class="workout-ring">${profile.days}</span>
+      <section class="workout-tab-panel" data-workout-panel="catalog" ${initialTab==='catalog'?'':'hidden'}>
+        <div class="workout-video-intro"><div><small>Проверенная библиотека</small><h3>Техника упражнений</h3><p>Видео запускается только после нажатия. Одновременно работает один плеер.</p></div><span>${WORKOUT_EXERCISES.length}</span></div>
+        ${workoutFiltersMarkup('catalog')}
+        <div class="workout-video-grid" id="workoutCatalog">${workoutExerciseCards()}</div>
       </section>
 
-      <section class="workout-section">
-        <div class="section-head"><h3>План на неделю</h3><span class="badge">гибкий</span></div>
-        <div class="workout-week" id="workoutWeek">${plan.map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<span>${escapeHtml(exercise.title)} · ${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</span>`; }).join('')}</div></details>`).join('')}</div>
+      <section class="workout-tab-panel" data-workout-panel="reels" ${initialTab==='reels'?'':'hidden'}>
+        <div class="workout-video-intro"><div><small>Вертикальная лента</small><h3>Листай упражнения</h3><p>Свайп вверх или вниз. Нажми на видео, чтобы начать просмотр.</p></div><span>↕</span></div>
+        ${workoutFiltersMarkup('reels')}
+        <div class="workout-reels" id="workoutReels">${workoutReelsMarkup()}</div>
       </section>
 
-      <section class="workout-section">
-        <div class="section-head"><h3>База упражнений</h3><small>Нажми для инструкции</small></div>
-        <div class="exercise-filters">${[['all','Все'],['chest','Грудь'],['back','Спина'],['legs','Ноги'],['shoulders','Плечи'],['arms','Руки'],['core','Корпус'],['glutes','Ягодицы']].map(([key,label],index)=>`<button type="button" class="chip ${index===0?'active':''}" data-exercise-filter="${key}">${label}</button>`).join('')}</div>
-        <div id="exerciseCards">${workoutExerciseCards()}</div>
+      <section class="workout-tab-panel" data-workout-panel="favorites" ${initialTab==='favorites'?'':'hidden'}>
+        <div class="workout-video-intro"><div><small>Быстрый доступ</small><h3>Избранные упражнения</h3><p>Сохраняются внутри резервной копии Alexander OS.</p></div><span>☆</span></div>
+        <div class="workout-video-grid" id="workoutFavorites">${workoutFavoritesMarkup()}</div>
       </section>
 
-      <section class="workout-section"><div class="section-head"><h3>Питание и восстановление</h3></div>${workoutNutritionMarkup(profile)}</section>
+      <p class="workout-video-disclaimer">Видео используются как справочник по технике. Выбирай комфортную нагрузку. При боли или плохом самочувствии остановись.</p>
+    `, () => false, { hideActions: true });
 
-      <section class="workout-section faq-section"><div class="section-head"><h3>Часто задаваемые вопросы</h3></div>
-        <details><summary>Как часто тренироваться?<i>⌄</i></summary><p>Начни с 2–3 тренировок в неделю. Добавляй день только после того, как восстановление и техника остаются стабильными.</p></details>
-        <details><summary>Что делать, если пропустил занятие?<i>⌄</i></summary><p>Продолжи со следующего запланированного дня. Не нужно выполнять две тяжёлые тренировки подряд, чтобы «догнать» график.</p></details>
-        <details><summary>Когда увеличивать нагрузку?<i>⌄</i></summary><p>Когда все повторения выполняются уверенно и с одинаковой техникой, добавь 1–2 повторения или небольшой вес.</p></details>
-        <details><summary>Нужна ли разминка?<i>⌄</i></summary><p>Да. 5–10 минут лёгкого движения и несколько подготовительных повторений перед первым тяжёлым упражнением.</p></details>
-      </section>`, form => {
-        const data = Object.fromEntries(new FormData(form));
+    modal.classList.add('workout-dialog', 'video-workout-dialog');
+    let catalogGroup = 'all';
+    let reelsGroup = 'all';
+
+    const switchTab = tab => {
+      stopOtherPlayers();
+      $$('[data-workout-tab]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutTab === tab));
+      $$('[data-workout-panel]', modalBody).forEach(panel => { panel.hidden = panel.dataset.workoutPanel !== tab; });
+      if (tab === 'favorites') {
+        const container = $('#workoutFavorites');
+        if (container) container.innerHTML = workoutFavoritesMarkup();
+      }
+      modalBody.scrollTop = 0;
+    };
+
+    const refreshPreview = () => {
+      const formData = Object.fromEntries(new FormData(modalForm));
+      const live = { ...profile, ...formData, days:Number(formData.days || profile.days) };
+      const recommendation = $('#workoutRecommendation');
+      if (recommendation) recommendation.innerHTML = `<div><small>Рекомендация</small><strong>${live.days} тренировки в неделю</strong><p>${workoutLevelLabel(live.level)} уровень · ${workoutGoalLabel(live.goal)} · 40–60 минут.</p></div><span class="workout-ring">${live.days}</span>`;
+      const week = $('#workoutWeek');
+      if (week) week.innerHTML = workoutPlan(live).map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<button type="button" data-open-exercise-video="${exercise.id}"><span>${escapeHtml(exercise.title)}</span><small>${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</small><i>▶</i></button>`; }).join('')}</div></details>`).join('');
+    };
+
+    const stopOtherPlayers = exceptShell => {
+      $$('[data-video-shell]', modalBody).forEach(shell => {
+        if (!shell.classList.contains('playing') || shell === exceptShell) return;
+        const item = WORKOUT_EXERCISES.find(value => value.id === shell.dataset.videoShell);
+        if (!item) return;
+        shell.classList.remove('playing');
+        shell.innerHTML = workoutVideoPosterInner(item, shell.classList.contains('compact'));
+      });
+    };
+
+    const playVideo = (id, trigger) => {
+      const item = WORKOUT_EXERCISES.find(value => value.id === id);
+      const card = trigger?.closest('[data-workout-item]');
+      const shell = trigger?.closest('[data-video-shell]') || card?.querySelector(`[data-video-shell="${id}"]`);
+      if (!item || !shell) return;
+      stopOtherPlayers(shell);
+      shell.classList.add('playing');
+      shell.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${item.videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${escapeHtml(item.title)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="eager"></iframe>`;
+    };
+
+    const updateFavoriteButtons = id => {
+      const active = (state.workoutFavorites || []).includes(id);
+      $$(`[data-toggle-workout-favorite="${id}"]`, modalBody).forEach(button => {
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      const favorites = $('#workoutFavorites');
+      if (favorites && !favorites.closest('[hidden]')) favorites.innerHTML = workoutFavoritesMarkup();
+    };
+
+    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
+
+    modalBody.onclick = event => {
+      const tabButton = event.target.closest('[data-workout-tab]');
+      if (tabButton) { switchTab(tabButton.dataset.workoutTab); return; }
+
+      const filterButton = event.target.closest('[data-workout-filter]');
+      if (filterButton) {
+        const target = filterButton.dataset.filterTarget;
+        const group = filterButton.dataset.workoutFilter;
+        $$(`[data-filter-target="${target}"]`, modalBody).forEach(button => button.classList.toggle('active', button === filterButton));
+        if (target === 'catalog') { catalogGroup = group; $('#workoutCatalog').innerHTML = workoutExerciseCards(catalogGroup); }
+        if (target === 'reels') { reelsGroup = group; $('#workoutReels').innerHTML = workoutReelsMarkup(reelsGroup); }
+        return;
+      }
+
+      const planExercise = event.target.closest('[data-open-exercise-video]');
+      if (planExercise) {
+        switchTab('catalog');
+        const item = WORKOUT_EXERCISES.find(value => value.id === planExercise.dataset.openExerciseVideo);
+        if (item) {
+          catalogGroup = item.group;
+          $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === item.group));
+          $('#workoutCatalog').innerHTML = workoutExerciseCards(item.group);
+          setTimeout(() => {
+            modalBody.querySelector(`[data-workout-item="${item.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
+          }, 40);
+        }
+        return;
+      }
+
+      const playButton = event.target.closest('[data-play-workout-video]');
+      if (playButton) { playVideo(playButton.dataset.playWorkoutVideo, playButton); return; }
+
+      const youtubeButton = event.target.closest('[data-open-workout-youtube]');
+      if (youtubeButton) {
+        const item = WORKOUT_EXERCISES.find(value => value.id === youtubeButton.dataset.openWorkoutYoutube);
+        if (item) window.open(workoutYoutubeUrl(item), '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const favoriteButton = event.target.closest('[data-toggle-workout-favorite]');
+      if (favoriteButton) {
+        const id = favoriteButton.dataset.toggleWorkoutFavorite;
+        const values = new Set(state.workoutFavorites || []);
+        if (values.has(id)) values.delete(id); else values.add(id);
+        state.workoutFavorites = [...values];
+        saveState({ snapshot:false });
+        updateFavoriteButtons(id);
+        toast(values.has(id) ? 'Добавлено в избранное' : 'Удалено из избранного');
+        return;
+      }
+
+      if (event.target.closest('#saveWorkoutProfile')) {
+        const data = Object.fromEntries(new FormData(modalForm));
         state.workoutProfile = {
           height: Math.max(100, Math.min(230, Number(data.height || 177))),
           age: Math.max(12, Math.min(90, Number(data.age || 18))),
@@ -2887,24 +3137,10 @@
           equipment: 'mixed',
           savedAt: new Date().toISOString()
         };
-        return true;
-      }, { submitText: 'Сохранить план' });
-
-    modal.classList.add('workout-dialog');
-    const refreshPreview = () => {
-      const formData = Object.fromEntries(new FormData(modalForm));
-      const live = { ...profile, ...formData, days:Number(formData.days || profile.days) };
-      const recommendation = $('#workoutRecommendation');
-      if (recommendation) recommendation.innerHTML = `<div><small>Рекомендация</small><strong>${live.days} тренировки в неделю</strong><p>${workoutLevelLabel(live.level)} уровень · ${workoutGoalLabel(live.goal)} · 40–60 минут.</p></div><span class="workout-ring">${live.days}</span>`;
-      const week = $('#workoutWeek');
-      if (week) week.innerHTML = workoutPlan(live).map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<span>${escapeHtml(exercise.title)} · ${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</span>`; }).join('')}</div></details>`).join('');
+        saveState();
+        toast('План тренировок сохранён');
+      }
     };
-    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
-    $$('[data-exercise-filter]', modalBody).forEach(button => button.addEventListener('click', () => {
-      $$('[data-exercise-filter]', modalBody).forEach(item => item.classList.toggle('active', item === button));
-      const container = $('#exerciseCards');
-      if (container) container.innerHTML = workoutExerciseCards(button.dataset.exerciseFilter);
-    }));
   }
 
   function renderSettings(target = app) {
@@ -2950,7 +3186,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.4 · Categories</p>
+        <p class="app-version">Alexander OS V11.5 · Categories</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3041,7 +3277,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.4',
+      appVersion: '11.5',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -3088,7 +3324,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.4',
+      appVersion: '11.5',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -3103,13 +3339,13 @@
   function validateBackupData(data) {
     if (!data || typeof data !== 'object') return false;
     const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
-    const optionalArrays = ['history', 'trash', 'recurringRules', 'customExpenseCategories', 'workoutLogs'];
+    const optionalArrays = ['history', 'trash', 'recurringRules', 'customExpenseCategories', 'workoutLogs', 'workoutFavorites'];
     if (!data.profile || typeof data.profile !== 'object') return false;
     return requiredArrays.every(key => Array.isArray(data[key])) && optionalArrays.every(key => data[key] === undefined || Array.isArray(data[key]));
   }
 
   function backupSummary(data) {
-    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок, ${(data.customExpenseCategories || []).length} своих категорий, ${(data.workoutLogs || []).length} тренировок`;
+    return `${data.tasks.length} задач, ${data.transactions.length} операций, ${data.projects.length} проектов, ${data.goals.length} целей, ${data.notes.length} заметок, ${(data.customExpenseCategories || []).length} своих категорий, ${(data.workoutLogs || []).length} тренировок, ${(data.workoutFavorites || []).length} избранных видео`;
   }
 
   async function exportData() {
