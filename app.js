@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 11.5,
+      version: 11.6,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -210,7 +210,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11.5,
+      version: 11.6,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -333,7 +333,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 11.5;
+    state.version = 11.6;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -2789,63 +2789,63 @@
       note:'Поставь стопы примерно на ширине плеч. Отведи таз назад и вниз, сохраняя стопы полностью на полу. Колени направляй по линии носков.',
       mistakes:['Колени заваливаются внутрь','Пятки отрываются от пола','Движение выполняется слишком быстро'],
       easier:'Приседание до стула', harder:'Гоблет-присед с лёгким весом', muscles:'Ноги и ягодицы', icon:'squat',
-      videoId:'P-yaD24bUE8', source:'Техника приседаний', videoLabel:'Пошаговый разбор'
+      videoId:'BPBX4HTcVcs', source:'World Class Россия', videoLabel:'Приседания: правильная техника'
     },
     {
       id:'pushup', group:'chest', title:'Отжимания', sets:'3 подхода', reps:'6–15 повторений',
       note:'Сохраняй прямую линию от головы до пяток. Ладони немного шире плеч. Опускай корпус контролируемо и не проваливай поясницу.',
       mistakes:['Локти сильно разведены в стороны','Таз опускается раньше корпуса','Шея вытягивается вперёд'],
       easier:'Отжимания от высокой опоры', harder:'Медленное опускание на 3 секунды', muscles:'Грудь, трицепс и корпус', icon:'pushup',
-      videoId:'GX87fbBd78A', source:'E3 Rehab', videoLabel:'Полная техника и прогрессии'
+      videoId:'jjwKTsl4HWE', source:'World Class Россия', videoLabel:'Отжимания: правильная техника'
     },
     {
       id:'row', group:'back', title:'Тяга в наклоне', sets:'3 подхода', reps:'8–12 повторений',
       note:'Отведи таз назад, сохрани нейтральную спину и тяни вес к нижним рёбрам. Плечи не поднимай к ушам.',
       mistakes:['Спина округляется','Корпус раскачивается','Вес тянется только руками'],
       easier:'Тяга одной рукой с опорой', harder:'Пауза в верхней точке', muscles:'Спина и задняя поверхность плеч', icon:'row',
-      videoId:'bm0_q9bR_HA', source:'Техника тяги', videoLabel:'Контроль корпуса и лопаток'
+      videoId:'n2tuBztj5tk', source:'Сергей Сивец', videoLabel:'Тяга гантелей к поясу'
     },
     {
       id:'lunge', group:'legs', title:'Выпады назад', sets:'3 подхода', reps:'8–10 на ногу',
       note:'Шагни назад достаточно далеко, чтобы передняя стопа оставалась полностью на полу. Опускайся плавно и отталкивайся серединой передней стопы.',
       mistakes:['Переднее колено заваливается внутрь','Слишком короткий шаг','Потеря равновесия из-за спешки'],
       easier:'Выпад с опорой рукой', harder:'Выпад с лёгкими гантелями', muscles:'Ноги и ягодицы', icon:'lunge',
-      videoId:'94AXT7D3bKY', source:'Airrosti Rehab Centers', videoLabel:'Техника обратного выпада'
+      videoId:'d3xVz2ObWyg', source:'Иван Красавин', videoLabel:'Выпады: техника и частые ошибки'
     },
     {
       id:'plank', group:'core', title:'Планка на предплечьях', sets:'3 подхода', reps:'20–45 секунд',
       note:'Поставь локти под плечами, напряги живот и ягодицы. Тело образует прямую линию. Закончи подход до того, как поясница начнёт прогибаться.',
       mistakes:['Поясница провисает','Таз поднят слишком высоко','Задерживается дыхание'],
       easier:'Планка с колен', harder:'Дольше удерживать при идеальной форме', muscles:'Корпус, плечи и ягодицы', icon:'plank',
-      videoId:'mwlp75MS6Rg', source:'NASM', videoLabel:'Правильная планка'
+      videoId:'R73Q4uiFJ-Q', source:'Твой тренер', videoLabel:'Планка: техника и нюансы'
     },
     {
       id:'sideplank', group:'core', title:'Боковая планка', sets:'2–3 подхода', reps:'15–35 секунд на сторону',
       note:'Локоть держи под плечом. Подними таз и сохрани корпус прямым. Не разворачивай грудную клетку к полу.',
       mistakes:['Плечо уходит к уху','Таз опускается','Корпус вращается вперёд'],
       easier:'Боковая планка с согнутыми коленями', harder:'Подъём верхней ноги', muscles:'Боковая поверхность корпуса', icon:'plank',
-      videoId:'44ND4bOB-T0', source:'NASM', videoLabel:'Техника боковой планки'
+      videoId:'nBc0g3rhi8I', source:'Трамонтана', videoLabel:'Боковая планка: техника выполнения'
     },
     {
       id:'press', group:'shoulders', title:'Жим гантелей над головой', sets:'3 подхода', reps:'8–12 повторений',
       note:'Напряги корпус и не переразгибай поясницу. Поднимай вес вертикально, не выталкивая голову вперёд.',
       mistakes:['Сильный прогиб в пояснице','Плечи поднимаются к ушам','Вес опускается без контроля'],
       easier:'Жим сидя с лёгкими гантелями', harder:'Пауза в верхней точке', muscles:'Плечи и трицепс', icon:'press',
-      videoId:'MMjBnEBnZKM', source:'Техника жима', videoLabel:'Безопасная траектория'
+      videoId:'X5bgyaiWoJI', source:'Кузница Спорта', videoLabel:'Жим гантелей сидя'
     },
     {
       id:'curl', group:'arms', title:'Сгибание рук со штангой', sets:'2–3 подхода', reps:'10–15 повторений',
       note:'Локти держи рядом с корпусом. Поднимай вес без раскачивания и медленно возвращай его вниз.',
       mistakes:['Корпус раскачивается','Локти уходят вперёд','Вес бросается вниз'],
       easier:'Лёгкие гантели поочерёдно', harder:'Медленная негативная фаза', muscles:'Бицепс и предплечья', icon:'curl',
-      videoId:'pQfJR-sSIvA', source:'NASM', videoLabel:'Правильное сгибание рук'
+      videoId:'8ignu7DXOWw', source:'Олег Гундуров', videoLabel:'Сгибание рук со штангой стоя'
     },
     {
       id:'bridge', group:'glutes', title:'Ягодичный мост', sets:'3 подхода', reps:'12–15 повторений',
       note:'Толкайся пятками, поднимай таз до прямой линии корпуса и не переразгибай поясницу. В верхней точке напряги ягодицы.',
       mistakes:['Толчок идёт носками','Поясница переразгибается','Колени расходятся или заваливаются'],
       easier:'Меньшая амплитуда', harder:'Одноногий мост после освоения базы', muscles:'Ягодицы и задняя поверхность бедра', icon:'bridge',
-      videoId:'SKOMwg1JLrU', source:'Техника ягодичного моста', videoLabel:'Положение таза и корпуса'
+      videoId:'96SMWKjpYLg', source:'Алеся, фитнес-тренер', videoLabel:'Ягодичный мост: правильная техника'
     }
   ];
 
@@ -2874,8 +2874,8 @@
   function workoutPlan(profile) {
     const days = Math.max(2, Math.min(5, Number(profile.days || 3)));
     const templates = [
-      { title:'Full body A', subtitle:'Ноги, грудь, спина и корпус', ids:['squat','pushup','row','plank'] },
-      { title:'Full body B', subtitle:'Ноги, плечи, ягодицы и руки', ids:['lunge','press','bridge','curl'] },
+      { title:'Всё тело A', subtitle:'Ноги, грудь, спина и корпус', ids:['squat','pushup','row','plank'] },
+      { title:'Всё тело B', subtitle:'Ноги, плечи, ягодицы и руки', ids:['lunge','press','bridge','curl'] },
       { title:'Мобильность и корпус', subtitle:'Контроль движения и восстановление', ids:['plank','sideplank','bridge'] },
       { title:'Сила всего тела', subtitle:'Контролируемая техника без отказа', ids:['squat','row','pushup','press'] },
       { title:'Функциональная тренировка', subtitle:'Выносливость и координация', ids:['lunge','pushup','plank','bridge'] }
@@ -3005,7 +3005,7 @@
       </section>
 
       <section class="workout-tab-panel" data-workout-panel="reels" ${initialTab==='reels'?'':'hidden'}>
-        <div class="workout-video-intro"><div><small>Вертикальная лента</small><h3>Листай упражнения</h3><p>Свайп вверх или вниз. Нажми на видео, чтобы начать просмотр.</p></div><span>↕</span></div>
+        <div class="workout-video-intro"><div><small>Вертикальная лента</small><h3>Листай упражнения</h3><p>Листай вверх или вниз. Все видео и пояснения полностью на русском языке.</p></div><span>↕</span></div>
         ${workoutFiltersMarkup('reels')}
         <div class="workout-reels" id="workoutReels">${workoutReelsMarkup()}</div>
       </section>
@@ -3059,7 +3059,7 @@
       if (!item || !shell) return;
       stopOtherPlayers(shell);
       shell.classList.add('playing');
-      shell.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${item.videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1" title="${escapeHtml(item.title)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="eager"></iframe>`;
+      shell.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${item.videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1&hl=ru&cc_lang_pref=ru&iv_load_policy=3&controls=1" title="${escapeHtml(item.title)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="eager"></iframe>`;
     };
 
     const updateFavoriteButtons = id => {
@@ -3186,7 +3186,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.5 · Categories</p>
+        <p class="app-version">Alexander OS V11.6 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3277,7 +3277,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.5',
+      appVersion: '11.6',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -3324,7 +3324,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.5',
+      appVersion: '11.6',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -3598,6 +3598,5 @@ ${JSON.stringify(state, null, 2)}
   render();
   const reviewWeek = localISO(startOfWeek(new Date()));
   const hasCurrentReview = state.weeklyReviews.some(review => review.weekStart === reviewWeek);
-  if (!hasCurrentReview && [0,1].includes(new Date().getDay())) setTimeout(() => toast('Недельный разбор готов к созданию в разделе «Прогресс»'), 900);
   if (security.pinEnabled || security.faceIdEnabled) lockApp();
 })();

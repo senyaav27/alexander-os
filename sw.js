@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-v11-5-video-workouts';
-const ASSETS = ['./', './index.html', './styles.css?v=11.5', './app.js?v=11.5', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v11-6-russian-video-workouts';
+const ASSETS = ['./', './index.html', './styles.css?v=11.6', './app.js?v=11.6', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
