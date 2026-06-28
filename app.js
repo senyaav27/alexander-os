@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 11.6,
+      version: 11.7,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -210,7 +210,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11.6,
+      version: 11.7,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -333,7 +333,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 11.6;
+    state.version = 11.7;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -1853,7 +1853,7 @@
     $$('[data-growth-range]').forEach(button => button.addEventListener('click', () => { growthRange = button.dataset.growthRange; renderGrowth(); }));
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
-    $('#openWorkouts')?.addEventListener('click', openWorkoutModal);
+    $('#openWorkouts')?.addEventListener('click', () => openWorkoutModal('plan'));
     $('#openWorkoutJournal')?.addEventListener('click', openWorkoutJournal);
     $('#createAutoReview')?.addEventListener('click', openAutoWeeklyReview);
     $('#createAutoReviewCard')?.addEventListener('click', openAutoWeeklyReview);
@@ -2930,9 +2930,78 @@
     </article>`;
   }
 
-  function workoutExerciseCards(group = 'all') {
-    const items = WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group);
-    return items.length ? items.map(workoutVideoCard).join('') : empty('Для этой группы пока нет видео.');
+  const WORKOUT_SEARCH_STOP_WORDS = new Set([
+    'как','качать','качаю','накачать','накачивать','тренировать','тренировка','тренировки','упражнение','упражнения',
+    'покажи','найди','хочу','нужно','можно','правильно','техника','для','мне','на','с','и','или','что','какие','какой','видео'
+  ]);
+
+  const WORKOUT_SEARCH_ALIASES = {
+    chest: ['грудь','груди','грудные','грудной','грудную','пекторальные'],
+    back: ['спина','спину','спины','широчайшие','крылья','поясница'],
+    legs: ['ноги','ног','бедра','бедро','квадрицепс','икры','голень'],
+    shoulders: ['плечи','плеч','дельты','дельтовидные'],
+    arms: ['руки','рук','бицепс','бицепса','трицепс','трицепса','предплечья'],
+    core: ['пресс','живот','корпус','кора','талия','планка'],
+    glutes: ['ягодицы','ягодиц','попа','ягодичные']
+  };
+
+  function normalizeWorkoutSearch(value = '') {
+    return String(value)
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/[|/\,.;:!?()\[\]{}"'«»—–-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function workoutSearchTokens(query = '') {
+    return normalizeWorkoutSearch(query)
+      .split(' ')
+      .filter(token => token.length > 1 && !WORKOUT_SEARCH_STOP_WORDS.has(token));
+  }
+
+  function workoutSearchGroups(query = '') {
+    const normalized = normalizeWorkoutSearch(query);
+    const groups = new Set();
+    Object.entries(WORKOUT_SEARCH_ALIASES).forEach(([group, aliases]) => {
+      if (aliases.some(alias => normalized.includes(alias))) groups.add(group);
+    });
+    return groups;
+  }
+
+  function workoutSearchHaystack(item) {
+    const aliases = WORKOUT_SEARCH_ALIASES[item.group] || [];
+    return normalizeWorkoutSearch([
+      item.title, workoutGroupLabel(item.group), item.muscles, item.note, item.videoLabel, item.source,
+      item.easier, item.harder, ...(item.mistakes || []), ...aliases
+    ].join(' '));
+  }
+
+  function workoutMatchesSearch(item, query = '') {
+    const normalized = normalizeWorkoutSearch(query);
+    if (!normalized) return true;
+    const tokens = workoutSearchTokens(normalized);
+    const targetGroups = workoutSearchGroups(normalized);
+    const haystack = workoutSearchHaystack(item);
+    if (haystack.includes(normalized)) return true;
+    const tokenMatches = tokens.filter(token => haystack.includes(token)).length;
+    const groupMatch = targetGroups.has(item.group);
+    if (!tokens.length) return groupMatch;
+    return groupMatch || tokenMatches === tokens.length || (tokens.length >= 2 && tokenMatches >= Math.ceil(tokens.length * 0.6));
+  }
+
+  function filteredWorkoutExercises(group = 'all', query = '') {
+    return WORKOUT_EXERCISES.filter(item => (group === 'all' || item.group === group) && workoutMatchesSearch(item, query));
+  }
+
+  function workoutSearchEmpty(query = '') {
+    const safe = escapeHtml(query.trim());
+    return `<div class="workout-search-empty"><span>⌕</span><h3>Ничего не найдено</h3><p>${safe ? `По запросу «${safe}» упражнений пока нет.` : 'Измени запрос или выбери другую группу мышц.'}</p><button type="button" class="btn secondary" data-clear-workout-search>Сбросить поиск</button></div>`;
+  }
+
+  function workoutExerciseCards(group = 'all', query = '') {
+    const items = filteredWorkoutExercises(group, query);
+    return items.length ? items.map(workoutVideoCard).join('') : workoutSearchEmpty(query);
   }
 
   function workoutReelCard(item) {
@@ -2960,6 +3029,7 @@
   }
 
   function openWorkoutModal(initialTab = 'plan') {
+    if (!['plan','catalog','reels','favorites'].includes(initialTab)) initialTab = 'plan';
     const profile = { ...freshState().workoutProfile, ...(state.workoutProfile || {}) };
     const plan = workoutPlan(profile);
     openModal('Тренировки', `
@@ -3000,6 +3070,12 @@
 
       <section class="workout-tab-panel" data-workout-panel="catalog" ${initialTab==='catalog'?'':'hidden'}>
         <div class="workout-video-intro"><div><small>Проверенная библиотека</small><h3>Техника упражнений</h3><p>Видео запускается только после нажатия. Одновременно работает один плеер.</p></div><span>${WORKOUT_EXERCISES.length}</span></div>
+        <div class="workout-search-box" role="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="workoutSearchInput" type="search" inputmode="search" autocomplete="off" enterkeyhint="search" placeholder="Как качать руки, плечи, пресс…" aria-label="Поиск упражнений">
+          <button type="button" id="clearWorkoutSearch" aria-label="Очистить поиск" hidden>✕</button>
+        </div>
+        <div class="workout-search-status" id="workoutSearchStatus">Показано ${WORKOUT_EXERCISES.length} упражнений</div>
         ${workoutFiltersMarkup('catalog')}
         <div class="workout-video-grid" id="workoutCatalog">${workoutExerciseCards()}</div>
       </section>
@@ -3021,6 +3097,7 @@
     modal.classList.add('workout-dialog', 'video-workout-dialog');
     let catalogGroup = 'all';
     let reelsGroup = 'all';
+    let catalogQuery = '';
 
     const switchTab = tab => {
       stopOtherPlayers();
@@ -3031,6 +3108,20 @@
         if (container) container.innerHTML = workoutFavoritesMarkup();
       }
       modalBody.scrollTop = 0;
+    };
+
+    const updateCatalog = ({ resetScroll = false } = {}) => {
+      const container = $('#workoutCatalog');
+      if (!container) return;
+      const items = filteredWorkoutExercises(catalogGroup, catalogQuery);
+      container.innerHTML = items.length ? items.map(workoutVideoCard).join('') : workoutSearchEmpty(catalogQuery);
+      const status = $('#workoutSearchStatus');
+      if (status) status.textContent = catalogQuery.trim()
+        ? `Найдено: ${items.length}`
+        : `Показано ${items.length} ${items.length === 1 ? 'упражнение' : items.length >= 2 && items.length <= 4 ? 'упражнения' : 'упражнений'}`;
+      const clearButton = $('#clearWorkoutSearch');
+      if (clearButton) clearButton.hidden = !catalogQuery.trim();
+      if (resetScroll) modalBody.scrollTo({ top: Math.max(0, ($('#workoutSearchInput')?.offsetTop || 0) - 90), behavior: 'smooth' });
     };
 
     const refreshPreview = () => {
@@ -3072,18 +3163,52 @@
       if (favorites && !favorites.closest('[hidden]')) favorites.innerHTML = workoutFavoritesMarkup();
     };
 
-    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
+    $$('.workout-profile-grid input, .workout-profile-grid select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
+
+    const workoutSearchInput = $('#workoutSearchInput');
+    workoutSearchInput?.addEventListener('input', event => {
+      catalogQuery = event.target.value || '';
+      if (catalogQuery.trim()) {
+        catalogGroup = 'all';
+        $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === 'all'));
+      }
+      updateCatalog();
+    });
+    workoutSearchInput?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        workoutSearchInput.blur();
+        updateCatalog({ resetScroll: true });
+      }
+    });
+    $('#clearWorkoutSearch')?.addEventListener('click', () => {
+      catalogQuery = '';
+      workoutSearchInput.value = '';
+      updateCatalog();
+      workoutSearchInput.focus();
+    });
 
     modalBody.onclick = event => {
       const tabButton = event.target.closest('[data-workout-tab]');
       if (tabButton) { switchTab(tabButton.dataset.workoutTab); return; }
+
+      if (event.target.closest('[data-clear-workout-search]')) {
+        catalogQuery = '';
+        const input = $('#workoutSearchInput');
+        if (input) input.value = '';
+        catalogGroup = 'all';
+        $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === 'all'));
+        updateCatalog();
+        input?.focus();
+        return;
+      }
 
       const filterButton = event.target.closest('[data-workout-filter]');
       if (filterButton) {
         const target = filterButton.dataset.filterTarget;
         const group = filterButton.dataset.workoutFilter;
         $$(`[data-filter-target="${target}"]`, modalBody).forEach(button => button.classList.toggle('active', button === filterButton));
-        if (target === 'catalog') { catalogGroup = group; $('#workoutCatalog').innerHTML = workoutExerciseCards(catalogGroup); }
+        if (target === 'catalog') { catalogGroup = group; updateCatalog(); }
         if (target === 'reels') { reelsGroup = group; $('#workoutReels').innerHTML = workoutReelsMarkup(reelsGroup); }
         return;
       }
@@ -3094,11 +3219,14 @@
         const item = WORKOUT_EXERCISES.find(value => value.id === planExercise.dataset.openExerciseVideo);
         if (item) {
           catalogGroup = item.group;
+          catalogQuery = '';
+          const searchInput = $('#workoutSearchInput');
+          if (searchInput) searchInput.value = '';
           $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === item.group));
-          $('#workoutCatalog').innerHTML = workoutExerciseCards(item.group);
+          updateCatalog();
           setTimeout(() => {
             modalBody.querySelector(`[data-workout-item="${item.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
-          }, 40);
+          }, 60);
         }
         return;
       }
@@ -3186,7 +3314,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.6 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V11.7 · Workout Search & Scroll Fix</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3277,7 +3405,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '11.7',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -3324,7 +3452,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '11.7',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -3522,7 +3650,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 11;
+      state.version = 11.7;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();

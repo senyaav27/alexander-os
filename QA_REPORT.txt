@@ -1,16 +1,20 @@
-Alexander OS V11.6 - QA REPORT
+Alexander OS V11.7 - QA REPORT
+Release: Workout Scroll & Smart Search
 
-1. JavaScript syntax: PASS
-2. Service Worker syntax: PASS
-3. PWA cache updated to V11.6: PASS
-4. Startup weekly-review toast removed: PASS
-5. Workout plan English labels removed: PASS
-6. All workout video metadata is Russian: PASS
-7. 9 Russian-language YouTube video IDs configured: PASS
-8. YouTube player locale set to Russian: PASS
-9. Reel player aspect ratio fixed to 16:9: PASS
-10. Empty black flexible video area removed: PASS
-11. Workout tabs no longer sticky-overlap the intro: PASS
-12. Existing V11 tabs, navigation and icons unchanged: PASS
+Automated browser checks at 390x844 mobile viewport:
+1. All five bottom navigation tabs open without runtime errors: PASS
+2. Workout modal opens on "Мой план" by default: PASS
+3. "Мой план" has independent vertical scrolling: PASS
+4. Plan content scrolls from top to the final sections: PASS
+5. Catalog opens and remains vertically scrollable: PASS
+6. Video feed keeps its independent Reels-style scroll: PASS
+7. Search "как качать руки" returns arm exercise: PASS
+8. Search "как качать пресс" returns plank exercises: PASS
+9. Search "плечи гантели" returns dumbbell shoulder press: PASS
+10. JavaScript syntax: PASS
+11. Service Worker syntax: PASS
+12. No page runtime errors in the tested workout flow: PASS
 
-Note: YouTube availability and embedding are finally verified after publication on GitHub Pages because authors can change embedding permissions. Each item still includes the external YouTube link as a fallback.
+Important:
+- YouTube playback is checked finally after publication on GitHub Pages and opening on the iPhone.
+- Safari may cache an older PWA release. The cache key and asset versions were changed to V11.7.

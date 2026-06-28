@@ -1,20 +1,21 @@
-Alexander OS V11.6 - Russian Video Workouts
+Alexander OS V11.7 - Workout Scroll & Smart Search
 
-Обновлён только раздел тренировок.
+What changed:
+- Fixed vertical scrolling in "Мой план", Catalog and Favorites inside the workout modal.
+- Workout modal now opens on "Мой план" reliably.
+- Added smart Russian-language exercise search in Catalog.
+- Search understands natural phrases such as:
+  * как качать руки
+  * как качать ноги
+  * как качать пресс
+  * плечи гантели
+  * упражнения для спины
+- Search uses exercise names, muscle groups, technique, easier/harder variants and common synonyms.
+- Video feed scrolling remains unchanged.
+- PWA cache updated to V11.7.
 
-Изменения:
-- все 9 видео заменены на русскоязычные ролики по технике упражнений;
-- интерфейс YouTube запрашивается на русском языке;
-- видео-лента перестроена под аккуратные карточки с видео 16:9;
-- убрано пустое чёрное пространство под плеером;
-- вкладки тренировок больше не перекрывают верхний информационный блок;
-- фильтры групп мышц прокручиваются горизонтально;
-- Full body A/B переименованы в «Всё тело A/B»;
-- убрано автоматическое уведомление «Недельный разбор готов...» при запуске приложения;
-- остальные вкладки и дизайн Alexander OS V11 не изменены.
-
-Загрузка в GitHub:
-1. Распакуйте архив.
-2. Загрузите все файлы в корень репозитория с заменой старых.
-3. Дождитесь завершения GitHub Pages deployment.
-4. Полностью закройте PWA на iPhone и откройте заново.
+GitHub upload:
+1. Export a backup from the current application.
+2. Upload all files from this folder to the repository root and replace old files.
+3. Wait for GitHub Pages deployment.
+4. Fully close Alexander OS on iPhone and open it again.
