@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 12.1,
+      version: 12.2,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -212,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12.1,
+      version: 12.2,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -345,7 +345,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 12.1;
+    state.version = 12.2;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -1230,7 +1230,9 @@
     const activeNavScreen = currentScreen === 'life' ? 'tasks' : currentScreen;
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === activeNavScreen));
     const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, life: renderLifeMap, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
+    setFloatingAddVisible(false);
     renderer();
+    requestAnimationFrame(updateFloatingAddVisibility);
   }
 
   function taskCompletionToday() {
@@ -2699,9 +2701,10 @@
   }
 
   function switchScreen(screen) {
+    setFloatingAddVisible(false);
+    window.scrollTo({ top: 0, behavior: 'auto' });
     currentScreen = screen;
     render();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function toast(message) {
@@ -3424,7 +3427,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V12.1 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V12.2 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3760,7 +3763,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 12.1;
+      state.version = 12.2;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -3803,21 +3806,82 @@ ${JSON.stringify(state, null, 2)}
   $('#globalAdd').addEventListener('click', handleGlobalAdd);
   $('#floatingAdd')?.addEventListener('click', handleGlobalAdd);
 
-  let lastScrollY = window.scrollY;
+  const floatingAddScreens = new Set(['dashboard', 'finance', 'tasks', 'projects', 'growth']);
   let floatingVisible = false;
-  function updateFloatingAddVisibility() {
+  let floatingFrame = 0;
+
+  function floatingContentBlocks() {
+    const isExcluded = node => node instanceof HTMLElement && node.matches('.tabs, .filter-row, .task-search-row, .toolbar-card, .life-page-head');
+    const isBlock = node => {
+      if (!(node instanceof HTMLElement) || node.hidden || node.offsetHeight < 18 || isExcluded(node)) return false;
+      return node.matches('section, article, button, .card, .empty-state, [class*="-grid"]');
+    };
+
+    const blocks = [];
+    [...app.children].forEach(node => {
+      if (isExcluded(node)) return;
+      if (isBlock(node)) {
+        blocks.push(node);
+        return;
+      }
+      // Некоторые экраны, например «Финансы», собирают секции внутри одного контейнера.
+      // Берём только первый уровень, чтобы логика ориентировалась на реальные крупные блоки.
+      [...node.children].filter(child => !isExcluded(child) && isBlock(child)).forEach(child => blocks.push(child));
+    });
+    return [...new Set(blocks)];
+  }
+
+  function setFloatingAddVisible(visible) {
     const floating = $('#floatingAdd');
     if (!floating) return;
-    const y = window.scrollY || document.documentElement.scrollTop || 0;
-    const distanceFromBottom = Math.max(0, document.documentElement.scrollHeight - (window.innerHeight + y));
-    const scrollingDown = y > lastScrollY + 2;
-    if (!floatingVisible && scrollingDown && distanceFromBottom <= 150) floatingVisible = true;
-    if (floatingVisible && distanceFromBottom >= 300) floatingVisible = false;
-    if (y < 40) floatingVisible = false;
+    floatingVisible = Boolean(visible);
     floating.classList.toggle('visible', floatingVisible);
-    lastScrollY = y;
+    floating.setAttribute('aria-hidden', floatingVisible ? 'false' : 'true');
+    floating.tabIndex = floatingVisible ? 0 : -1;
   }
+
+  function updateFloatingAddVisibility() {
+    cancelAnimationFrame(floatingFrame);
+    floatingFrame = requestAnimationFrame(() => {
+      const floating = $('#floatingAdd');
+      if (!floating || !floatingAddScreens.has(currentScreen)) {
+        setFloatingAddVisible(false);
+        return;
+      }
+
+      const blocks = floatingContentBlocks();
+      if (!blocks.length) {
+        setFloatingAddVisible(false);
+        return;
+      }
+
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      const viewport = Math.max(1, window.innerHeight);
+      const absoluteTop = node => y + node.getBoundingClientRect().top;
+
+      // Показываем кнопку, когда в нижнюю часть экрана входит последний содержательный блок.
+      // Так не нужно дотягивать страницу до абсолютного конца.
+      const lastBlock = blocks.at(-1);
+      const showAt = Math.max(80, absoluteTop(lastBlock) - viewport * 0.90);
+
+      // При движении обратно вверх кнопка исчезает у третьего содержательного блока.
+      // На коротких экранах используем первый блок, чтобы сохранить заметный интервал.
+      const hideIndex = blocks.length >= 5 ? 2 : Math.max(0, blocks.length - 3);
+      const hideBlock = blocks[hideIndex];
+      const topbarHeight = document.querySelector('.topbar')?.getBoundingClientRect().height || 76;
+      let hideAt = Math.max(40, absoluteTop(hideBlock) - topbarHeight - 18);
+
+      // Между появлением и скрытием оставляем небольшой интервал без смещения к самому верху.
+      hideAt = Math.min(hideAt, Math.max(40, showAt - 48));
+
+      if (!floatingVisible && y >= showAt) setFloatingAddVisible(true);
+      else if (floatingVisible && y <= hideAt) setFloatingAddVisible(false);
+    });
+  }
+
   window.addEventListener('scroll', updateFloatingAddVisibility, { passive: true });
+  window.addEventListener('resize', updateFloatingAddVisibility, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(updateFloatingAddVisibility, 120), { passive: true });
 
   unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
   unlockPinForm?.addEventListener('submit', event => {
@@ -3829,7 +3893,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.1.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.2.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
