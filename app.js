@@ -1378,11 +1378,22 @@
         </section>`}
       <section class="task-ideas-link card" data-task-filter-jump="notes">
         <div><small>Идеи и заметки</small><strong>${state.notes.length} записей в ${state.noteFolders.length} папках</strong></div><span>›</span>
+      </section>
+      <section class="card task-life-map-link" id="openLifeMapFromTasks" role="button" tabindex="0" aria-label="Открыть Life Map">
+        <div class="task-life-map-icon">🌍</div>
+        <div>
+          <small>Life Map</small>
+          <strong>Открыть карту целей, желаний и поездок</strong>
+          <p>Путешествия, желания, цели и выполненные победы в одном месте.</p>
+        </div>
+        <span>›</span>
       </section>`;
 
     bindCommon();
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
     $('[data-task-filter-jump]')?.addEventListener('click', () => { taskFilter = 'notes'; renderTasks(); });
+    $('#openLifeMapFromTasks')?.addEventListener('click', () => switchScreen('life'));
+    $('#openLifeMapFromTasks')?.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); switchScreen('life'); } });
     $('#taskSearch')?.addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
@@ -3321,7 +3332,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.6 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V12 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3657,7 +3668,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 11;
+      state.version = 12;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
