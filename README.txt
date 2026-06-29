@@ -1,21 +1,21 @@
-Alexander OS V11.7 - Workout Scroll & Smart Search
+Alexander OS V12
 
-What changed:
-- Fixed vertical scrolling in "Мой план", Catalog and Favorites inside the workout modal.
-- Workout modal now opens on "Мой план" reliably.
-- Added smart Russian-language exercise search in Catalog.
-- Search understands natural phrases such as:
-  * как качать руки
-  * как качать ноги
-  * как качать пресс
-  * плечи гантели
-  * упражнения для спины
-- Search uses exercise names, muscle groups, technique, easier/harder variants and common synonyms.
-- Video feed scrolling remains unchanged.
-- PWA cache updated to V11.7.
+Готово для GitHub Pages.
 
-GitHub upload:
-1. Export a backup from the current application.
-2. Upload all files from this folder to the repository root and replace old files.
-3. Wait for GitHub Pages deployment.
-4. Fully close Alexander OS on iPhone and open it again.
+Что добавлено:
+- Новый раздел Life Map: Путешествия, Желания, Цели, Выполнено.
+- Кнопка + Добавить желание и поля: название, категория, приоритет, бюджет, статус, почему хочу, следующий шаг.
+- История привычек хранится по датам в logs. Новая неделя начинается автоматически, старые недели не удаляются.
+- В привычках добавлен недельный счетчик, месячный процент, серия и мини-heatmap за 28 дней.
+- Карточки привычек можно перетаскивать и закреплять сверху.
+- Блоки Life Map и карточки внутри можно перемещать вручную.
+- Плавающая кнопка + появляется ближе к концу страницы при скролле вниз и скрывается при скролле вверх.
+
+Как поставить на GitHub:
+1. Распакуй архив.
+2. Загрузи все файлы в корень репозитория.
+3. В GitHub Pages выбери Branch: main, Folder: /root.
+4. Открой сайт после обновления кэша.
+
+Важно:
+Данные хранятся в localStorage браузера. Перед заменой файлов сделай экспорт данных в настройках Alexander OS.

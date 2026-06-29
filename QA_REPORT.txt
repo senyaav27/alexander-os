@@ -1,20 +1,13 @@
-Alexander OS V11.7 - QA REPORT
-Release: Workout Scroll & Smart Search
+QA Alexander OS V12
 
-Automated browser checks at 390x844 mobile viewport:
-1. All five bottom navigation tabs open without runtime errors: PASS
-2. Workout modal opens on "Мой план" by default: PASS
-3. "Мой план" has independent vertical scrolling: PASS
-4. Plan content scrolls from top to the final sections: PASS
-5. Catalog opens and remains vertically scrollable: PASS
-6. Video feed keeps its independent Reels-style scroll: PASS
-7. Search "как качать руки" returns arm exercise: PASS
-8. Search "как качать пресс" returns plank exercises: PASS
-9. Search "плечи гантели" returns dumbbell shoulder press: PASS
-10. JavaScript syntax: PASS
-11. Service Worker syntax: PASS
-12. No page runtime errors in the tested workout flow: PASS
+Проверено:
+- app.js проходит node --check.
+- index.html обновлен до V12.
+- Добавлена навигация Life Map.
+- Сохранение старых данных совместимо через normalizeState.
+- Новые поля lifeMap и lifeMapOrder добавляются автоматически при первом запуске.
+- Привычки не требуют удаления для новой недели: отметки хранятся по ISO-дате.
+- Плавающая кнопка работает через scroll listener и класс visible.
 
-Important:
-- YouTube playback is checked finally after publication on GitHub Pages and opening on the iPhone.
-- Safari may cache an older PWA release. The cache key and asset versions were changed to V11.7.
+Рекомендация:
+После публикации на GitHub Pages очистить кэш Safari/Chrome или открыть сайт в приватной вкладке, чтобы подтянулись app.js?v=12 и styles.css?v=12.

@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 11.7,
+      version: 12,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -170,6 +170,8 @@
       customExpenseCategories: [],
       workoutLogs: [],
       workoutFavorites: [],
+      lifeMap: [],
+      lifeMapOrder: ['travel', 'wish', 'goal', 'done'],
       snapshots: []
     };
   }
@@ -210,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 11.7,
+      version: 12,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -229,6 +231,8 @@
       customExpenseCategories: Array.isArray(raw.customExpenseCategories) ? raw.customExpenseCategories : [],
       workoutLogs: Array.isArray(raw.workoutLogs) ? raw.workoutLogs : [],
       workoutFavorites: Array.isArray(raw.workoutFavorites) ? raw.workoutFavorites : [],
+      lifeMap: Array.isArray(raw.lifeMap) ? raw.lifeMap : [],
+      lifeMapOrder: Array.isArray(raw.lifeMapOrder) && raw.lifeMapOrder.length ? raw.lifeMapOrder : clone(base.lifeMapOrder),
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
@@ -246,7 +250,15 @@
     result.noteFolders = result.noteFolders.map(folder => ({ id: folder.id || uid(), name: folder.name || 'Без названия', createdAt: folder.createdAt || new Date().toISOString() }));
     result.notes = result.notes.map(note => ({ id: note.id || uid(), folderId: note.folderId || result.noteFolders[0]?.id || 'inbox', title: note.title || 'Без названия', body: note.body || '', tags: note.tags || '', projectId: note.projectId || '', createdAt: note.createdAt || new Date().toISOString(), updatedAt: note.updatedAt || note.createdAt || new Date().toISOString() }));
     result.goals = result.goals.map(goal => ({ unit: '', monthlyPlan: 0, nextAction: '', autoSource: 'none', createdAt: new Date(new Date().getFullYear(), 0, 1).toISOString(), ...goal, current: Number(goal.current || 0), target: Number(goal.target || 1) }));
-    result.habits = result.habits.map(habit => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], ...habit }));
+    result.habits = result.habits.map((habit, index) => ({ logs: {}, targetPerWeek: 7, schedule: [1, 2, 3, 4, 5, 6, 0], order: index, pinned: false, color: 'green', ...habit, order: Number.isFinite(Number(habit.order)) ? Number(habit.order) : index }));
+    result.habits.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(a.order || 0) - Number(b.order || 0));
+    const allowedLifeTypes = new Set(['travel', 'wish', 'goal', 'done']);
+    result.lifeMap = result.lifeMap.map((item, index) => ({
+      id: item.id || uid(), type: allowedLifeTypes.has(item.type) ? item.type : 'wish', title: item.title || '', category: item.category || '', priority: item.priority || 'medium',
+      budget: Number(item.budget || 0), status: item.status || 'idea', why: item.why || '', nextStep: item.nextStep || '', deadline: item.deadline || '', order: Number.isFinite(Number(item.order)) ? Number(item.order) : index, createdAt: item.createdAt || new Date().toISOString(), completedAt: item.completedAt || ''
+    })).filter(item => item.title.trim()).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    result.lifeMapOrder = [...new Set(result.lifeMapOrder.filter(type => allowedLifeTypes.has(type)))];
+    ['travel', 'wish', 'goal', 'done'].forEach(type => { if (!result.lifeMapOrder.includes(type)) result.lifeMapOrder.push(type); });
     result.history = result.history.slice(0, 12).map(entry => ({ id: entry.id || uid(), label: entry.label || 'Изменение данных', createdAt: entry.createdAt || new Date().toISOString(), snapshot: entry.snapshot || {} }));
     result.trash = result.trash.map(entry => ({ id: entry.id || uid(), collection: entry.collection || '', label: entry.label || 'Удалённая запись', deletedAt: entry.deletedAt || new Date().toISOString(), item: entry.item || {}, related: Array.isArray(entry.related) ? entry.related : [] }));
     result.recurringRules = result.recurringRules.map(rule => ({ id: rule.id || uid(), title: rule.title || 'Регулярная операция', type: rule.type === 'income' ? 'income' : 'expense', amount: Number(rule.amount || 0), category: rule.category || (rule.type === 'income' ? 'salary' : 'subscriptions'), accountId: rule.accountId || '', day: Math.max(1, Math.min(31, Number(rule.day || 1))), enabled: rule.enabled !== false, createdAt: rule.createdAt || new Date().toISOString() }));
@@ -333,7 +345,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 11.7;
+    state.version = 12;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -369,7 +381,7 @@
     return ({
       tasks: 'Задача', transactions: 'Операция', obligations: 'Платёж', projects: 'Проект',
       goals: 'Цель', habits: 'Привычка', weeklyReviews: 'Недельный разбор', notes: 'Заметка',
-      workoutLogs: 'Тренировка', recurringRules: 'Регулярная операция'
+      workoutLogs: 'Тренировка', recurringRules: 'Регулярная операция', lifeMap: 'Life Map'
     })[collection] || 'Запись';
   }
 
@@ -1211,10 +1223,10 @@
     applyTheme();
     $('#todayLabel').textContent = fullDate();
     document.body.dataset.screen = currentScreen;
-    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', projects: 'Проекты', growth: 'Прогресс' };
+    const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', life: 'Life Map', projects: 'Проекты', growth: 'Прогресс' };
     $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
-    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
+    const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, life: renderLifeMap, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
     renderer();
   }
 
@@ -1778,10 +1790,129 @@
 
   function habitItem(habit) {
     const days = getLast7Days();
-    return `<div class="card habit-card">
-      <div class="metric-row"><div><div class="item-title">${escapeHtml(habit.title)}</div><div class="item-meta">Месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
+    const week = habitWeekStatsFor(habit, new Date());
+    return `<div class="card habit-card draggable-card" draggable="true" data-habit-id="${habit.id}">
+      <div class="metric-row"><div><div class="item-title">${habit.pinned ? '📌 ' : ''}${escapeHtml(habit.title)}</div><div class="item-meta">Неделя ${week.completed}/${week.planned} · месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn pin-habit" type="button" data-id="${habit.id}">${habit.pinned ? '★' : '☆'}</button><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
       <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
+      <div class="habit-history">${habitHeatmap(habit)}</div>
     </div>`;
+  }
+
+  function habitWeekStatsFor(habit, date = new Date()) {
+    let planned = 0, completed = 0;
+    getLast7Days(date).forEach(day => { const d = parseISO(day.iso); if ((habit.schedule || []).includes(d.getDay())) { planned += 1; if (habit.logs?.[day.iso]) completed += 1; } });
+    return { planned, completed, rate: planned ? Math.round(completed / planned * 100) : 100 };
+  }
+
+  function habitHeatmap(habit) {
+    const days = Array.from({ length: 28 }, (_, index) => localISO(addDays(new Date(), index - 27)));
+    return `<div class="mini-heatmap" aria-label="История за 28 дней">${days.map(iso => `<span class="${habit.logs?.[iso] ? 'done' : ''}" title="${iso}"></span>`).join('')}</div>`;
+  }
+
+
+  function lifeTypeTitle(type) {
+    return ({ travel: 'Путешествия', wish: 'Желания', goal: 'Цели', done: 'Выполнено' })[type] || 'Желания';
+  }
+
+  function lifeTypeIcon(type) {
+    return ({ travel: '🌍', wish: '⭐', goal: '🎯', done: '🏆' })[type] || '⭐';
+  }
+
+  function lifeStatusText(status) {
+    return ({ idea: 'Идея', planned: 'Запланировано', progress: 'В процессе', saved: 'Коплю', done: 'Выполнено' })[status] || 'Идея';
+  }
+
+  function lifePriorityText(priority) {
+    return ({ high: 'Высокий', medium: 'Средний', low: 'Низкий' })[priority] || 'Средний';
+  }
+
+  function lifeItemCard(item) {
+    return `<div class="card life-card draggable-card" draggable="true" data-life-id="${item.id}">
+      <div class="metric-row"><div><div class="item-title">${lifeTypeIcon(item.type)} ${escapeHtml(item.title)}</div><div class="item-meta">${escapeHtml(item.category || lifeTypeTitle(item.type))} · ${lifeStatusText(item.status)}${item.budget ? ` · ${money(item.budget)}` : ''}</div></div><div class="item-actions"><button class="mini-btn edit-life" type="button" data-id="${item.id}">✎</button><button class="mini-btn delete-life" type="button" data-id="${item.id}">×</button></div></div>
+      <div class="pill-row"><span class="badge ${item.priority}">${lifePriorityText(item.priority)}</span>${item.deadline ? `<span class="badge">${longDateText(item.deadline)}</span>` : ''}</div>
+      ${item.why ? `<p class="life-note">${escapeHtml(item.why)}</p>` : ''}
+      ${item.nextStep ? `<div class="insight life-next">Следующий шаг: ${escapeHtml(item.nextStep)}</div>` : ''}
+      ${item.status !== 'done' && item.type !== 'done' ? `<button class="btn secondary full mark-life-done" type="button" data-id="${item.id}">Перенести в выполнено</button>` : ''}
+    </div>`;
+  }
+
+  function renderLifeMap() {
+    const counts = ['travel', 'wish', 'goal', 'done'].map(type => [type, state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done').length]);
+    app.innerHTML = `
+      <section class="hero compact life-hero">
+        <p class="eyebrow">Life Map</p>
+        <h2>Карта целей, желаний и побед</h2>
+        <p>Фиксируй, зачем ты этого хочешь, сколько нужно денег и какой следующий шаг делать.</p>
+        <button class="btn primary full" type="button" id="addLifeWish">+ Добавить желание</button>
+      </section>
+      <section class="home-metric-grid life-stats">${counts.map(([type, count]) => `<div class="home-metric-card"><small>${lifeTypeTitle(type)}</small><strong>${count}</strong><span>${lifeTypeIcon(type)}</span></div>`).join('')}</section>
+      <div class="life-board" id="lifeBoard">
+        ${state.lifeMapOrder.map(type => {
+          const items = state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done');
+          return `<section class="section life-block draggable-block" draggable="true" data-life-block="${type}"><div class="section-head"><h2>${lifeTypeIcon(type)} ${lifeTypeTitle(type)}</h2><span class="badge">${items.length}</span></div><div class="list">${items.length ? items.map(lifeItemCard).join('') : empty(type === 'done' ? 'Здесь будет история выполненных целей.' : 'Добавь первую запись.')}</div></section>`;
+        }).join('')}
+      </div>`;
+    $('#addLifeWish')?.addEventListener('click', () => openLifeModal());
+    bindLifeMapActions();
+  }
+
+  function openLifeModal(item = null) {
+    openModal(item ? 'Изменить Life Map' : '+ Добавить желание', `
+      <div class="field"><label>Название</label><input name="title" required value="${escapeHtml(item?.title || '')}" placeholder="Например, поездка в Японию"></div>
+      <div class="form-grid">
+        <div class="field"><label>Категория</label><select name="type"><option value="wish" ${!item || item?.type === 'wish' ? 'selected' : ''}>Желание</option><option value="travel" ${item?.type === 'travel' ? 'selected' : ''}>Путешествие</option><option value="goal" ${item?.type === 'goal' ? 'selected' : ''}>Цель</option><option value="done" ${item?.type === 'done' ? 'selected' : ''}>Выполнено</option></select></div>
+        <div class="field"><label>Приоритет</label><select name="priority"><option value="high" ${item?.priority === 'high' ? 'selected' : ''}>Высокий</option><option value="medium" ${!item || item?.priority === 'medium' ? 'selected' : ''}>Средний</option><option value="low" ${item?.priority === 'low' ? 'selected' : ''}>Низкий</option></select></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Бюджет</label><input name="budget" type="number" min="0" value="${item?.budget ?? 0}"></div>
+        <div class="field"><label>Статус</label><select name="status"><option value="idea" ${!item || item?.status === 'idea' ? 'selected' : ''}>Идея</option><option value="planned" ${item?.status === 'planned' ? 'selected' : ''}>Запланировано</option><option value="progress" ${item?.status === 'progress' ? 'selected' : ''}>В процессе</option><option value="saved" ${item?.status === 'saved' ? 'selected' : ''}>Коплю</option><option value="done" ${item?.status === 'done' ? 'selected' : ''}>Выполнено</option></select></div>
+      </div>
+      <div class="form-grid"><div class="field"><label>Подкатегория</label><input name="category" value="${escapeHtml(item?.category || '')}" placeholder="Финансы, отдых, здоровье"></div><div class="field"><label>Срок</label><input name="deadline" type="date" value="${item?.deadline || ''}"></div></div>
+      <div class="field"><label>Почему хочу</label><textarea name="why" placeholder="Смысл, мотивация, причина">${escapeHtml(item?.why || '')}</textarea></div>
+      <div class="field"><label>Следующий шаг</label><textarea name="nextStep" placeholder="Одно действие, которое продвинет вперёд">${escapeHtml(item?.nextStep || '')}</textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      data.title = String(data.title || '').trim();
+      data.budget = Number(data.budget || 0);
+      data.order = item?.order ?? state.lifeMap.length;
+      if (!data.title) return false;
+      if (data.status === 'done') { data.type = 'done'; data.completedAt = item?.completedAt || new Date().toISOString(); }
+      if (item) Object.assign(item, data); else state.lifeMap.unshift({ id: uid(), ...data, createdAt: new Date().toISOString() });
+      return true;
+    });
+  }
+
+  function bindLifeMapActions() {
+    $$('.edit-life').forEach(button => button.addEventListener('click', () => openLifeModal(state.lifeMap.find(item => item.id === button.dataset.id))));
+    $$('.delete-life').forEach(button => button.addEventListener('click', () => removeItem('lifeMap', button.dataset.id)));
+    $$('.mark-life-done').forEach(button => button.addEventListener('click', () => { const item = state.lifeMap.find(entry => entry.id === button.dataset.id); if (!item) return; item.status = 'done'; item.type = 'done'; item.completedAt = new Date().toISOString(); saveState(); render(); }));
+    bindLifeDragAndDrop();
+  }
+
+  function bindLifeDragAndDrop() {
+    let draggedBlock = null, draggedItem = null;
+    $$('.draggable-block').forEach(block => {
+      block.addEventListener('dragstart', event => { if (event.target.closest('.life-card')) return; draggedBlock = block.dataset.lifeBlock; block.classList.add('dragging'); });
+      block.addEventListener('dragend', () => { draggedBlock = null; block.classList.remove('dragging'); });
+      block.addEventListener('dragover', event => { if (!draggedBlock) return; event.preventDefault(); });
+      block.addEventListener('drop', event => { if (!draggedBlock) return; event.preventDefault(); const target = block.dataset.lifeBlock; const order = state.lifeMapOrder.filter(type => type !== draggedBlock); order.splice(order.indexOf(target) + (order.indexOf(target) < state.lifeMapOrder.indexOf(draggedBlock) ? 0 : 1), 0, draggedBlock); state.lifeMapOrder = order; saveState(); render(); });
+    });
+    $$('.life-card').forEach(card => {
+      card.addEventListener('dragstart', () => { draggedItem = card.dataset.lifeId; card.classList.add('dragging'); });
+      card.addEventListener('dragend', () => { draggedItem = null; card.classList.remove('dragging'); });
+      card.addEventListener('dragover', event => { if (draggedItem) event.preventDefault(); });
+      card.addEventListener('drop', event => { if (!draggedItem) return; event.preventDefault(); const from = state.lifeMap.find(item => item.id === draggedItem); const to = state.lifeMap.find(item => item.id === card.dataset.lifeId); if (!from || !to || from.id === to.id) return; const ids = state.lifeMap.map(item => item.id).filter(id => id !== from.id); ids.splice(ids.indexOf(to.id), 0, from.id); state.lifeMap.forEach(item => { item.order = ids.indexOf(item.id); }); saveState(); render(); });
+    });
+  }
+
+  function bindHabitDragAndDrop() {
+    let draggedId = null;
+    $$('.habit-card').forEach(card => {
+      card.addEventListener('dragstart', () => { draggedId = card.dataset.habitId; card.classList.add('dragging'); });
+      card.addEventListener('dragend', () => { draggedId = null; card.classList.remove('dragging'); });
+      card.addEventListener('dragover', event => { if (draggedId) event.preventDefault(); });
+      card.addEventListener('drop', event => { if (!draggedId) return; event.preventDefault(); const targetId = card.dataset.habitId; if (targetId === draggedId) return; const ids = state.habits.map(item => item.id).filter(id => id !== draggedId); ids.splice(ids.indexOf(targetId), 0, draggedId); state.habits.forEach(item => { item.order = ids.indexOf(item.id); }); saveState(); render(); });
+    });
   }
 
   function renderGrowth() {
@@ -1853,7 +1984,7 @@
     $$('[data-growth-range]').forEach(button => button.addEventListener('click', () => { growthRange = button.dataset.growthRange; renderGrowth(); }));
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
-    $('#openWorkouts')?.addEventListener('click', () => openWorkoutModal('plan'));
+    $('#openWorkouts')?.addEventListener('click', openWorkoutModal);
     $('#openWorkoutJournal')?.addEventListener('click', openWorkoutJournal);
     $('#createAutoReview')?.addEventListener('click', openAutoWeeklyReview);
     $('#createAutoReviewCard')?.addEventListener('click', openAutoWeeklyReview);
@@ -1895,6 +2026,7 @@
     $$('.delete-goal').forEach(button => button.addEventListener('click', () => removeItem('goals', button.dataset.id)));
     $$('.edit-habit').forEach(button => button.addEventListener('click', () => openHabitModal(state.habits.find(item => item.id === button.dataset.id))));
     $$('.delete-habit').forEach(button => button.addEventListener('click', () => removeItem('habits', button.dataset.id)));
+    $$('.pin-habit').forEach(button => button.addEventListener('click', () => { const habit = state.habits.find(item => item.id === button.dataset.id); if (!habit) return; habit.pinned = !habit.pinned; saveState(); render(); }));
     $$('.habit-day').forEach(button => button.addEventListener('click', () => {
       const habit = state.habits.find(item => item.id === button.dataset.id);
       if (!habit) return;
@@ -1903,6 +2035,7 @@
       saveState();
       render();
     }));
+    bindHabitDragAndDrop();
     $$('.edit-review').forEach(button => button.addEventListener('click', () => openReviewModal(state.weeklyReviews.find(item => item.id === button.dataset.id))));
     $$('.delete-review').forEach(button => button.addEventListener('click', () => removeItem('weeklyReviews', button.dataset.id)));
   }
@@ -2097,6 +2230,7 @@
         <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
         <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
+        <button type="button" data-quick="life"><span>🌍</span><b>Life Map</b><small>Желание, цель или поездка</small></button>
         <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
         <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
@@ -2109,6 +2243,7 @@
       if (action === 'account') openAccountModal();
       if (action === 'project') openProjectModal();
       if (action === 'note') openKnowledgeNoteModal();
+      if (action === 'life') openLifeModal();
     }));
   }
 
@@ -2930,78 +3065,9 @@
     </article>`;
   }
 
-  const WORKOUT_SEARCH_STOP_WORDS = new Set([
-    'как','качать','качаю','накачать','накачивать','тренировать','тренировка','тренировки','упражнение','упражнения',
-    'покажи','найди','хочу','нужно','можно','правильно','техника','для','мне','на','с','и','или','что','какие','какой','видео'
-  ]);
-
-  const WORKOUT_SEARCH_ALIASES = {
-    chest: ['грудь','груди','грудные','грудной','грудную','пекторальные'],
-    back: ['спина','спину','спины','широчайшие','крылья','поясница'],
-    legs: ['ноги','ног','бедра','бедро','квадрицепс','икры','голень'],
-    shoulders: ['плечи','плеч','дельты','дельтовидные'],
-    arms: ['руки','рук','бицепс','бицепса','трицепс','трицепса','предплечья'],
-    core: ['пресс','живот','корпус','кора','талия','планка'],
-    glutes: ['ягодицы','ягодиц','попа','ягодичные']
-  };
-
-  function normalizeWorkoutSearch(value = '') {
-    return String(value)
-      .toLowerCase()
-      .replace(/ё/g, 'е')
-      .replace(/[|/\,.;:!?()\[\]{}"'«»—–-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function workoutSearchTokens(query = '') {
-    return normalizeWorkoutSearch(query)
-      .split(' ')
-      .filter(token => token.length > 1 && !WORKOUT_SEARCH_STOP_WORDS.has(token));
-  }
-
-  function workoutSearchGroups(query = '') {
-    const normalized = normalizeWorkoutSearch(query);
-    const groups = new Set();
-    Object.entries(WORKOUT_SEARCH_ALIASES).forEach(([group, aliases]) => {
-      if (aliases.some(alias => normalized.includes(alias))) groups.add(group);
-    });
-    return groups;
-  }
-
-  function workoutSearchHaystack(item) {
-    const aliases = WORKOUT_SEARCH_ALIASES[item.group] || [];
-    return normalizeWorkoutSearch([
-      item.title, workoutGroupLabel(item.group), item.muscles, item.note, item.videoLabel, item.source,
-      item.easier, item.harder, ...(item.mistakes || []), ...aliases
-    ].join(' '));
-  }
-
-  function workoutMatchesSearch(item, query = '') {
-    const normalized = normalizeWorkoutSearch(query);
-    if (!normalized) return true;
-    const tokens = workoutSearchTokens(normalized);
-    const targetGroups = workoutSearchGroups(normalized);
-    const haystack = workoutSearchHaystack(item);
-    if (haystack.includes(normalized)) return true;
-    const tokenMatches = tokens.filter(token => haystack.includes(token)).length;
-    const groupMatch = targetGroups.has(item.group);
-    if (!tokens.length) return groupMatch;
-    return groupMatch || tokenMatches === tokens.length || (tokens.length >= 2 && tokenMatches >= Math.ceil(tokens.length * 0.6));
-  }
-
-  function filteredWorkoutExercises(group = 'all', query = '') {
-    return WORKOUT_EXERCISES.filter(item => (group === 'all' || item.group === group) && workoutMatchesSearch(item, query));
-  }
-
-  function workoutSearchEmpty(query = '') {
-    const safe = escapeHtml(query.trim());
-    return `<div class="workout-search-empty"><span>⌕</span><h3>Ничего не найдено</h3><p>${safe ? `По запросу «${safe}» упражнений пока нет.` : 'Измени запрос или выбери другую группу мышц.'}</p><button type="button" class="btn secondary" data-clear-workout-search>Сбросить поиск</button></div>`;
-  }
-
-  function workoutExerciseCards(group = 'all', query = '') {
-    const items = filteredWorkoutExercises(group, query);
-    return items.length ? items.map(workoutVideoCard).join('') : workoutSearchEmpty(query);
+  function workoutExerciseCards(group = 'all') {
+    const items = WORKOUT_EXERCISES.filter(item => group === 'all' || item.group === group);
+    return items.length ? items.map(workoutVideoCard).join('') : empty('Для этой группы пока нет видео.');
   }
 
   function workoutReelCard(item) {
@@ -3029,7 +3095,6 @@
   }
 
   function openWorkoutModal(initialTab = 'plan') {
-    if (!['plan','catalog','reels','favorites'].includes(initialTab)) initialTab = 'plan';
     const profile = { ...freshState().workoutProfile, ...(state.workoutProfile || {}) };
     const plan = workoutPlan(profile);
     openModal('Тренировки', `
@@ -3070,12 +3135,6 @@
 
       <section class="workout-tab-panel" data-workout-panel="catalog" ${initialTab==='catalog'?'':'hidden'}>
         <div class="workout-video-intro"><div><small>Проверенная библиотека</small><h3>Техника упражнений</h3><p>Видео запускается только после нажатия. Одновременно работает один плеер.</p></div><span>${WORKOUT_EXERCISES.length}</span></div>
-        <div class="workout-search-box" role="search">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="workoutSearchInput" type="search" inputmode="search" autocomplete="off" enterkeyhint="search" placeholder="Как качать руки, плечи, пресс…" aria-label="Поиск упражнений">
-          <button type="button" id="clearWorkoutSearch" aria-label="Очистить поиск" hidden>✕</button>
-        </div>
-        <div class="workout-search-status" id="workoutSearchStatus">Показано ${WORKOUT_EXERCISES.length} упражнений</div>
         ${workoutFiltersMarkup('catalog')}
         <div class="workout-video-grid" id="workoutCatalog">${workoutExerciseCards()}</div>
       </section>
@@ -3097,7 +3156,6 @@
     modal.classList.add('workout-dialog', 'video-workout-dialog');
     let catalogGroup = 'all';
     let reelsGroup = 'all';
-    let catalogQuery = '';
 
     const switchTab = tab => {
       stopOtherPlayers();
@@ -3108,20 +3166,6 @@
         if (container) container.innerHTML = workoutFavoritesMarkup();
       }
       modalBody.scrollTop = 0;
-    };
-
-    const updateCatalog = ({ resetScroll = false } = {}) => {
-      const container = $('#workoutCatalog');
-      if (!container) return;
-      const items = filteredWorkoutExercises(catalogGroup, catalogQuery);
-      container.innerHTML = items.length ? items.map(workoutVideoCard).join('') : workoutSearchEmpty(catalogQuery);
-      const status = $('#workoutSearchStatus');
-      if (status) status.textContent = catalogQuery.trim()
-        ? `Найдено: ${items.length}`
-        : `Показано ${items.length} ${items.length === 1 ? 'упражнение' : items.length >= 2 && items.length <= 4 ? 'упражнения' : 'упражнений'}`;
-      const clearButton = $('#clearWorkoutSearch');
-      if (clearButton) clearButton.hidden = !catalogQuery.trim();
-      if (resetScroll) modalBody.scrollTo({ top: Math.max(0, ($('#workoutSearchInput')?.offsetTop || 0) - 90), behavior: 'smooth' });
     };
 
     const refreshPreview = () => {
@@ -3163,52 +3207,18 @@
       if (favorites && !favorites.closest('[hidden]')) favorites.innerHTML = workoutFavoritesMarkup();
     };
 
-    $$('.workout-profile-grid input, .workout-profile-grid select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
-
-    const workoutSearchInput = $('#workoutSearchInput');
-    workoutSearchInput?.addEventListener('input', event => {
-      catalogQuery = event.target.value || '';
-      if (catalogQuery.trim()) {
-        catalogGroup = 'all';
-        $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === 'all'));
-      }
-      updateCatalog();
-    });
-    workoutSearchInput?.addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        workoutSearchInput.blur();
-        updateCatalog({ resetScroll: true });
-      }
-    });
-    $('#clearWorkoutSearch')?.addEventListener('click', () => {
-      catalogQuery = '';
-      workoutSearchInput.value = '';
-      updateCatalog();
-      workoutSearchInput.focus();
-    });
+    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
 
     modalBody.onclick = event => {
       const tabButton = event.target.closest('[data-workout-tab]');
       if (tabButton) { switchTab(tabButton.dataset.workoutTab); return; }
-
-      if (event.target.closest('[data-clear-workout-search]')) {
-        catalogQuery = '';
-        const input = $('#workoutSearchInput');
-        if (input) input.value = '';
-        catalogGroup = 'all';
-        $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === 'all'));
-        updateCatalog();
-        input?.focus();
-        return;
-      }
 
       const filterButton = event.target.closest('[data-workout-filter]');
       if (filterButton) {
         const target = filterButton.dataset.filterTarget;
         const group = filterButton.dataset.workoutFilter;
         $$(`[data-filter-target="${target}"]`, modalBody).forEach(button => button.classList.toggle('active', button === filterButton));
-        if (target === 'catalog') { catalogGroup = group; updateCatalog(); }
+        if (target === 'catalog') { catalogGroup = group; $('#workoutCatalog').innerHTML = workoutExerciseCards(catalogGroup); }
         if (target === 'reels') { reelsGroup = group; $('#workoutReels').innerHTML = workoutReelsMarkup(reelsGroup); }
         return;
       }
@@ -3219,14 +3229,11 @@
         const item = WORKOUT_EXERCISES.find(value => value.id === planExercise.dataset.openExerciseVideo);
         if (item) {
           catalogGroup = item.group;
-          catalogQuery = '';
-          const searchInput = $('#workoutSearchInput');
-          if (searchInput) searchInput.value = '';
           $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === item.group));
-          updateCatalog();
+          $('#workoutCatalog').innerHTML = workoutExerciseCards(item.group);
           setTimeout(() => {
             modalBody.querySelector(`[data-workout-item="${item.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
-          }, 60);
+          }, 40);
         }
         return;
       }
@@ -3314,7 +3321,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V11.7 · Workout Search & Scroll Fix</p>
+        <p class="app-version">Alexander OS V11.6 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3405,7 +3412,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.7',
+      appVersion: '11.6',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -3452,7 +3459,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.7',
+      appVersion: '11.6',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -3650,7 +3657,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 11.7;
+      state.version = 11;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -3691,6 +3698,18 @@ ${JSON.stringify(state, null, 2)}
 
   $('#globalAdd').addEventListener('click', openGlobalAdd);
   $('#floatingAdd')?.addEventListener('click', openGlobalAdd);
+
+  let lastScrollY = window.scrollY;
+  function updateFloatingAddVisibility() {
+    const floating = $('#floatingAdd');
+    if (!floating) return;
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const nearBottom = window.innerHeight + y >= document.documentElement.scrollHeight - 190;
+    const scrollingDown = y > lastScrollY;
+    floating.classList.toggle('visible', nearBottom && scrollingDown);
+    lastScrollY = y;
+  }
+  window.addEventListener('scroll', updateFloatingAddVisibility, { passive: true });
 
   unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
   unlockPinForm?.addEventListener('submit', event => {
