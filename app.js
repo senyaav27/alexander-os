@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 12,
+      version: 12.1,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -212,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12,
+      version: 12.1,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -345,7 +345,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 12;
+    state.version = 12.1;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -1225,7 +1225,10 @@
     document.body.dataset.screen = currentScreen;
     const titles = { dashboard: 'Главная', tasks: 'Задачи', finance: 'Финансы', life: 'Life Map', projects: 'Проекты', growth: 'Прогресс' };
     $('#screenTitle').textContent = titles[currentScreen] || 'Главная';
-    $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === currentScreen));
+    // Защита от старой закэшированной разметки V12, где Life был добавлен в меню дважды.
+    $$('.bottom-nav .nav-item[data-screen="life"]').forEach(button => button.remove());
+    const activeNavScreen = currentScreen === 'life' ? 'tasks' : currentScreen;
+    $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.screen === activeNavScreen));
     const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, life: renderLifeMap, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
     renderer();
   }
@@ -1332,6 +1335,24 @@
       </div>`;
   }
 
+  function lifeMapLauncherMarkup() {
+    const active = state.lifeMap.filter(item => item.status !== 'done' && item.type !== 'done').length;
+    const completed = state.lifeMap.filter(item => item.status === 'done' || item.type === 'done').length;
+    return `<button class="card task-life-map-link" id="openLifeMapFromTasks" type="button" aria-label="Открыть Life Map">
+      <span class="task-life-map-icon" aria-hidden="true">🌍</span>
+      <span class="task-life-map-copy">
+        <small>Life Map</small>
+        <strong>Открыть карту жизни</strong>
+        <em>${active} активных · ${completed} выполнено</em>
+      </span>
+      <span class="task-life-map-arrow" aria-hidden="true">›</span>
+    </button>`;
+  }
+
+  function bindLifeMapLauncher() {
+    $('#openLifeMapFromTasks')?.addEventListener('click', () => switchScreen('life'));
+  }
+
   function renderTasks() {
     const today = todayISO();
     const tomorrow = localISO(addDays(new Date(), 1));
@@ -1349,9 +1370,10 @@
     </section>`;
 
     if (taskFilter === 'notes') {
-      app.innerHTML = `${tabBar}${knowledgeSectionMarkup(12)}`;
+      app.innerHTML = `${tabBar}${knowledgeSectionMarkup(12)}${lifeMapLauncherMarkup()}`;
       bindCommon();
       bindKnowledgeInline();
+      bindLifeMapLauncher();
       $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
       return;
     }
@@ -1379,21 +1401,12 @@
       <section class="task-ideas-link card" data-task-filter-jump="notes">
         <div><small>Идеи и заметки</small><strong>${state.notes.length} записей в ${state.noteFolders.length} папках</strong></div><span>›</span>
       </section>
-      <section class="card task-life-map-link" id="openLifeMapFromTasks" role="button" tabindex="0" aria-label="Открыть Life Map">
-        <div class="task-life-map-icon">🌍</div>
-        <div>
-          <small>Life Map</small>
-          <strong>Открыть карту целей, желаний и поездок</strong>
-          <p>Путешествия, желания, цели и выполненные победы в одном месте.</p>
-        </div>
-        <span>›</span>
-      </section>`;
+      ${lifeMapLauncherMarkup()}`;
 
     bindCommon();
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
     $('[data-task-filter-jump]')?.addEventListener('click', () => { taskFilter = 'notes'; renderTasks(); });
-    $('#openLifeMapFromTasks')?.addEventListener('click', () => switchScreen('life'));
-    $('#openLifeMapFromTasks')?.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); switchScreen('life'); } });
+    bindLifeMapLauncher();
     $('#taskSearch')?.addEventListener('input', event => { taskSearch = event.target.value; renderTasks(); $('#taskSearch')?.focus(); });
   }
 
@@ -1747,19 +1760,24 @@
     return ({ client: 'Клиент', job: 'Работа', personal: 'Личный проект' })[type] || 'Проект';
   }
 
-  function getLast7Days() {
+  function getWeekDays(date = new Date()) {
+    const start = startOfWeek(date);
+    const labels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     return Array.from({ length: 7 }, (_, index) => {
-      const date = addDays(new Date(), index - 6);
-      return { iso: localISO(date), label: new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).slice(0, 2) };
+      const day = addDays(start, index);
+      return { iso: localISO(day), label: labels[index], date: day };
     });
   }
 
   function habitStreak(habit) {
     let streak = 0;
-    for (let index = 0; index < 365; index += 1) {
-      const iso = localISO(addDays(new Date(), -index));
+    const today = todayISO();
+    for (let index = 0; index < 730; index += 1) {
+      const date = addDays(new Date(), -index);
+      if (!(habit.schedule || []).includes(date.getDay())) continue;
+      const iso = localISO(date);
       if (habit.logs?.[iso]) streak += 1;
-      else if (index === 0) continue;
+      else if (iso === today) continue;
       else break;
     }
     return streak;
@@ -1800,19 +1818,48 @@
   }
 
   function habitItem(habit) {
-    const days = getLast7Days();
+    const days = getWeekDays();
     const week = habitWeekStatsFor(habit, new Date());
+    const today = todayISO();
     return `<div class="card habit-card draggable-card" draggable="true" data-habit-id="${habit.id}">
-      <div class="metric-row"><div><div class="item-title">${habit.pinned ? '📌 ' : ''}${escapeHtml(habit.title)}</div><div class="item-meta">Неделя ${week.completed}/${week.planned} · месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions"><button class="mini-btn pin-habit" type="button" data-id="${habit.id}">${habit.pinned ? '★' : '☆'}</button><button class="mini-btn edit-habit" type="button" data-id="${habit.id}">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}">×</button></div></div>
-      <div class="week-grid">${days.map(day => `<button class="day-cell habit-day ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}">${day.label}</button>`).join('')}</div>
+      <div class="metric-row habit-card-head"><div class="habit-title-copy"><div class="item-title">${habit.pinned ? '📌 ' : ''}${escapeHtml(habit.title)}</div><div class="item-meta">Неделя ${week.completed}/${week.planned} · месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions habit-actions"><button class="mini-btn habit-history-btn" type="button" data-id="${habit.id}" aria-label="История привычки">▦</button><button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="up" aria-label="Переместить выше">↑</button><button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="down" aria-label="Переместить ниже">↓</button><button class="mini-btn pin-habit" type="button" data-id="${habit.id}" aria-label="Закрепить">${habit.pinned ? '★' : '☆'}</button><button class="mini-btn edit-habit" type="button" data-id="${habit.id}" aria-label="Редактировать">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}" aria-label="Удалить">×</button></div></div>
+      <div class="week-grid habit-week-grid">${days.map(day => {
+        const scheduled = (habit.schedule || []).includes(day.date.getDay());
+        const future = day.iso > today;
+        return `<button class="day-cell habit-day ${scheduled ? 'scheduled' : 'not-scheduled'} ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}" ${!scheduled || future ? 'disabled' : ''}><span>${day.label}</span><small>${day.date.getDate()}</small></button>`;
+      }).join('')}</div>
       <div class="habit-history">${habitHeatmap(habit)}</div>
     </div>`;
   }
 
   function habitWeekStatsFor(habit, date = new Date()) {
     let planned = 0, completed = 0;
-    getLast7Days(date).forEach(day => { const d = parseISO(day.iso); if ((habit.schedule || []).includes(d.getDay())) { planned += 1; if (habit.logs?.[day.iso]) completed += 1; } });
+    getWeekDays(date).forEach(day => {
+      if ((habit.schedule || []).includes(day.date.getDay())) {
+        planned += 1;
+        if (habit.logs?.[day.iso]) completed += 1;
+      }
+    });
     return { planned, completed, rate: planned ? Math.round(completed / planned * 100) : 100 };
+  }
+
+  function habitWeekHistoryRows(habit, count = 8) {
+    const currentStart = startOfWeek(new Date());
+    return Array.from({ length: count }, (_, index) => {
+      const weekDate = addDays(currentStart, -index * 7);
+      const days = getWeekDays(weekDate);
+      const stats = habitWeekStatsFor(habit, weekDate);
+      return { start: days[0].date, end: days[6].date, days, ...stats };
+    });
+  }
+
+  function openHabitHistory(habit) {
+    if (!habit) return;
+    const rows = habitWeekHistoryRows(habit, 10);
+    openModal(`История: ${habit.title}`, `
+      <div class="habit-history-summary"><div><small>Текущая серия</small><strong>${habitStreak(habit)} дн.</strong></div><div><small>Текущий месяц</small><strong>${habitMonthPercent(habit)}%</strong></div></div>
+      <div class="habit-week-history-list">${rows.map((row, index) => `<section class="habit-week-row"><div class="habit-week-row-head"><div><strong>${index === 0 ? 'Текущая неделя' : `${row.start.getDate()} ${new Intl.DateTimeFormat('ru-RU', { month: 'short' }).format(row.start)} - ${row.end.getDate()} ${new Intl.DateTimeFormat('ru-RU', { month: 'short' }).format(row.end)}`}</strong><small>${row.completed} из ${row.planned} · ${row.rate}%</small></div><span class="badge">${row.rate}%</span></div><div class="habit-week-history-days">${row.days.map(day => { const scheduled = (habit.schedule || []).includes(day.date.getDay()); return `<span class="${scheduled ? 'scheduled' : 'off'} ${habit.logs?.[day.iso] ? 'done' : ''}"><b>${day.label}</b><small>${day.date.getDate()}</small></span>`; }).join('')}</div></section>`).join('')}</div>
+    `, null, { hideActions: true });
   }
 
   function habitHeatmap(habit) {
@@ -1838,32 +1885,47 @@
   }
 
   function lifeItemCard(item) {
-    return `<div class="card life-card draggable-card" draggable="true" data-life-id="${item.id}">
-      <div class="metric-row"><div><div class="item-title">${lifeTypeIcon(item.type)} ${escapeHtml(item.title)}</div><div class="item-meta">${escapeHtml(item.category || lifeTypeTitle(item.type))} · ${lifeStatusText(item.status)}${item.budget ? ` · ${money(item.budget)}` : ''}</div></div><div class="item-actions"><button class="mini-btn edit-life" type="button" data-id="${item.id}">✎</button><button class="mini-btn delete-life" type="button" data-id="${item.id}">×</button></div></div>
-      <div class="pill-row"><span class="badge ${item.priority}">${lifePriorityText(item.priority)}</span>${item.deadline ? `<span class="badge">${longDateText(item.deadline)}</span>` : ''}</div>
-      ${item.why ? `<p class="life-note">${escapeHtml(item.why)}</p>` : ''}
-      ${item.nextStep ? `<div class="insight life-next">Следующий шаг: ${escapeHtml(item.nextStep)}</div>` : ''}
-      ${item.status !== 'done' && item.type !== 'done' ? `<button class="btn secondary full mark-life-done" type="button" data-id="${item.id}">Перенести в выполнено</button>` : ''}
-    </div>`;
+    return `<article class="card life-card draggable-card" draggable="true" data-life-id="${item.id}">
+      <div class="life-card-head">
+        <div class="life-card-title"><span class="life-card-icon" aria-hidden="true">${lifeTypeIcon(item.type)}</span><div><div class="item-title">${escapeHtml(item.title)}</div><div class="item-meta">${escapeHtml(item.category || lifeTypeTitle(item.type))}${item.budget ? ` · ${money(item.budget)}` : ''}</div></div></div>
+        <div class="item-actions life-card-actions"><button class="mini-btn move-life-item" type="button" data-id="${item.id}" data-direction="up" aria-label="Переместить выше">↑</button><button class="mini-btn move-life-item" type="button" data-id="${item.id}" data-direction="down" aria-label="Переместить ниже">↓</button><button class="mini-btn edit-life" type="button" data-id="${item.id}" aria-label="Редактировать">✎</button><button class="mini-btn delete-life" type="button" data-id="${item.id}" aria-label="Удалить">×</button></div>
+      </div>
+      <div class="pill-row life-card-badges"><span class="badge ${item.priority}">${lifePriorityText(item.priority)}</span><span class="badge">${lifeStatusText(item.status)}</span>${item.deadline ? `<span class="badge">до ${longDateText(item.deadline)}</span>` : ''}</div>
+      ${item.why ? `<p class="life-note"><b>Почему:</b> ${escapeHtml(item.why)}</p>` : ''}
+      ${item.nextStep ? `<div class="life-next"><small>Следующий шаг</small><strong>${escapeHtml(item.nextStep)}</strong></div>` : ''}
+      ${item.status !== 'done' && item.type !== 'done' ? `<button class="btn secondary full mark-life-done" type="button" data-id="${item.id}">Отметить выполненным</button>` : ''}
+    </article>`;
   }
 
   function renderLifeMap() {
-    const counts = ['travel', 'wish', 'goal', 'done'].map(type => [type, state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done').length]);
+    const types = ['travel', 'wish', 'goal', 'done'];
+    const countFor = type => state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done').length;
     app.innerHTML = `
-      <section class="hero compact life-hero">
-        <p class="eyebrow">Life Map</p>
-        <h2>Карта целей, желаний и побед</h2>
-        <p>Фиксируй, зачем ты этого хочешь, сколько нужно денег и какой следующий шаг делать.</p>
+      <section class="life-page-head">
+        <button class="life-back" type="button" id="backToTasks" aria-label="Вернуться в задачи">‹ <span>Задачи</span></button>
+        <div class="life-page-title"><p class="eyebrow">Life Map</p><h2>Карта жизни</h2></div>
+        <button class="life-head-add" type="button" id="addLifeHead" aria-label="Добавить запись">+</button>
+      </section>
+
+      <section class="card life-summary">
+        <div><small>ЦЕЛИ, ЖЕЛАНИЯ И ПОЕЗДКИ</small><h3>Держи важное в одном месте</h3><p>Запиши, зачем тебе это нужно, бюджет и ближайший конкретный шаг.</p></div>
         <button class="btn primary full" type="button" id="addLifeWish">+ Добавить желание</button>
       </section>
-      <section class="home-metric-grid life-stats">${counts.map(([type, count]) => `<div class="home-metric-card"><small>${lifeTypeTitle(type)}</small><strong>${count}</strong><span>${lifeTypeIcon(type)}</span></div>`).join('')}</section>
+
+      <section class="life-stats">${types.map(type => `<div class="card life-stat"><span>${lifeTypeIcon(type)}</span><div><small>${lifeTypeTitle(type)}</small><strong>${countFor(type)}</strong></div></div>`).join('')}</section>
+
       <div class="life-board" id="lifeBoard">
         ${state.lifeMapOrder.map(type => {
-          const items = state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done');
-          return `<section class="section life-block draggable-block" draggable="true" data-life-block="${type}"><div class="section-head"><h2>${lifeTypeIcon(type)} ${lifeTypeTitle(type)}</h2><span class="badge">${items.length}</span></div><div class="list">${items.length ? items.map(lifeItemCard).join('') : empty(type === 'done' ? 'Здесь будет история выполненных целей.' : 'Добавь первую запись.')}</div></section>`;
+          const items = state.lifeMap.filter(item => type === 'done' ? (item.type === 'done' || item.status === 'done') : item.type === type && item.status !== 'done').sort((a,b) => Number(a.order || 0) - Number(b.order || 0));
+          return `<section class="card life-block draggable-block" draggable="true" data-life-block="${type}">
+            <div class="life-block-head"><div><small>${lifeTypeTitle(type).toUpperCase()}</small><h3>${lifeTypeIcon(type)} ${lifeTypeTitle(type)}</h3></div><div class="life-block-controls"><span class="badge">${items.length}</span><button class="mini-btn move-life-block" type="button" data-type="${type}" data-direction="up" aria-label="Переместить блок выше">↑</button><button class="mini-btn move-life-block" type="button" data-type="${type}" data-direction="down" aria-label="Переместить блок ниже">↓</button></div></div>
+            <div class="list life-list">${items.length ? items.map(lifeItemCard).join('') : `<div class="life-empty"><span>${lifeTypeIcon(type)}</span><p>${type === 'done' ? 'Здесь появятся выполненные цели и желания.' : 'Пока пусто. Добавь первую запись.'}</p></div>`}</div>
+          </section>`;
         }).join('')}
       </div>`;
+    $('#backToTasks')?.addEventListener('click', () => switchScreen('tasks'));
     $('#addLifeWish')?.addEventListener('click', () => openLifeModal());
+    $('#addLifeHead')?.addEventListener('click', () => openLifeModal());
     bindLifeMapActions();
   }
 
@@ -1893,10 +1955,37 @@
     });
   }
 
+  function moveOrderedItem(items, id, direction) {
+    const ordered = items.slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    const index = ordered.findIndex(item => item.id === id);
+    const nextIndex = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return false;
+    [ordered[index], ordered[nextIndex]] = [ordered[nextIndex], ordered[index]];
+    ordered.forEach((item, order) => { item.order = order; });
+    return true;
+  }
+
+  function moveLifeBlock(type, direction) {
+    const index = state.lifeMapOrder.indexOf(type);
+    const nextIndex = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || nextIndex < 0 || nextIndex >= state.lifeMapOrder.length) return;
+    [state.lifeMapOrder[index], state.lifeMapOrder[nextIndex]] = [state.lifeMapOrder[nextIndex], state.lifeMapOrder[index]];
+    saveState();
+    render();
+  }
+
   function bindLifeMapActions() {
     $$('.edit-life').forEach(button => button.addEventListener('click', () => openLifeModal(state.lifeMap.find(item => item.id === button.dataset.id))));
     $$('.delete-life').forEach(button => button.addEventListener('click', () => removeItem('lifeMap', button.dataset.id)));
     $$('.mark-life-done').forEach(button => button.addEventListener('click', () => { const item = state.lifeMap.find(entry => entry.id === button.dataset.id); if (!item) return; item.status = 'done'; item.type = 'done'; item.completedAt = new Date().toISOString(); saveState(); render(); }));
+    $$('.move-life-block').forEach(button => button.addEventListener('click', event => { event.stopPropagation(); moveLifeBlock(button.dataset.type, button.dataset.direction); }));
+    $$('.move-life-item').forEach(button => button.addEventListener('click', event => {
+      event.stopPropagation();
+      const item = state.lifeMap.find(entry => entry.id === button.dataset.id);
+      if (!item) return;
+      const group = state.lifeMap.filter(entry => item.type === 'done' ? (entry.type === 'done' || entry.status === 'done') : entry.type === item.type && entry.status !== 'done');
+      if (moveOrderedItem(group, item.id, button.dataset.direction)) { saveState(); render(); }
+    }));
     bindLifeDragAndDrop();
   }
 
@@ -2037,7 +2126,12 @@
     $$('.delete-goal').forEach(button => button.addEventListener('click', () => removeItem('goals', button.dataset.id)));
     $$('.edit-habit').forEach(button => button.addEventListener('click', () => openHabitModal(state.habits.find(item => item.id === button.dataset.id))));
     $$('.delete-habit').forEach(button => button.addEventListener('click', () => removeItem('habits', button.dataset.id)));
+    $$('.habit-history-btn').forEach(button => button.addEventListener('click', () => openHabitHistory(state.habits.find(item => item.id === button.dataset.id))));
     $$('.pin-habit').forEach(button => button.addEventListener('click', () => { const habit = state.habits.find(item => item.id === button.dataset.id); if (!habit) return; habit.pinned = !habit.pinned; saveState(); render(); }));
+    $$('.move-habit').forEach(button => button.addEventListener('click', event => {
+      event.stopPropagation();
+      if (moveOrderedItem(state.habits, button.dataset.id, button.dataset.direction)) { saveState(); render(); }
+    }));
     $$('.habit-day').forEach(button => button.addEventListener('click', () => {
       const habit = state.habits.find(item => item.id === button.dataset.id);
       if (!habit) return;
@@ -2241,7 +2335,6 @@
         <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
         <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
-        <button type="button" data-quick="life"><span>🌍</span><b>Life Map</b><small>Желание, цель или поездка</small></button>
         <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
         <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
       </div>`, null, { hideActions: true });
@@ -2254,7 +2347,6 @@
       if (action === 'account') openAccountModal();
       if (action === 'project') openProjectModal();
       if (action === 'note') openKnowledgeNoteModal();
-      if (action === 'life') openLifeModal();
     }));
   }
 
@@ -3332,7 +3424,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V12 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V12.1 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3668,7 +3760,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 12;
+      state.version = 12.1;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -3707,17 +3799,22 @@ ${JSON.stringify(state, null, 2)}
   modal.addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
   modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
 
-  $('#globalAdd').addEventListener('click', openGlobalAdd);
-  $('#floatingAdd')?.addEventListener('click', openGlobalAdd);
+  const handleGlobalAdd = () => currentScreen === 'life' ? openLifeModal() : openGlobalAdd();
+  $('#globalAdd').addEventListener('click', handleGlobalAdd);
+  $('#floatingAdd')?.addEventListener('click', handleGlobalAdd);
 
   let lastScrollY = window.scrollY;
+  let floatingVisible = false;
   function updateFloatingAddVisibility() {
     const floating = $('#floatingAdd');
     if (!floating) return;
     const y = window.scrollY || document.documentElement.scrollTop || 0;
-    const nearBottom = window.innerHeight + y >= document.documentElement.scrollHeight - 190;
-    const scrollingDown = y > lastScrollY;
-    floating.classList.toggle('visible', nearBottom && scrollingDown);
+    const distanceFromBottom = Math.max(0, document.documentElement.scrollHeight - (window.innerHeight + y));
+    const scrollingDown = y > lastScrollY + 2;
+    if (!floatingVisible && scrollingDown && distanceFromBottom <= 150) floatingVisible = true;
+    if (floatingVisible && distanceFromBottom >= 300) floatingVisible = false;
+    if (y < 40) floatingVisible = false;
+    floating.classList.toggle('visible', floatingVisible);
     lastScrollY = y;
   }
   window.addEventListener('scroll', updateFloatingAddVisibility, { passive: true });
@@ -3730,7 +3827,18 @@ ${JSON.stringify(state, null, 2)}
   ['pointerdown', 'keydown', 'touchstart'].forEach(eventName => document.addEventListener(eventName, () => { if (!appLocked) lastActivityAt = Date.now(); }, { passive: true }));
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').then(() => checkTaskReminders()).catch(console.error));
+    window.addEventListener('load', async () => {
+      try {
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.1.0');
+        await registration.update();
+        checkTaskReminders();
+      } catch (error) { console.error(error); }
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (sessionStorage.getItem('alexander_os_sw_reloaded')) return;
+      sessionStorage.setItem('alexander_os_sw_reloaded', '1');
+      window.location.reload();
+    });
   }
   setInterval(checkTaskReminders, 60000);
   setInterval(() => {
