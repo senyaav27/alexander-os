@@ -1,16 +1,10 @@
-QA Alexander OS V12.7
+Alexander OS V12.8 - QA
 
-Проверено:
-- app.js проходит node --check.
-- В viewport 390 x 844 ширина документа равна 390 px.
-- Горизонтального переполнения на главном экране нет.
-- Форма быстрого расхода открывается в отдельном bottom sheet.
-- Скролл выполняется только внутри #modalBody.
-- Шапка и нижняя панель действий остаются на месте.
-- Редактор своей категории скрыт по умолчанию.
-- Список своих категорий скрыт по умолчанию.
-- Атрибут hidden больше не перекрывается display:grid.
-- Поля не получают автоматический фокус при открытии.
-- Backdrop blur в модальном окне отключён.
-- На iOS отключены множественные backdrop-filter для снижения нагрузки WebKit.
-- Service Worker использует новый кэш alexander-os-v12-7-ios-performance.
+- JavaScript syntax checked
+- Quick Add contains 5 actions and no Account item
+- Compact Quick Add sheet uses an isolated dialog class
+- Home and Progress screens render only from actual user data
+- Habit day toggles, history, edit, delete, pin and ordering controls preserved
+- Theme contract added for Emerald, Graphite, Neon Lime and Light
+- Service Worker cache bumped to V12.8
+- Horizontal overflow protections preserved

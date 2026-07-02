@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 12.3,
+      version: 12.8,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -212,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12.3,
+      version: 12.8,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -345,7 +345,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 12.3;
+    state.version = 12.8;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -1262,52 +1262,102 @@
       .sort((a, b) => (priorities[a.priority] ?? 1) - (priorities[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))[0];
   }
 
+  function weekExpenseBarsMarkup() {
+    const days = getWeekDays();
+    const values = days.map(day => sum(state.transactions.filter(tx => tx.type === 'expense' && tx.date === day.iso).map(tx => Number(tx.amount || 0))));
+    const maximum = Math.max(1, ...values);
+    return `<div class="home-week-bars" aria-label="Расходы по дням недели">${days.map((day, index) => {
+      const height = values[index] ? Math.max(18, Math.round(values[index] / maximum * 100)) : 8;
+      return `<div class="home-week-bar ${day.iso === todayISO() ? 'today' : ''}" title="${day.label}: ${money(values[index])}"><span style="height:${height}%"></span><small>${day.label}</small></div>`;
+    }).join('')}</div>`;
+  }
+
+  function homeHabitPreviewMarkup(habit) {
+    if (!habit) return '';
+    const days = getWeekDays();
+    const stats = habitWeekStatsFor(habit, new Date());
+    const streak = habitStreak(habit);
+    const today = todayISO();
+    return `<section class="card home-habit-preview">
+      <div class="home-habit-head">
+        <div><small>Привычка недели</small><h3>${escapeHtml(habit.title)}</h3><p>${stats.completed} из ${stats.planned} выполнено</p></div>
+        <div class="home-habit-streak"><span>🔥</span><strong>${streak}</strong><small>дн.</small></div>
+      </div>
+      <div class="habit-orb-grid home-habit-orbs">${days.map(day => {
+        const scheduled = (habit.schedule || []).includes(day.date.getDay());
+        const done = Boolean(habit.logs?.[day.iso]);
+        const future = day.iso > today;
+        return `<button class="habit-day habit-day-orb ${scheduled ? 'scheduled' : 'not-scheduled'} ${done ? 'done' : ''} ${day.iso === today ? 'today' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}" ${!scheduled || future ? 'disabled' : ''}><span class="habit-orb">${done ? '✓' : ''}</span><small>${day.label}</small></button>`;
+      }).join('')}</div>
+      <div class="home-habit-progress"><span>Прогресс недели</span><strong>${stats.rate}%</strong></div>
+      <div class="premium-progress compact"><i style="width:${stats.rate}%"></i></div>
+    </section>`;
+  }
+
   function renderDashboard() {
     const analytics = getFinanceAnalytics();
     const mainTasks = state.tasks
       .filter(task => task.status !== 'done' && (!task.due || task.due <= todayISO()))
       .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))
-      .slice(0, 4);
-    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+      .slice(0, 3);
+    const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
     const capitalSeries = estimatedCapitalSeries(6);
     const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
     const greetingHour = new Date().getHours();
     const greeting = greetingHour < 12 ? 'Доброе утро' : greetingHour < 18 ? 'Добрый день' : 'Добрый вечер';
+    const capitalProgress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, Number(state.profile.capitalTarget || 1)) * 100)));
+    const incomeProgress = Math.max(0, Math.min(100, Math.round(analytics.monthIncome / Math.max(1, Number(state.profile.monthlyIncomeTarget || 1)) * 100)));
+    const cushionProgress = Math.max(0, Math.min(100, Math.round(analytics.liquid / Math.max(1, Number(state.profile.cushionTarget || 1)) * 100)));
+    const featuredHabit = state.habits.find(habit => /чтен/i.test(habit.title)) || state.habits[0];
 
     app.innerHTML = `
-      <section class="home-welcome">
+      <section class="home-welcome premium-home-welcome">
         <small>Сегодня, ${dateText(todayISO())}</small>
         <h2>${greeting}, ${escapeHtml(state.profile.name || 'Пользователь')}! <span>👋</span></h2>
       </section>
 
-      <section class="card home-capital-card">
-        <div class="metric-row">
+      <section class="card home-premium-capital">
+        <div class="home-capital-head">
           <div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div>
           <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
         </div>
-        ${heroSparkline(capitalSeries)}
+        <div class="premium-progress hero-progress" aria-label="Прогресс капитала ${capitalProgress}%">
+          <i style="width:${capitalProgress}%"></i>
+          <b style="left:${Math.max(8, Math.min(92, capitalProgress))}%">${capitalProgress}%</b>
+        </div>
+        <div class="home-capital-goal"><span>Цель: ${money(state.profile.capitalTarget)}</span><em>${capitalProgress >= 100 ? 'Цель достигнута' : 'До цели ' + money(Math.max(0, state.profile.capitalTarget - analytics.capital))}</em></div>
       </section>
 
-      <section class="home-metric-grid">
-        <button type="button" class="home-metric-card income" data-go="finance"><small>Доход за месяц</small><strong>${money(analytics.monthIncome)}</strong><span>${compareSentence('Доход', analytics.monthIncome, analytics.previousMonthIncome).replace(/<[^>]+>/g, '')}</span></button>
-        <button type="button" class="home-metric-card expense" data-go="finance"><small>Расход за месяц</small><strong>${money(analytics.monthExpense)}</strong><span>${compareSentence('Расход', analytics.monthExpense, analytics.previousMonthExpense, true).replace(/<[^>]+>/g, '')}</span></button>
-        <button type="button" class="home-metric-card week" data-go="finance"><small>Расход за неделю</small><strong>${money(analytics.weekExpense)}</strong><span>Текущая неделя</span></button>
-        <button type="button" class="home-metric-card free" data-go="finance"><small>Свободный остаток</small><strong>${money(analytics.freeBalance)}</strong><span>После ближайших платежей</span></button>
+      <section class="home-goal-grid">
+        <button type="button" class="card home-goal-card" data-go="finance">
+          <div class="home-goal-title"><span>◎</span><small>Цель дохода</small><strong>${incomeProgress}%</strong></div>
+          <b>${money(analytics.monthIncome)}</b>
+          <p>из ${money(state.profile.monthlyIncomeTarget)} в месяц</p>
+          <div class="premium-progress compact"><i style="width:${incomeProgress}%"></i></div>
+        </button>
+        <button type="button" class="card home-goal-card" data-go="finance">
+          <div class="home-goal-title"><span>⚑</span><small>Финансовая подушка</small><strong>${cushionProgress}%</strong></div>
+          <b>${money(analytics.liquid)}</b>
+          <p>из ${money(state.profile.cushionTarget)}</p>
+          <div class="premium-progress compact"><i style="width:${cushionProgress}%"></i></div>
+        </button>
       </section>
 
-      <section class="section">
-        <div class="section-head"><h2>Ближайшие платежи</h2><button class="link-btn" type="button" data-go="finance">Все</button></div>
-        <div class="list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 14 дней платежей нет.')}</div>
+      <section class="card home-week-expense-card">
+        <div class="home-week-copy"><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong><span>${compareSentence('Расход', analytics.weekExpense, analytics.previousWeekExpense, true).replace(/<[^>]+>/g, '')}</span></div>
+        ${weekExpenseBarsMarkup()}
       </section>
 
-      <section class="section">
+      ${homeHabitPreviewMarkup(featuredHabit)}
+
+      <section class="section compact-section">
         <div class="section-head"><h2>Ближайшие задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
-        <div class="list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
+        <div class="list compact-list">${mainTasks.length ? mainTasks.map(taskItem).join('') : empty('Главные задачи на сегодня закрыты.')}</div>
       </section>
 
-      <section class="section">
-        <div class="section-head"><h2>Стратегический сигнал</h2><button class="link-btn" type="button" data-go="growth">Прогресс</button></div>
-        <div class="insight ${getFinanceInsights(analytics)[0]?.cls || ''}">${escapeHtml(getFinanceInsights(analytics)[0]?.text || 'Добавляй операции, задачи и цели - система начнёт находить точки роста.')}</div>
+      <section class="section compact-section">
+        <div class="section-head"><h2>Ближайшие платежи</h2><button class="link-btn" type="button" data-go="finance">Все</button></div>
+        <div class="list compact-list">${upcoming.length ? upcoming.map(obligationItem).join('') : empty('На ближайшие 14 дней платежей нет.')}</div>
       </section>
     `;
     bindCommon();
@@ -1810,28 +1860,50 @@
     const current = goalCurrent(goal);
     const percent = Math.max(0, Math.min(100, Math.round(current / Math.max(1, Number(goal.target || 1)) * 100)));
     const pace = goalPace(goal, current, percent);
-    return `<div class="card goal-card">
-      <div class="metric-row"><div class="item-title">${escapeHtml(goal.title)}</div><strong>${percent}%</strong></div>
-      <div class="progress"><span style="width:${percent}%"></span></div>
-      <div class="goal-meta-row"><span>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''} из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span><span class="compare ${pace.cls}">${pace.text}</span></div>
-      ${goal.nextAction ? `<div class="item-note"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
-      <div class="item-actions end"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}">×</button></div>
-    </div>`;
+    return `<article class="card goal-card premium-goal-card">
+      <div class="premium-goal-head">
+        <div class="premium-goal-icon">◎</div>
+        <div class="premium-goal-copy"><small>Цель</small><h3>${escapeHtml(goal.title)}</h3></div>
+        <strong>${percent}%</strong>
+      </div>
+      <div class="premium-goal-values"><b>${numberText(current)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</b><span>из ${numberText(goal.target)}${goal.unit ? ` ${escapeHtml(goal.unit)}` : ''}</span></div>
+      <div class="premium-progress"><i style="width:${percent}%"></i></div>
+      <div class="premium-goal-meta"><span class="compare ${pace.cls}">${pace.text}</span>${goal.deadline ? `<span>до ${longDateText(goal.deadline)}</span>` : ''}</div>
+      ${goal.nextAction ? `<div class="item-note premium-next-step"><b>Следующий шаг:</b> ${escapeHtml(goal.nextAction)}</div>` : ''}
+      <div class="item-actions end premium-card-actions"><button class="mini-btn edit-goal" type="button" data-id="${goal.id}" aria-label="Редактировать цель">✎</button><button class="mini-btn delete-goal" type="button" data-id="${goal.id}" aria-label="Удалить цель">×</button></div>
+    </article>`;
   }
 
   function habitItem(habit) {
     const days = getWeekDays();
     const week = habitWeekStatsFor(habit, new Date());
     const today = todayISO();
-    return `<div class="card habit-card draggable-card" draggable="true" data-habit-id="${habit.id}">
-      <div class="metric-row habit-card-head"><div class="habit-title-copy"><div class="item-title">${habit.pinned ? '📌 ' : ''}${escapeHtml(habit.title)}</div><div class="item-meta">Неделя ${week.completed}/${week.planned} · месяц ${habitMonthPercent(habit)}% · серия ${habitStreak(habit)} дн.</div></div><div class="item-actions habit-actions"><button class="mini-btn habit-history-btn" type="button" data-id="${habit.id}" aria-label="История привычки">▦</button><button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="up" aria-label="Переместить выше">↑</button><button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="down" aria-label="Переместить ниже">↓</button><button class="mini-btn pin-habit" type="button" data-id="${habit.id}" aria-label="Закрепить">${habit.pinned ? '★' : '☆'}</button><button class="mini-btn edit-habit" type="button" data-id="${habit.id}" aria-label="Редактировать">✎</button><button class="mini-btn delete-habit" type="button" data-id="${habit.id}" aria-label="Удалить">×</button></div></div>
-      <div class="week-grid habit-week-grid">${days.map(day => {
+    const streak = habitStreak(habit);
+    const monthPercent = habitMonthPercent(habit);
+    return `<article class="card habit-card habit-widget draggable-card" draggable="true" data-habit-id="${habit.id}">
+      <div class="habit-widget-head">
+        <div class="habit-widget-title"><span class="habit-widget-icon">${streak > 0 ? '🔥' : '✓'}</span><div><small>${habit.pinned ? 'Закреплено' : 'Привычка'}</small><h3>${escapeHtml(habit.title)}</h3></div></div>
+        <div class="habit-widget-streak"><strong>${streak}</strong><small>дн.</small></div>
+        <button class="habit-more" type="button" data-id="${habit.id}" aria-label="Действия с привычкой">•••</button>
+      </div>
+      <div class="habit-widget-score"><div><strong>${week.completed}</strong><span> / ${week.planned}</span><small>на этой неделе</small></div><b>${week.rate}%</b></div>
+      <div class="habit-orb-grid">${days.map(day => {
         const scheduled = (habit.schedule || []).includes(day.date.getDay());
+        const done = Boolean(habit.logs?.[day.iso]);
         const future = day.iso > today;
-        return `<button class="day-cell habit-day ${scheduled ? 'scheduled' : 'not-scheduled'} ${habit.logs?.[day.iso] ? 'done' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}" ${!scheduled || future ? 'disabled' : ''}><span>${day.label}</span><small>${day.date.getDate()}</small></button>`;
+        return `<button class="habit-day habit-day-orb ${scheduled ? 'scheduled' : 'not-scheduled'} ${done ? 'done' : ''} ${day.iso === today ? 'today' : ''}" type="button" data-id="${habit.id}" data-date="${day.iso}" ${!scheduled || future ? 'disabled' : ''}><span class="habit-orb">${done ? '✓' : ''}</span><small>${day.label}</small></button>`;
       }).join('')}</div>
-      <div class="habit-history">${habitHeatmap(habit)}</div>
-    </div>`;
+      <div class="habit-widget-footer"><span>Месяц</span><strong>${monthPercent}%</strong></div>
+      <div class="premium-progress compact"><i style="width:${monthPercent}%"></i></div>
+      <div class="habit-card-actions-panel" data-habit-panel="${habit.id}" hidden>
+        <button class="mini-btn habit-history-btn" type="button" data-id="${habit.id}" aria-label="История привычки">▦</button>
+        <button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="up" aria-label="Переместить выше">↑</button>
+        <button class="mini-btn move-habit" type="button" data-id="${habit.id}" data-direction="down" aria-label="Переместить ниже">↓</button>
+        <button class="mini-btn pin-habit" type="button" data-id="${habit.id}" aria-label="Закрепить">${habit.pinned ? '★' : '☆'}</button>
+        <button class="mini-btn edit-habit" type="button" data-id="${habit.id}" aria-label="Редактировать">✎</button>
+        <button class="mini-btn delete-habit" type="button" data-id="${habit.id}" aria-label="Удалить">×</button>
+      </div>
+    </article>`;
   }
 
   function habitWeekStatsFor(habit, date = new Date()) {
@@ -2021,7 +2093,6 @@
     const analytics = getFinanceAnalytics();
     const months = growthRange === 'year' ? 12 : growthRange === 'week' ? 3 : 6;
     const moneySeries = monthlyMoneySeries(months);
-    const capitalSeries = estimatedCapitalSeries(months);
     const currentTasks = taskWeekStats(new Date(), true);
     const previousTasks = taskWeekStats(addDays(new Date(), -7), true);
     const currentHabits = habitWeekStats(new Date(), true);
@@ -2037,28 +2108,40 @@
     const currentReview = reviews.find(review => review.weekStart === localISO(weekStartDate));
     const projectRate = state.projects.length ? Math.round(state.projects.filter(project => ['active','growth'].includes(project.status)).length / state.projects.length * 100) : 0;
     const goalRate = activeGoals.length ? Math.round(sum(activeGoals.map(goal => Math.min(100, goalCurrent(goal) / Math.max(1, goal.target) * 100))) / activeGoals.length) : 0;
+    const capitalRate = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, Number(state.profile.capitalTarget || 1)) * 100)));
+    const score = overallScore();
+    const bestStreak = state.habits.length ? Math.max(...state.habits.map(habitStreak)) : 0;
+    const weekDays = getWeekDays();
+    const today = todayISO();
+    const overallDays = weekDays.map(day => {
+      const scheduled = state.habits.filter(habit => (habit.schedule || []).includes(day.date.getDay()));
+      const completed = scheduled.filter(habit => habit.logs?.[day.iso]).length;
+      return { ...day, planned: scheduled.length, completed, done: scheduled.length > 0 && completed === scheduled.length, partial: completed > 0 && completed < scheduled.length };
+    });
 
     app.innerHTML = `
-      <section class="tabs progress-period-tabs v11-tabs">
+      <section class="tabs progress-period-tabs premium-period-tabs">
         ${[['week','Неделя'],['month','Месяц'],['year','Год']].map(([key,label]) => `<button class="tab ${growthRange === key ? 'active' : ''}" type="button" data-growth-range="${key}">${label}</button>`).join('')}
       </section>
 
-      <section class="card v11-progress-overview">
-        <div class="section-head"><div><small>Общий прогресс</small><h2>Все сферы жизни</h2></div><strong class="positive">+${Math.max(0, percentageChange(analytics.capital, Math.max(1, analytics.capital - analytics.monthBalance)) || 0)}%</strong></div>
-        ${compactMoneyChart(capitalSeries)}
+      <section class="card progress-command-card">
+        <div class="progress-command-head"><div><small>Общий прогресс</small><h2>${numberText(score)} <span>/ 100</span></h2></div><strong>${score}%</strong></div>
+        <div class="premium-progress hero-progress"><i style="width:${score}%"></i><b style="left:${Math.max(8, Math.min(92, score))}%">⚡ ${score}</b></div>
+        <p>${score >= 80 ? 'Сильный темп. Сохраняй ритм.' : score >= 55 ? 'Хорошая база. Усиль одну ключевую сферу.' : 'Сфокусируйся на задачах, привычках и финансовой подушке.'}</p>
       </section>
 
-      <section class="v11-progress-grid">
-        <button class="card v11-progress-tile" type="button" id="jumpGoals"><span class="tile-icon">◎</span><small>Цели</small><strong>${goalRate}%</strong><em>${activeGoals.length} активных</em></button>
-        <button class="card v11-progress-tile" type="button" data-go="finance"><span class="tile-icon">₽</span><small>Финансы</small><strong>${money(analytics.monthBalance)}</strong><em>${analytics.monthBalance >= 0 ? 'рост капитала' : 'нужно сократить расходы'}</em></button>
-        <button class="card v11-progress-tile" type="button" id="jumpHabits"><span class="tile-icon habit-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" pathLength="100"/><path d="m8.2 12.1 2.4 2.5 5.4-5.7"/></svg></span><small>Привычки</small><strong>${currentHabits.rate}%</strong><em>${currentHabits.rate >= previousHabits.rate ? 'стабильный ритм' : 'ниже прошлой недели'}</em></button>
-        <button class="card v11-progress-tile" type="button" data-go="projects"><span class="tile-icon">▣</span><small>Проекты</small><strong>${projectRate}%</strong><em>${state.projects.filter(project => ['active','growth'].includes(project.status)).length} в работе</em></button>
+      <section class="progress-kpi-grid">
+        <button class="card progress-kpi-card" type="button" id="jumpGoals"><span>◎</span><small>Цели</small><strong>${goalRate}%</strong><em>${activeGoals.length} активных</em></button>
+        <button class="card progress-kpi-card" type="button" data-go="finance"><span>₽</span><small>Капитал</small><strong>${capitalRate}%</strong><em>${money(analytics.capital)}</em></button>
+        <button class="card progress-kpi-card" type="button" id="jumpHabits"><span>✓</span><small>Привычки</small><strong>${currentHabits.rate}%</strong><em>${currentHabits.rate >= previousHabits.rate ? 'ритм растёт' : 'ниже прошлой недели'}</em></button>
+        <button class="card progress-kpi-card" type="button" data-go="projects"><span>▣</span><small>Проекты</small><strong>${projectRate}%</strong><em>${state.projects.filter(project => ['active','growth'].includes(project.status)).length} в работе</em></button>
       </section>
 
-      <section class="card v11-workout-card">
-        <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
-        <div class="workout-card-stats"><span><b>${workoutLogsThisWeek.length}/${profile.days}</b><small>тренировок на неделе</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
-        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Видео и план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
+      <section class="card progress-streak-card">
+        <div class="progress-streak-head"><div class="streak-flame">🔥</div><div><small>Лучшая серия</small><h2>${bestStreak} <span>дн.</span></h2></div><div class="streak-footprint">◉</div></div>
+        <div class="progress-week-orbs">${overallDays.map(day => `<div class="progress-day ${day.done ? 'done' : day.partial ? 'partial' : ''} ${day.iso === today ? 'today' : ''}"><span>${day.done ? '✓' : day.partial ? day.completed : ''}</span><small>${day.label}</small></div>`).join('')}</div>
+        <div class="progress-streak-footer"><div><small>Привычки недели</small><strong>${currentHabits.completed} / ${currentHabits.planned}</strong></div><b>${currentHabits.rate}%</b></div>
+        <div class="premium-progress"><i style="width:${currentHabits.rate}%"></i></div>
       </section>
 
       <section class="section compact-section" id="goalDynamics">
@@ -2068,18 +2151,25 @@
 
       <section class="section compact-section" id="habitDynamics">
         <div class="section-head"><h2>Привычки</h2><button class="link-btn" type="button" id="addHabit">Добавить</button></div>
-        <div class="list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
+        <div class="list premium-habit-list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
+      </section>
+
+      <section class="card v11-workout-card premium-workout-card">
+        <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
+        <div class="workout-card-stats"><span><b>${workoutLogsThisWeek.length}/${profile.days}</b><small>на неделе</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
+        <div class="premium-progress compact"><i style="width:${workoutRate}%"></i></div>
+        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Видео и план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
       </section>
 
       <section class="section compact-section weekly-review-section">
-        <div class="section-head"><h2>Недельный разбор</h2><button class="link-btn" type="button" id="${currentReview ? 'editCurrentReview' : 'createAutoReview'}">${currentReview ? 'Изменить' : 'Создать автоматически'}</button></div>
-        <div class="list">${currentReview ? reviewItem(currentReview) : `<div class="card auto-review-card"><div><b>Черновик формируется из задач, финансов и проектов</b><p>Приложение заполнит цифры и факты. Тебе останется добавить личный вывод.</p></div><button class="btn primary" type="button" id="createAutoReviewCard">Создать разбор</button></div>`}</div>
+        <div class="section-head"><h2>Недельный разбор</h2><button class="link-btn" type="button" id="${currentReview ? 'editCurrentReview' : 'createAutoReview'}">${currentReview ? 'Изменить' : 'Создать'}</button></div>
+        <div class="list">${currentReview ? reviewItem(currentReview) : `<div class="card auto-review-card"><div><b>Черновик из задач, финансов и проектов</b><p>Приложение заполнит цифры. Тебе останется добавить личный вывод.</p></div><button class="btn primary" type="button" id="createAutoReviewCard">Создать разбор</button></div>`}</div>
         ${reviews.length > 1 ? `<details class="card review-history"><summary>Предыдущие разборы <b>${reviews.length - 1}</b></summary><div class="list">${reviews.filter(review => review.id !== currentReview?.id).slice(0,4).map(reviewItem).join('')}</div></details>` : ''}
       </section>
 
       <section class="section compact-section">
-        <div class="section-head"><h2>Динамика денег</h2><span class="badge">${growthRange === 'year' ? '12 месяцев' : growthRange === 'week' ? 'короткий период' : '6 месяцев'}</span></div>
-        <div class="card chart-card">${dualBarChart(moneySeries)}</div>
+        <div class="section-head"><h2>Динамика денег</h2><span class="badge">${growthRange === 'year' ? '12 месяцев' : growthRange === 'week' ? '3 месяца' : '6 месяцев'}</span></div>
+        <div class="card chart-card premium-chart-card">${dualBarChart(moneySeries)}</div>
       </section>`;
 
     bindCommon();
@@ -2111,6 +2201,14 @@
 
   function bindCommon() {
     $$('[data-go]').forEach(button => button.addEventListener('click', () => switchScreen(button.dataset.go)));
+    $$('.habit-more').forEach(button => button.addEventListener('click', event => {
+      event.stopPropagation();
+      const panel = document.querySelector(`[data-habit-panel="${button.dataset.id}"]`);
+      if (!panel) return;
+      const willOpen = panel.hidden;
+      $$('.habit-card-actions-panel').forEach(item => { item.hidden = true; });
+      panel.hidden = !willOpen;
+    }));
     $$('.task-check').forEach(input => input.addEventListener('change', () => toggleTask(input.dataset.id, input.checked)));
     $$('.habit-check').forEach(input => input.addEventListener('change', () => {
       const habit = state.habits.find(item => item.id === input.dataset.id);
@@ -2330,21 +2428,19 @@
 
   function openOtherActionsMenu() {
     openModal('Добавить', `
-      <div class="quick-sheet vnext-quick-sheet">
-        <button type="button" class="primary-action" data-quick="expense"><span>−</span><b>Расход</b><small>Внести за несколько секунд</small></button>
-        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small></button>
-        <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить действие</small></button>
-        <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small></button>
-        <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small></button>
-        <button type="button" data-quick="account"><span>◫</span><b>Счёт</b><small>Карта, наличные или вклад</small></button>
-      </div>`, null, { hideActions: true });
+      <div class="quick-sheet vnext-quick-sheet premium-quick-sheet">
+        <button type="button" class="primary-action" data-quick="expense"><span>−</span><b>Расход</b><small>Внести за несколько секунд</small><i>›</i></button>
+        <button type="button" data-quick="income"><span>＋</span><b>Доход</b><small>Зарплата, клиент или проект</small><i>›</i></button>
+        <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить конкретное действие</small><i>›</i></button>
+        <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small><i>›</i></button>
+        <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small><i>›</i></button>
+      </div>`, null, { hideActions: true, dialogClass: 'quick-add-dialog' });
     $$('[data-quick]', modalBody).forEach(button => button.addEventListener('click', () => {
       const action = button.dataset.quick;
       closeModal();
       if (action === 'income') openTransactionModal(null, 'income');
       if (action === 'expense') openQuickExpenseModal();
       if (action === 'task') openTaskModal();
-      if (action === 'account') openAccountModal();
       if (action === 'project') openProjectModal();
       if (action === 'note') openKnowledgeNoteModal();
     }));
@@ -2365,6 +2461,8 @@
   }
 
   function openModal(title, body, action, options = {}) {
+    modal.classList.remove('quick-add-dialog');
+    if (options.dialogClass) modal.classList.add(options.dialogClass);
     modalTitle.textContent = title;
     modalBody.innerHTML = body;
     modalAction = action;
@@ -2378,7 +2476,7 @@
   function closeModal() {
     modalAction = null;
     modalForm.reset();
-    modal.classList.remove('workout-dialog', 'video-workout-dialog', 'settings-dialog');
+    modal.classList.remove('workout-dialog', 'video-workout-dialog', 'settings-dialog', 'quick-add-dialog');
     if (modal.open) modal.close();
     unlockBodyForModal();
   }
@@ -3443,7 +3541,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V12.3 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V12.8 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3779,7 +3877,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 12.3;
+      state.version = 12.8;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -3910,7 +4008,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.7.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.8.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

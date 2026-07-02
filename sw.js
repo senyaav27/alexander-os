@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-v12-7-ios-performance';
-const ASSETS = ['./', './index.html', './styles.css?v=12.7.0', './app.js?v=12.7.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v12-8-premium-ui';
+const ASSETS = ['./', './index.html', './styles.css?v=12.8.0', './app.js?v=12.8.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

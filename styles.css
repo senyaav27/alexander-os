@@ -4456,3 +4456,1055 @@ dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialo
     box-shadow: none !important;
   }
 }
+
+/* =========================================================
+   Alexander OS V12.8 - premium home, progress and theme system
+   ========================================================= */
+:root,
+:root[data-theme="emerald"] {
+  --app-bg: #03130b;
+  --app-bg-2: #061c11;
+  --app-sheet: #0a2418;
+  --app-card: #0d281c;
+  --app-card-2: #102f21;
+  --app-control: #133724;
+  --app-text: #f7fff9;
+  --app-muted: #9db5a4;
+  --app-line: rgba(207,255,221,.12);
+  --app-line-strong: rgba(129,255,159,.28);
+  --app-accent: #78f78d;
+  --app-accent-2: #2ad36a;
+  --app-accent-contrast: #07150b;
+  --app-track: rgba(255,255,255,.085);
+  --app-shadow: 0 12px 30px rgba(0,0,0,.24);
+}
+
+:root[data-theme="graphite"] {
+  --app-bg: #080c10;
+  --app-bg-2: #0d1217;
+  --app-sheet: #11171c;
+  --app-card: #141b20;
+  --app-card-2: #182128;
+  --app-control: #1d2830;
+  --app-text: #f5f8fa;
+  --app-muted: #98a4ad;
+  --app-line: rgba(255,255,255,.09);
+  --app-line-strong: rgba(139,247,159,.25);
+  --app-accent: #8bf79f;
+  --app-accent-2: #42d77a;
+  --app-accent-contrast: #07120a;
+  --app-track: rgba(255,255,255,.08);
+  --app-shadow: 0 12px 30px rgba(0,0,0,.29);
+}
+
+:root[data-theme="neonlime"] {
+  --app-bg: #101214;
+  --app-bg-2: #151719;
+  --app-sheet: #191c1f;
+  --app-card: #1c2023;
+  --app-card-2: #22272b;
+  --app-control: #282e32;
+  --app-text: #f8f9f4;
+  --app-muted: #a2a6a7;
+  --app-line: rgba(255,255,255,.085);
+  --app-line-strong: rgba(216,255,24,.28);
+  --app-accent: #d8ff18;
+  --app-accent-2: #9fe728;
+  --app-accent-contrast: #151900;
+  --app-track: rgba(255,255,255,.085);
+  --app-shadow: 0 12px 30px rgba(0,0,0,.30);
+}
+
+:root[data-theme="light"] {
+  --app-bg: #eef3ef;
+  --app-bg-2: #e6ece8;
+  --app-sheet: #ffffff;
+  --app-card: #ffffff;
+  --app-card-2: #f7faf8;
+  --app-control: #eef4f0;
+  --app-text: #112019;
+  --app-muted: #66746c;
+  --app-line: rgba(17,32,25,.10);
+  --app-line-strong: rgba(38,181,83,.24);
+  --app-accent: #35c85e;
+  --app-accent-2: #19a94a;
+  --app-accent-contrast: #ffffff;
+  --app-track: rgba(14,44,27,.09);
+  --app-shadow: 0 12px 30px rgba(30,62,43,.10);
+}
+
+html,
+body {
+  background: var(--app-bg) !important;
+  color: var(--app-text) !important;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 50% -12%, color-mix(in srgb, var(--app-accent) 8%, transparent), transparent 30%),
+    linear-gradient(180deg, var(--app-bg-2), var(--app-bg) 42%, var(--app-bg)) !important;
+  background-attachment: scroll !important;
+}
+
+.topbar {
+  color: var(--app-text) !important;
+  border-color: var(--app-line) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--app-bg) 99%, transparent) 0%, color-mix(in srgb, var(--app-bg) 96%, transparent) 78%, transparent 100%) !important;
+  box-shadow: none !important;
+}
+
+.card,
+.stat-card,
+.toolbar-card,
+.item,
+.action-tile,
+.home-metric-card,
+.goal-card,
+.habit-card,
+.project-card,
+.settings-profile-card,
+.settings-list-card,
+.settings-form,
+.privacy-card,
+.empty-state,
+.insight {
+  color: var(--app-text) !important;
+  border-color: var(--app-line) !important;
+  background: var(--app-card) !important;
+  box-shadow: var(--app-shadow) !important;
+}
+
+.card small,
+.card p,
+.card em,
+.item-meta,
+.home-goal-card p,
+.progress-command-card p,
+.habit-widget-title small,
+.progress-streak-head small,
+.premium-goal-copy small {
+  color: var(--app-muted) !important;
+}
+
+.tabs,
+.filter-row,
+.bottom-nav {
+  border-color: var(--app-line) !important;
+  background: color-mix(in srgb, var(--app-sheet) 96%, transparent) !important;
+  color: var(--app-text) !important;
+}
+
+.bottom-nav {
+  box-shadow: 0 8px 24px rgba(0,0,0,.22), inset 0 1px 0 color-mix(in srgb, var(--app-text) 4%, transparent) !important;
+}
+
+.bottom-nav .nav-item {
+  color: var(--app-muted) !important;
+}
+
+.bottom-nav .nav-item.active {
+  color: var(--app-accent) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent) !important;
+}
+
+.tab.active,
+.chip.active,
+.btn.primary {
+  background: linear-gradient(135deg, var(--app-accent), var(--app-accent-2)) !important;
+  color: var(--app-accent-contrast) !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--app-accent) 20%, transparent) !important;
+}
+
+.btn.secondary,
+.mini-btn,
+.icon-btn,
+.search-input,
+.field input,
+.field select,
+.field textarea,
+.compare-selects select {
+  border-color: var(--app-line) !important;
+  background: var(--app-control) !important;
+  color: var(--app-text) !important;
+}
+
+.link-btn,
+.positive,
+.compare.good {
+  color: var(--app-accent) !important;
+}
+
+/* Premium progress component */
+.premium-progress {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  overflow: visible;
+  border-radius: 999px;
+  background: var(--app-track);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.24);
+}
+
+.premium-progress.compact {
+  height: 8px;
+}
+
+.premium-progress > i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--app-accent-2), var(--app-accent));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--app-accent) 38%, transparent);
+}
+
+.premium-progress > b {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  min-width: 48px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--app-accent);
+  color: var(--app-accent-contrast);
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--app-accent) 44%, transparent);
+}
+
+/* Home */
+.premium-home-welcome {
+  margin: 0 0 14px;
+}
+
+.premium-home-welcome small {
+  color: var(--app-accent) !important;
+}
+
+.premium-home-welcome h2 {
+  margin: 5px 0 0;
+  font-size: clamp(22px, 6vw, 29px);
+  line-height: 1.08;
+  letter-spacing: -.035em;
+}
+
+.home-premium-capital {
+  padding: 18px !important;
+  border-color: var(--app-line-strong) !important;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--app-accent) 11%, transparent), transparent 36%),
+    var(--app-card) !important;
+}
+
+.home-capital-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.home-capital-head small,
+.home-week-copy small {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--app-muted);
+  font-size: 11px;
+}
+
+.home-capital-head strong {
+  display: block;
+  font-size: clamp(32px, 9vw, 46px);
+  line-height: 1;
+  letter-spacing: -.055em;
+}
+
+.home-premium-capital .hero-progress {
+  margin-top: 24px;
+}
+
+.home-capital-goal {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+  color: var(--app-muted);
+  font-size: 11px;
+}
+
+.home-capital-goal em {
+  color: var(--app-accent);
+  font-style: normal;
+  text-align: right;
+}
+
+.home-goal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.home-goal-card {
+  min-width: 0;
+  padding: 15px !important;
+  border: 1px solid var(--app-line) !important;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-goal-title {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-goal-title > span {
+  color: var(--app-accent);
+  font-size: 18px;
+}
+
+.home-goal-title small {
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+.home-goal-title strong {
+  color: var(--app-accent);
+  font-size: 14px;
+}
+
+.home-goal-card > b {
+  display: block;
+  margin-top: 16px;
+  font-size: clamp(20px, 6vw, 29px);
+  letter-spacing: -.04em;
+}
+
+.home-goal-card p {
+  margin: 4px 0 14px;
+  font-size: 10px;
+}
+
+.home-week-expense-card {
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(150px, 1.2fr);
+  gap: 16px;
+  align-items: end;
+  margin-top: 10px;
+  padding: 17px !important;
+}
+
+.home-week-copy strong {
+  display: block;
+  font-size: clamp(27px, 8vw, 38px);
+  letter-spacing: -.045em;
+}
+
+.home-week-copy span {
+  display: block;
+  margin-top: 7px;
+  color: var(--app-accent);
+  font-size: 10px;
+}
+
+.home-week-bars {
+  height: 92px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0,1fr));
+  align-items: end;
+  gap: 6px;
+}
+
+.home-week-bar {
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0,1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+
+.home-week-bar span {
+  width: 100%;
+  min-height: 5px;
+  align-self: end;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--app-accent) 95%, white 5%), var(--app-accent-2));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.home-week-bar small {
+  color: var(--app-muted);
+  font-size: 8px;
+  text-align: center;
+}
+
+.home-week-bar.today small {
+  color: var(--app-accent);
+}
+
+.home-habit-preview {
+  margin-top: 10px;
+  padding: 17px !important;
+}
+
+.home-habit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-habit-head h3 {
+  margin: 4px 0 4px;
+  font-size: 18px;
+}
+
+.home-habit-head p {
+  margin: 0;
+  font-size: 10px;
+}
+
+.home-habit-streak {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--app-text);
+}
+
+.home-habit-streak strong {
+  font-size: 20px;
+}
+
+.home-habit-streak small {
+  font-size: 9px;
+}
+
+.home-habit-progress,
+.habit-widget-footer,
+.progress-streak-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 15px 0 8px;
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+.home-habit-progress strong,
+.habit-widget-footer strong,
+.progress-streak-footer > b {
+  color: var(--app-accent);
+  font-size: 14px;
+}
+
+/* Progress */
+.premium-period-tabs {
+  margin: 0 0 11px !important;
+}
+
+.progress-command-card {
+  padding: 18px !important;
+  border-color: var(--app-line-strong) !important;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--app-accent) 10%, transparent), transparent 38%),
+    var(--app-card) !important;
+}
+
+.progress-command-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.progress-command-head small {
+  color: var(--app-muted);
+  font-size: 11px;
+}
+
+.progress-command-head h2 {
+  margin: 6px 0 0;
+  font-size: clamp(32px, 9vw, 46px);
+  letter-spacing: -.055em;
+}
+
+.progress-command-head h2 span {
+  color: var(--app-muted);
+  font-size: .46em;
+  font-weight: 650;
+  letter-spacing: -.02em;
+}
+
+.progress-command-head > strong {
+  color: var(--app-accent);
+  font-size: clamp(26px, 7vw, 36px);
+}
+
+.progress-command-card .hero-progress {
+  margin-top: 24px;
+}
+
+.progress-command-card p {
+  margin: 17px 0 0;
+  font-size: 11px;
+}
+
+.progress-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.progress-kpi-card {
+  min-height: 112px;
+  padding: 14px !important;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progress-kpi-card > span {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-control));
+  color: var(--app-accent);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.progress-kpi-card small,
+.progress-kpi-card em {
+  display: block;
+  color: var(--app-muted);
+  font-style: normal;
+  font-size: 9px;
+}
+
+.progress-kpi-card strong {
+  display: block;
+  margin: 5px 0 3px;
+  font-size: 23px;
+  letter-spacing: -.035em;
+}
+
+.progress-streak-card {
+  margin-top: 10px;
+  padding: 18px !important;
+}
+
+.progress-streak-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--app-line);
+}
+
+.streak-flame {
+  font-size: 34px;
+  filter: drop-shadow(0 0 10px rgba(255,92,52,.25));
+}
+
+.progress-streak-head h2 {
+  margin: 4px 0 0;
+  font-size: 27px;
+}
+
+.progress-streak-head h2 span {
+  color: var(--app-muted);
+  font-size: .55em;
+}
+
+.streak-footprint {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--app-control);
+  color: var(--app-muted);
+}
+
+.progress-week-orbs,
+.habit-orb-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0,1fr));
+  gap: 7px;
+  margin-top: 17px;
+}
+
+.progress-day,
+.habit-day-orb {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 0;
+  background: transparent !important;
+  color: var(--app-muted);
+}
+
+.progress-day > span,
+.habit-orb {
+  width: min(10vw, 40px);
+  height: min(10vw, 40px);
+  min-width: 31px;
+  min-height: 31px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--app-line);
+  border-radius: 50%;
+  background: var(--app-control);
+  color: transparent;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.progress-day small,
+.habit-day-orb > small {
+  color: var(--app-muted);
+  font-size: 8px;
+}
+
+.progress-day.done > span,
+.habit-day-orb.done .habit-orb {
+  border-color: color-mix(in srgb, var(--app-accent) 80%, white 5%);
+  background: radial-gradient(circle at 32% 20%, color-mix(in srgb, var(--app-accent) 90%, white 10%), var(--app-accent-2)) !important;
+  color: var(--app-accent-contrast);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--app-accent) 30%, transparent);
+}
+
+.progress-day.partial > span,
+.habit-day-orb.today:not(.done) .habit-orb {
+  border: 2px solid var(--app-accent);
+  color: var(--app-accent);
+  background: transparent !important;
+}
+
+.progress-day.today small,
+.habit-day-orb.today > small {
+  color: var(--app-accent);
+}
+
+.habit-day-orb.not-scheduled {
+  opacity: .42;
+}
+
+.habit-day-orb:disabled {
+  cursor: default;
+}
+
+/* Goal cards */
+.premium-goal-card {
+  padding: 16px !important;
+}
+
+.premium-goal-head {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.premium-goal-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-control));
+  color: var(--app-accent);
+  font-size: 20px;
+}
+
+.premium-goal-copy h3 {
+  margin: 3px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.premium-goal-head > strong {
+  color: var(--app-accent);
+  font-size: 20px;
+}
+
+.premium-goal-values {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 16px 0 10px;
+}
+
+.premium-goal-values b {
+  font-size: 23px;
+  letter-spacing: -.035em;
+}
+
+.premium-goal-values span,
+.premium-goal-meta {
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+.premium-goal-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.premium-card-actions {
+  margin-top: 10px;
+}
+
+/* Habit widgets */
+.premium-habit-list {
+  gap: 11px !important;
+}
+
+.habit-widget {
+  padding: 17px !important;
+  touch-action: pan-y;
+}
+
+.habit-widget-head {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.habit-widget-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.habit-widget-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--app-accent) 9%, var(--app-control));
+  color: var(--app-accent);
+  font-size: 20px;
+}
+
+.habit-widget-title h3 {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habit-widget-streak {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.habit-widget-streak strong {
+  font-size: 20px;
+}
+
+.habit-widget-streak small {
+  font-size: 8px;
+}
+
+.habit-more {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--app-line);
+  border-radius: 11px;
+  background: var(--app-control);
+  color: var(--app-muted);
+  font-weight: 800;
+}
+
+.habit-widget-score {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 17px;
+}
+
+.habit-widget-score > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.habit-widget-score strong {
+  font-size: 25px;
+}
+
+.habit-widget-score span {
+  color: var(--app-muted);
+  font-size: 14px;
+}
+
+.habit-widget-score small {
+  flex-basis: 100%;
+  color: var(--app-muted);
+  font-size: 8px;
+}
+
+.habit-widget-score > b {
+  color: var(--app-accent);
+  font-size: 16px;
+}
+
+.habit-card-actions-panel {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0,1fr));
+  gap: 6px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-line);
+}
+
+.habit-card-actions-panel .mini-btn {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.premium-workout-card,
+.premium-chart-card {
+  margin-top: 16px !important;
+}
+
+/* Compact premium Quick Add */
+dialog.modal.quick-add-dialog:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) {
+  inset: auto auto max(10px, env(safe-area-inset-bottom)) 50% !important;
+  left: 50% !important;
+  width: min(calc(100% - 22px), 460px) !important;
+  max-width: 460px !important;
+  height: auto !important;
+  max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom))) !important;
+  margin: 0 !important;
+  border: 1px solid var(--app-line-strong) !important;
+  border-radius: 28px !important;
+  background: var(--app-sheet) !important;
+  transform: translateX(-50%) !important;
+  box-shadow: 0 18px 48px rgba(0,0,0,.42) !important;
+}
+
+dialog.modal.quick-add-dialog .modal-card {
+  display: block !important;
+  height: auto !important;
+  max-height: inherit !important;
+  overflow: hidden !important;
+  background: var(--app-sheet) !important;
+}
+
+dialog.modal.quick-add-dialog .modal-head {
+  min-height: 72px !important;
+  padding: 24px 17px 12px !important;
+  border-bottom: 0 !important;
+  background: var(--app-sheet) !important;
+}
+
+dialog.modal.quick-add-dialog .modal-head h2 {
+  font-size: 22px !important;
+}
+
+dialog.modal.quick-add-dialog #modalBody {
+  max-height: calc(100dvh - 118px - env(safe-area-inset-bottom)) !important;
+  padding: 4px 13px 14px !important;
+  overflow-y: auto !important;
+  background: var(--app-sheet) !important;
+}
+
+.premium-quick-sheet {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 7px !important;
+}
+
+.premium-quick-sheet button,
+.premium-quick-sheet button.primary-action {
+  position: relative;
+  min-height: 66px !important;
+  display: grid !important;
+  grid-template-columns: 42px minmax(0,1fr) auto !important;
+  grid-template-rows: auto auto !important;
+  align-items: center !important;
+  gap: 1px 11px !important;
+  padding: 10px 13px !important;
+  border: 1px solid var(--app-line) !important;
+  border-radius: 17px !important;
+  background: var(--app-card) !important;
+  color: var(--app-text) !important;
+  box-shadow: none !important;
+}
+
+.premium-quick-sheet button.primary-action {
+  border-color: var(--app-line-strong) !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--app-accent) 8%, transparent), transparent 70%),
+    var(--app-card) !important;
+}
+
+.premium-quick-sheet button > span {
+  grid-row: 1 / 3 !important;
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 13px !important;
+  background: color-mix(in srgb, var(--app-accent) 9%, var(--app-control)) !important;
+  color: var(--app-accent) !important;
+  box-shadow: none !important;
+}
+
+.premium-quick-sheet button.primary-action > span {
+  background: linear-gradient(135deg, var(--app-accent), var(--app-accent-2)) !important;
+  color: var(--app-accent-contrast) !important;
+}
+
+.premium-quick-sheet button b {
+  font-size: 14px !important;
+}
+
+.premium-quick-sheet button small {
+  overflow: hidden;
+  color: var(--app-muted) !important;
+  font-size: 9px !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.premium-quick-sheet button i {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  color: var(--app-accent);
+  font-size: 27px;
+  font-style: normal;
+  line-height: 1;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog),
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-card,
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-head,
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-actions {
+  background-color: var(--app-sheet) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-line) !important;
+}
+
+@media (max-width: 420px) {
+  .home-goal-grid,
+  .progress-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+
+  .home-week-expense-card {
+    grid-template-columns: 1fr;
+  }
+
+  .home-week-bars {
+    height: 78px;
+  }
+
+  .progress-week-orbs,
+  .habit-orb-grid {
+    gap: 4px;
+  }
+
+  .progress-day > span,
+  .habit-orb {
+    width: 35px;
+    height: 35px;
+    min-width: 35px;
+    min-height: 35px;
+  }
+
+  .habit-widget {
+    padding: 15px !important;
+  }
+
+  .premium-quick-sheet button,
+  .premium-quick-sheet button.primary-action {
+    min-height: 62px !important;
+  }
+}
+
+@media (max-width: 350px) {
+  .home-goal-grid,
+  .progress-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-day > span,
+  .habit-orb {
+    width: 31px;
+    height: 31px;
+    min-width: 31px;
+    min-height: 31px;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  .card,
+  .stat-card,
+  .toolbar-card,
+  .item,
+  .home-metric-card,
+  .goal-card,
+  .habit-card,
+  .project-card,
+  .progress-command-card,
+  .progress-streak-card,
+  .home-premium-capital {
+    box-shadow: 0 7px 18px rgba(0,0,0,.16) !important;
+  }
+
+  .premium-progress > i,
+  .progress-day.done > span,
+  .habit-day-orb.done .habit-orb {
+    box-shadow: 0 0 10px color-mix(in srgb, var(--app-accent) 24%, transparent) !important;
+  }
+}
+
+/* V12.8.1 title safety for long habit names */
+.habit-widget-title > div {
+  min-width: 0;
+}
+
+.habit-widget-streak {
+  min-width: 44px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.habit-widget-streak small {
+  white-space: nowrap;
+}
+
+.habit-widget-title h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
