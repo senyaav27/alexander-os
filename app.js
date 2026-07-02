@@ -1232,7 +1232,7 @@
     const renderer = { dashboard: renderDashboard, tasks: renderTasks, finance: renderFinance, life: renderLifeMap, projects: renderProjects, growth: renderGrowth }[currentScreen] || renderDashboard;
     setFloatingAddVisible(false);
     renderer();
-    requestAnimationFrame(updateFloatingAddVisibility);
+    requestAnimationFrame(() => { recalculateFloatingAddThresholds(); updateFloatingAddVisibility(); });
   }
 
   function taskCompletionToday() {
@@ -2321,11 +2321,9 @@
     bindCategoryArea();
     $('#parseSmartExpense')?.addEventListener('click', applySmartExpense);
     $('#smartExpenseInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applySmartExpense(); } });
-    setTimeout(() => $('#smartExpenseInput')?.focus(), 80);
     $$('[data-add-amount]', modalBody).forEach(button => button.addEventListener('click', () => {
       const input = $('#quickExpenseAmount');
       input.value = Number(input.value || 0) + Number(button.dataset.addAmount || 0);
-      input.focus();
     }));
     $('#openOtherActions')?.addEventListener('click', () => { closeModal(); openOtherActionsMenu(); });
   }
@@ -2374,7 +2372,7 @@
     modalSubmit.textContent = options.submitText || 'Сохранить';
     lockBodyForModal();
     if (!modal.open) modal.showModal();
-    setTimeout(() => modalBody.querySelector('input, select, textarea')?.focus(), 50);
+    modalBody.scrollTop = 0;
   }
 
   function closeModal() {
@@ -3827,6 +3825,8 @@ ${JSON.stringify(state, null, 2)}
   const floatingAddScreens = new Set(['dashboard', 'finance', 'tasks', 'projects', 'growth']);
   let floatingVisible = false;
   let floatingFrame = 0;
+  let floatingShowAt = Number.POSITIVE_INFINITY;
+  let floatingHideAt = 0;
 
   function floatingContentBlocks() {
     const isExcluded = node => node instanceof HTMLElement && node.matches('.tabs, .filter-row, .task-search-row, .toolbar-card, .life-page-head');
@@ -3834,16 +3834,10 @@ ${JSON.stringify(state, null, 2)}
       if (!(node instanceof HTMLElement) || node.hidden || node.offsetHeight < 18 || isExcluded(node)) return false;
       return node.matches('section, article, button, .card, .empty-state, [class*="-grid"]');
     };
-
     const blocks = [];
     [...app.children].forEach(node => {
       if (isExcluded(node)) return;
-      if (isBlock(node)) {
-        blocks.push(node);
-        return;
-      }
-      // Некоторые экраны, например «Финансы», собирают секции внутри одного контейнера.
-      // Берём только первый уровень, чтобы логика ориентировалась на реальные крупные блоки.
+      if (isBlock(node)) { blocks.push(node); return; }
       [...node.children].filter(child => !isExcluded(child) && isBlock(child)).forEach(child => blocks.push(child));
     });
     return [...new Set(blocks)];
@@ -3851,55 +3845,60 @@ ${JSON.stringify(state, null, 2)}
 
   function setFloatingAddVisible(visible) {
     const floating = $('#floatingAdd');
-    if (!floating) return;
+    if (!floating || floatingVisible === Boolean(visible)) return;
     floatingVisible = Boolean(visible);
     floating.classList.toggle('visible', floatingVisible);
     floating.setAttribute('aria-hidden', floatingVisible ? 'false' : 'true');
     floating.tabIndex = floatingVisible ? 0 : -1;
   }
 
+  function recalculateFloatingAddThresholds() {
+    floatingShowAt = Number.POSITIVE_INFINITY;
+    floatingHideAt = 0;
+    if (!floatingAddScreens.has(currentScreen)) {
+      setFloatingAddVisible(false);
+      return;
+    }
+    const blocks = floatingContentBlocks();
+    if (!blocks.length) {
+      setFloatingAddVisible(false);
+      return;
+    }
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const viewport = Math.max(1, window.innerHeight);
+    const absoluteTop = node => y + node.getBoundingClientRect().top;
+    const lastBlock = blocks.at(-1);
+    floatingShowAt = Math.max(80, absoluteTop(lastBlock) - viewport * 0.90);
+    const hideIndex = blocks.length >= 5 ? 2 : Math.max(0, blocks.length - 3);
+    const hideBlock = blocks[hideIndex];
+    const topbarHeight = document.querySelector('.topbar')?.offsetHeight || 76;
+    floatingHideAt = Math.max(40, absoluteTop(hideBlock) - topbarHeight - 18);
+    floatingHideAt = Math.min(floatingHideAt, Math.max(40, floatingShowAt - 48));
+  }
+
   function updateFloatingAddVisibility() {
-    cancelAnimationFrame(floatingFrame);
+    if (floatingFrame) return;
     floatingFrame = requestAnimationFrame(() => {
-      const floating = $('#floatingAdd');
-      if (!floating || !floatingAddScreens.has(currentScreen)) {
+      floatingFrame = 0;
+      if (!floatingAddScreens.has(currentScreen)) {
         setFloatingAddVisible(false);
         return;
       }
-
-      const blocks = floatingContentBlocks();
-      if (!blocks.length) {
-        setFloatingAddVisible(false);
-        return;
-      }
-
       const y = window.scrollY || document.documentElement.scrollTop || 0;
-      const viewport = Math.max(1, window.innerHeight);
-      const absoluteTop = node => y + node.getBoundingClientRect().top;
-
-      // Показываем кнопку, когда в нижнюю часть экрана входит последний содержательный блок.
-      // Так не нужно дотягивать страницу до абсолютного конца.
-      const lastBlock = blocks.at(-1);
-      const showAt = Math.max(80, absoluteTop(lastBlock) - viewport * 0.90);
-
-      // При движении обратно вверх кнопка исчезает у третьего содержательного блока.
-      // На коротких экранах используем первый блок, чтобы сохранить заметный интервал.
-      const hideIndex = blocks.length >= 5 ? 2 : Math.max(0, blocks.length - 3);
-      const hideBlock = blocks[hideIndex];
-      const topbarHeight = document.querySelector('.topbar')?.getBoundingClientRect().height || 76;
-      let hideAt = Math.max(40, absoluteTop(hideBlock) - topbarHeight - 18);
-
-      // Между появлением и скрытием оставляем небольшой интервал без смещения к самому верху.
-      hideAt = Math.min(hideAt, Math.max(40, showAt - 48));
-
-      if (!floatingVisible && y >= showAt) setFloatingAddVisible(true);
-      else if (floatingVisible && y <= hideAt) setFloatingAddVisible(false);
+      if (!floatingVisible && y >= floatingShowAt) setFloatingAddVisible(true);
+      else if (floatingVisible && y <= floatingHideAt) setFloatingAddVisible(false);
     });
   }
 
   window.addEventListener('scroll', updateFloatingAddVisibility, { passive: true });
-  window.addEventListener('resize', updateFloatingAddVisibility, { passive: true });
-  window.addEventListener('orientationchange', () => setTimeout(updateFloatingAddVisibility, 120), { passive: true });
+  window.addEventListener('resize', () => {
+    recalculateFloatingAddThresholds();
+    updateFloatingAddVisibility();
+  }, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(() => {
+    recalculateFloatingAddThresholds();
+    updateFloatingAddVisibility();
+  }, 140), { passive: true });
 
   unlockFaceIdButton?.addEventListener('click', unlockWithFaceId);
   unlockPinForm?.addEventListener('submit', event => {
@@ -3911,7 +3910,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.5.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.7.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
@@ -3952,18 +3951,21 @@ ${JSON.stringify(state, null, 2)}
 
 
 
-/* V12.5 native app lock and smooth modal fixes */
-(function nativeAppLock(){
-  const lockHorizontal = () => {
-    if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
-    document.documentElement.scrollLeft = 0;
-    document.body.scrollLeft = 0;
+
+
+/* V12.6 lightweight native shell safeguards */
+(function nativeShellSafeguards(){
+  let horizontalFrame = 0;
+  const correctHorizontalOffset = () => {
+    if (horizontalFrame) return;
+    horizontalFrame = requestAnimationFrame(() => {
+      horizontalFrame = 0;
+      if (Math.abs(window.scrollX || 0) > 1) window.scrollTo(0, window.scrollY || 0);
+    });
   };
-  window.addEventListener('scroll', lockHorizontal, { passive: true });
-  window.addEventListener('resize', lockHorizontal, { passive: true });
-  window.addEventListener('orientationchange', () => setTimeout(lockHorizontal, 120), { passive: true });
-  document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
-  document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
-  document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
-  window.addEventListener('load', lockHorizontal, { passive: true });
+  window.addEventListener('scroll', correctHorizontalOffset, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(correctHorizontalOffset, 120), { passive: true });
+  document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
+  document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
+  document.addEventListener('gestureend', event => event.preventDefault(), { passive: false });
 })();

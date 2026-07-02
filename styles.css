@@ -4225,3 +4225,234 @@ dialog.modal {
     box-shadow: 0 -12px 34px rgba(0,0,0,.30);
   }
 }
+
+
+/* =========================================================
+   Alexander OS V12.6 - iPhone performance and stable sheets
+   ========================================================= */
+
+/* Ordinary forms use one dedicated scroll layer. This avoids
+   sticky-header repaints and clipped content in iOS WebKit. */
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) {
+  position: fixed !important;
+  inset: auto 0 0 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  max-width: 520px !important;
+  height: min(92dvh, 860px) !important;
+  max-height: calc(100dvh - env(safe-area-inset-top)) !important;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  transform: none !important;
+  will-change: auto !important;
+  contain: none !important;
+  border-radius: 24px 24px 0 0 !important;
+  background: #0c2117 !important;
+  box-shadow: 0 -14px 36px rgba(0,0,0,.34) !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-card {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  contain: none !important;
+  background: #0c2117 !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-head {
+  position: relative !important;
+  top: auto !important;
+  z-index: 3 !important;
+  min-height: 76px !important;
+  margin: 0 !important;
+  padding: 26px 16px 13px !important;
+  border-bottom: 1px solid rgba(123,255,155,.08) !important;
+  background: #0c2117 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-head::before {
+  top: 9px !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) #modalBody {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 14px 16px 24px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  contain: none !important;
+  transform: translateZ(0);
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-actions {
+  position: relative !important;
+  bottom: auto !important;
+  z-index: 4 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important;
+  border-top: 1px solid rgba(123,255,155,.10) !important;
+  background: #0c2117 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) .modal-actions[hidden] {
+  display: none !important;
+}
+
+/* No paint containment on dynamic form blocks - it clipped expanded
+   category editors and forced extra raster layers on iPhone. */
+.quick-expense-form,
+.quick-expense-form > *,
+.smart-expense-line,
+.category-more,
+.expense-category-grid,
+.custom-category-editor,
+.custom-category-list {
+  contain: none !important;
+  will-change: auto !important;
+}
+
+.quick-expense-form {
+  width: 100%;
+  min-width: 0;
+  overflow: visible !important;
+}
+
+.smart-expense-line {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+
+.smart-expense-line input,
+.smart-expense-line button,
+.quick-amount-wrap,
+.quick-amounts,
+.expense-category-grid,
+.expense-category-chip,
+.custom-category-editor,
+.custom-category-list,
+.form-grid,
+.field,
+.field input,
+.field select,
+.field textarea {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* iOS Safari pays a high compositing cost for many simultaneous glass
+   layers. Preserve the dark premium look with opaque surfaces instead. */
+@supports (-webkit-touch-callout: none) {
+  * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .topbar {
+    background: linear-gradient(180deg, rgba(2,18,11,.995) 0%, rgba(2,18,11,.97) 82%, rgba(2,18,11,0) 100%) !important;
+  }
+
+  .bottom-nav {
+    background: rgba(4,21,13,.985) !important;
+    box-shadow: 0 10px 28px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.035) !important;
+  }
+
+  .hero,
+  .card,
+  .stat-card,
+  .toolbar-card,
+  .item,
+  .finance-hero,
+  .finance-card,
+  .home-metric-card,
+  .project-card,
+  .goal-card,
+  .progress-main-card {
+    box-shadow: 0 7px 20px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.025) !important;
+  }
+
+  dialog.modal::backdrop {
+    background: rgba(0,0,0,.52) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) {
+    height: min(94dvh, 860px) !important;
+  }
+
+  dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) #modalBody {
+    padding-left: 15px !important;
+    padding-right: 15px !important;
+  }
+
+  .expense-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .expense-category-chip {
+    min-height: 58px !important;
+    padding: 8px 5px !important;
+    font-size: 11px !important;
+  }
+}
+
+
+/* =========================================================
+   Alexander OS V12.7 - hidden-state and iOS scroll hotfix
+   ========================================================= */
+
+/* Author display rules were overriding the native hidden attribute.
+   This made the custom category editor and list render permanently,
+   increased the sheet height and caused expensive extra painting. */
+[hidden] {
+  display: none !important;
+}
+
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) #modalBody {
+  touch-action: pan-y !important;
+  scroll-behavior: auto !important;
+  transform: none !important;
+  overflow-anchor: none;
+}
+
+.custom-category-editor[hidden],
+.custom-category-list[hidden] {
+  display: none !important;
+}
+
+/* Keep expanded form blocks lightweight and prevent clipped outlines. */
+.custom-category-editor,
+.custom-category-list,
+.category-more {
+  content-visibility: visible;
+  overflow: visible;
+}
+
+/* The quick sheet needs no animation or promoted layers while scrolling. */
+.quick-expense-form *,
+dialog.modal:not(.workout-dialog):not(.video-workout-dialog):not(.settings-dialog) * {
+  will-change: auto !important;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .expense-category-chip,
+  .quick-amounts button,
+  .smart-expense-line button,
+  .quick-amount-wrap,
+  .custom-category-editor,
+  .custom-category-list {
+    box-shadow: none !important;
+  }
+}
