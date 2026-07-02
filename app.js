@@ -3930,3 +3930,35 @@ ${JSON.stringify(state, null, 2)}
   const hasCurrentReview = state.weeklyReviews.some(review => review.weekStart === reviewWeek);
   if (security.pinEnabled || security.faceIdEnabled) lockApp();
 })();
+
+
+/* V12.4 native app lock fixes */
+
+(function nativeAppLock(){
+  const lockHorizontal = () => {
+    if (window.scrollX !== 0) {
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: 'instant' in window ? 'instant' : 'auto' });
+    }
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+  };
+  window.addEventListener('scroll', lockHorizontal, { passive: true });
+  window.addEventListener('resize', lockHorizontal, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(lockHorizontal, 120), { passive: true });
+
+  document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+  document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+  document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+
+  window.addEventListener('load', lockHorizontal, { passive: true });
+})();
