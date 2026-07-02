@@ -1,5 +1,5 @@
-const CACHE = 'alexander-os-v12-2-layout';
-const ASSETS = ['./', './index.html', './styles.css?v=12.2.0', './app.js?v=12.2.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'alexander-os-v12-3-no-input-zoom';
+const ASSETS = ['./', './index.html', './styles.css?v=12.3.0', './app.js?v=12.3.0', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

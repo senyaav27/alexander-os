@@ -1,4 +1,4 @@
-Alexander OS V12.2 - сборка для GitHub Pages
+Alexander OS V12.3 - сборка для GitHub Pages
 
 Что исправлено:
 - Нижнее меню собрано заново как ровный iPhone tab bar из 5 одинаковых секций.

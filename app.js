@@ -111,7 +111,7 @@
 
   function freshState() {
     return {
-      version: 12.2,
+      version: 12.3,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -212,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12.2,
+      version: 12.3,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -345,7 +345,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 12.2;
+    state.version = 12.3;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -3427,7 +3427,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V12.2 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V12.3 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3763,7 +3763,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 12.2;
+      state.version = 12.3;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -3893,7 +3893,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.2.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.3.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

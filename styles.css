@@ -4042,3 +4042,49 @@ body[data-screen="life"] .floating-add {
     height: 50px !important;
   }
 }
+
+
+/* =========================================================
+   Alexander OS V12.3 - iPhone form focus without auto zoom
+   iOS Safari automatically magnifies controls below 16px.
+   Keep every editable control at 16px or larger while preserving
+   intentionally large amount fields.
+   ========================================================= */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Compact selectors still need enough physical width at 16px. */
+  .hero-month-picker input,
+  .hero-month-picker select {
+    width: 136px !important;
+    min-height: 38px !important;
+    padding: 8px 10px !important;
+    font-size: 16px !important;
+  }
+
+  .select-row select {
+    max-width: 178px;
+    min-height: 40px;
+  }
+
+  .workout-profile-grid input,
+  .workout-profile-grid select {
+    min-height: 32px;
+  }
+
+  /* Preserve the large quick-expense amount typography. */
+  .quick-amount-wrap input,
+  .quick-expense-form .quick-amount-wrap input,
+  #quickExpenseAmount {
+    font-size: 40px !important;
+  }
+}
