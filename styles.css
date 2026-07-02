@@ -4169,3 +4169,59 @@ dialog.modal {
     border-radius: 24px 24px 0 0;
   }
 }
+
+
+/* V12.5 smooth modal performance fixes */
+body.modal-open {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden !important;
+}
+dialog.modal {
+  overscroll-behavior: contain;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translate3d(-50%, 0, 0);
+  will-change: transform;
+  contain: layout paint;
+}
+.modal::backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: rgba(0, 0, 0, .54) !important;
+}
+.modal-card {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  contain: layout paint;
+}
+#modalBody {
+  overflow-x: hidden;
+}
+.modal-head,
+.modal-actions {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.quick-expense-form,
+.quick-sheet,
+.category-more,
+.expense-category-grid {
+  contain: layout paint;
+}
+.expense-category-chip,
+.quick-amounts button,
+.btn,
+.smart-expense-line button {
+  transform: translateZ(0);
+}
+@media (max-width: 520px) {
+  dialog.modal {
+    box-shadow: 0 -12px 34px rgba(0,0,0,.30);
+  }
+}

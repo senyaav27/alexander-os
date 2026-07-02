@@ -2352,14 +2352,29 @@
     }));
   }
 
+  let modalScrollLockY = 0;
+  function lockBodyForModal() {
+    modalScrollLockY = window.scrollY || window.pageYOffset || 0;
+    document.body.classList.add('modal-open');
+    document.body.style.top = `-${modalScrollLockY}px`;
+  }
+
+  function unlockBodyForModal() {
+    if (!document.body.classList.contains('modal-open')) return;
+    document.body.classList.remove('modal-open');
+    document.body.style.top = '';
+    window.scrollTo(0, modalScrollLockY || 0);
+  }
+
   function openModal(title, body, action, options = {}) {
     modalTitle.textContent = title;
     modalBody.innerHTML = body;
     modalAction = action;
     modalActions.hidden = Boolean(options.hideActions);
     modalSubmit.textContent = options.submitText || 'Сохранить';
+    lockBodyForModal();
     if (!modal.open) modal.showModal();
-    setTimeout(() => modalBody.querySelector('input, select, textarea, button')?.focus(), 50);
+    setTimeout(() => modalBody.querySelector('input, select, textarea')?.focus(), 50);
   }
 
   function closeModal() {
@@ -2367,7 +2382,10 @@
     modalForm.reset();
     modal.classList.remove('workout-dialog', 'video-workout-dialog', 'settings-dialog');
     if (modal.open) modal.close();
+    unlockBodyForModal();
   }
+
+  modal.addEventListener('close', unlockBodyForModal);
 
   function projectOptions(selectedId = '') {
     return `<option value="">Без проекта</option>${state.projects.map(project => `<option value="${project.id}" ${selectedId === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}`;
@@ -3893,7 +3911,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.3.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=12.5.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
@@ -3932,33 +3950,20 @@ ${JSON.stringify(state, null, 2)}
 })();
 
 
-/* V12.4 native app lock fixes */
 
+
+/* V12.5 native app lock and smooth modal fixes */
 (function nativeAppLock(){
   const lockHorizontal = () => {
-    if (window.scrollX !== 0) {
-      window.scrollTo({ left: 0, top: window.scrollY, behavior: 'instant' in window ? 'instant' : 'auto' });
-    }
+    if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
     document.documentElement.scrollLeft = 0;
     document.body.scrollLeft = 0;
   };
   window.addEventListener('scroll', lockHorizontal, { passive: true });
   window.addEventListener('resize', lockHorizontal, { passive: true });
   window.addEventListener('orientationchange', () => setTimeout(lockHorizontal, 120), { passive: true });
-
   document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
   document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
   document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
-  document.addEventListener('touchmove', e => {
-    if (e.touches && e.touches.length > 1) e.preventDefault();
-  }, { passive: false });
-
-  let lastTouchEnd = 0;
-  document.addEventListener('touchend', e => {
-    const now = Date.now();
-    if (now - lastTouchEnd <= 300) e.preventDefault();
-    lastTouchEnd = now;
-  }, { passive: false });
-
   window.addEventListener('load', lockHorizontal, { passive: true });
 })();
