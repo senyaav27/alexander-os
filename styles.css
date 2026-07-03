@@ -6073,3 +6073,194 @@ select option { color:var(--v13-text)!important; background:var(--v13-sheet)!imp
 .dashboard-metric-guide span { color: var(--v13-muted, var(--muted)); font-size: 10px; line-height: 1.35; }
 .home-premium-income .home-capital-goal em { color: var(--v13-accent, var(--accent)); }
 .quick-expense-form { padding-top: 2px; }
+
+
+/* =========================================================
+   Alexander OS V13.2 - iPhone native bottom tab bar
+   Fixed flush to the bottom edge, WhatsApp-style geometry.
+   ========================================================= */
+.bottom-nav {
+  position: fixed !important;
+  z-index: 1000 !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 0 !important;
+  width: min(100vw, 520px) !important;
+  max-width: 520px !important;
+  height: auto !important;
+  min-height: calc(68px + env(safe-area-inset-bottom)) !important;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  align-items: start !important;
+  gap: 0 !important;
+  margin: 0 !important;
+  padding: 7px 5px max(6px, env(safe-area-inset-bottom)) !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-top: 1px solid var(--v13-line, var(--line)) !important;
+  border-radius: 0 !important;
+  background: var(--v13-sheet, var(--surface-2)) !important;
+  box-shadow: 0 -8px 26px rgba(0, 0, 0, .16) !important;
+  transform: translateX(-50%) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  isolation: isolate !important;
+}
+
+.bottom-nav .nav-item,
+.nav-item[data-screen="dashboard"],
+.nav-item[data-screen="finance"],
+.nav-item[data-screen="tasks"],
+.nav-item[data-screen="projects"],
+.nav-item[data-screen="growth"] {
+  grid-column: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 60px !important;
+  min-height: 60px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  margin: 0 !important;
+  padding: 5px 1px 3px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--v13-muted, var(--muted)) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.bottom-nav .nav-item::before,
+.bottom-nav .nav-item::after {
+  display: none !important;
+  content: none !important;
+}
+
+.bottom-nav .nav-item svg {
+  width: 25px !important;
+  height: 25px !important;
+  flex: 0 0 25px !important;
+  margin: 0 !important;
+  stroke-width: 1.75 !important;
+  filter: none !important;
+}
+
+.bottom-nav .nav-item small {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 12px !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  color: inherit !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0 !important;
+  text-align: center !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.bottom-nav .nav-item.active {
+  color: var(--v13-accent, var(--accent)) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.bottom-nav .nav-item.active svg {
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--v13-accent, var(--accent)) 24%, transparent)) !important;
+}
+
+.bottom-nav .nav-item:active {
+  opacity: .72 !important;
+  transform: none !important;
+}
+
+:root[data-theme="black"] .bottom-nav {
+  background: #080a08 !important;
+  border-top-color: rgba(255, 255, 255, .10) !important;
+}
+
+:root[data-theme="light"] .bottom-nav {
+  background: #fbfcfb !important;
+  border-top-color: rgba(14, 37, 24, .12) !important;
+  box-shadow: 0 -8px 24px rgba(17, 36, 25, .10) !important;
+}
+
+.app-shell {
+  padding-bottom: 0 !important;
+}
+
+.content {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+}
+
+.floating-add {
+  bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+}
+
+.toast {
+  bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+}
+
+@media (max-width: 380px) {
+  .bottom-nav {
+    min-height: calc(65px + env(safe-area-inset-bottom)) !important;
+    padding-inline: 2px !important;
+  }
+  .bottom-nav .nav-item,
+  .nav-item[data-screen="dashboard"],
+  .nav-item[data-screen="finance"],
+  .nav-item[data-screen="tasks"],
+  .nav-item[data-screen="projects"],
+  .nav-item[data-screen="growth"] {
+    height: 57px !important;
+    min-height: 57px !important;
+    gap: 4px !important;
+  }
+  .bottom-nav .nav-item svg {
+    width: 23px !important;
+    height: 23px !important;
+    flex-basis: 23px !important;
+  }
+  .bottom-nav .nav-item small {
+    font-size: 9px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .bottom-nav {
+    width: min(100vw, 620px) !important;
+    max-width: 620px !important;
+    min-height: calc(57px + env(safe-area-inset-bottom)) !important;
+    padding: 3px max(5px, env(safe-area-inset-right)) max(3px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left)) !important;
+  }
+  .bottom-nav .nav-item,
+  .nav-item[data-screen="dashboard"],
+  .nav-item[data-screen="finance"],
+  .nav-item[data-screen="tasks"],
+  .nav-item[data-screen="projects"],
+  .nav-item[data-screen="growth"] {
+    height: 51px !important;
+    min-height: 51px !important;
+    gap: 2px !important;
+  }
+  .bottom-nav .nav-item svg {
+    width: 21px !important;
+    height: 21px !important;
+    flex-basis: 21px !important;
+  }
+  .bottom-nav .nav-item small {
+    font-size: 8px !important;
+  }
+  .content {
+    padding-bottom: calc(70px + env(safe-area-inset-bottom)) !important;
+  }
+  .floating-add {
+    bottom: calc(65px + env(safe-area-inset-bottom)) !important;
+  }
+}

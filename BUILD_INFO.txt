@@ -1,5 +1,5 @@
-Alexander OS V13.1
-Build: 13.1.0-home-builder
+Alexander OS V13.2
+Build: 13.2.0-whatsapp-tabbar
 
 Default home layout:
 - hero: capital
