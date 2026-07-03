@@ -111,14 +111,14 @@
 
   function freshState() {
     return {
-      version: 12.8,
+      version: 13.0,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
         monthlyIncomeTarget: 200000,
         cushionTarget: 200000,
         monthlyExpenseLimit: 70000,
-        theme: 'emerald',
+        theme: 'black',
         notificationsEnabled: false,
         lastBackup: null,
         lastChatGPTExport: null,
@@ -136,7 +136,7 @@
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
         { id: uid(), title: 'Проверить финансы и обязательные платежи', projectId: '', project: 'Финансы', priority: 'medium', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'weekly', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null }
       ],
-      accounts: [{ id: uid(), name: 'Основной баланс', type: 'card', balance: 0, isDefault: true }],
+      accounts: [{ id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true }],
       transactions: [],
       obligations: [],
       projects: [],
@@ -183,7 +183,7 @@
     let defaultAccount = target.accounts.find(account => account.isDefault);
     if (!defaultAccount) defaultAccount = target.accounts.find(account => account.name === 'Основной баланс');
     if (!defaultAccount) {
-      defaultAccount = { id: uid(), name: 'Основной баланс', type: 'card', balance: 0, isDefault: true };
+      defaultAccount = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true };
       target.accounts.unshift(defaultAccount);
     }
 
@@ -201,7 +201,7 @@
   function getDefaultAccount() {
     let account = state.accounts.find(item => item.isDefault) || state.accounts[0];
     if (!account) {
-      account = { id: uid(), name: 'Основной баланс', type: 'card', balance: 0, isDefault: true };
+      account = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true };
       state.accounts.push(account);
     }
     return account;
@@ -212,7 +212,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12.8,
+      version: 12.9,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -236,14 +236,22 @@
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : []
     };
 
-    if (!['emerald', 'graphite', 'light', 'future', 'neonlime'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'emerald';
+    if (!['emerald', 'black', 'graphite', 'light', 'future', 'neonlime'].includes(result.profile.theme)) result.profile.theme = result.profile.theme === 'light' ? 'light' : 'black';
+    // V13: пользователь просил отдельную настоящую чёрную тему. Старую выбранную
+    // графитовую тему один раз переводим в чёрную, остальные темы сохраняем.
+    if (Number(raw.version || 0) < 13 && result.profile.theme === 'graphite') result.profile.theme = 'black';
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
       ...task,
       status: task.status || (task.done ? 'done' : 'todo')
     }));
-    result.accounts = result.accounts.map(account => ({ type: 'card', balance: 0, ...account, balance: Number(account.balance || 0) }));
+    result.accounts = result.accounts.map(account => {
+      const normalizedName = String(account?.name || '').trim().toLowerCase();
+      const inferredPurpose = /подушк/.test(normalizedName) ? 'cushion' : 'general';
+      const purpose = account?.purpose === 'cushion' ? 'cushion' : inferredPurpose;
+      return { type: 'card', purpose, balance: 0, ...account, purpose, balance: Number(account.balance || 0) };
+    });
     result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', createdAt: new Date().toISOString(), ...tx, amount: Number(tx.amount || 0) }));
     result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
     result.projects = result.projects.map(project => ({ type: 'client', value: 0, status: 'active', paymentStatus: 'not_due', paymentDate: '', next: '', notes: '', startDate: '', ...project, value: Number(project.value || 0) }));
@@ -345,7 +353,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 12.8;
+    state.version = 13.0;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -373,7 +381,7 @@
   function applyTheme() {
     if (state.profile.theme === 'future') state.profile.theme = 'emerald';
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
-    const themeColors = { emerald: '#03130b', graphite: '#090d12', light: '#f3f6f4', neonlime: '#121416' };
+    const themeColors = { emerald: '#03130b', black: '#000000', graphite: '#090d12', light: '#f3f6f4', neonlime: '#121416' };
     $('meta[name="theme-color"]')?.setAttribute('content', themeColors[state.profile.theme] || themeColors.emerald);
   }
 
@@ -719,7 +727,7 @@
     test('Парсер быстрого расхода', () => { const first = parseSmartExpense('550 обед'); const second = parseSmartExpense('Кредит 1 300'); const third = parseSmartExpense('кофе 1,5к'); return first.amount === 550 && first.category === 'cafes' && second.amount === 1300 && second.category === 'debt_payment' && third.amount === 1500 && third.category === 'cafes'; });
     test('Календарный диапазон', () => monthRange(monthKey(new Date())).end >= monthRange(monthKey(new Date())).start);
     test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
-    test('Темы интерфейса', () => ['emerald','graphite','light','future','neonlime'].includes(state.profile.theme));
+    test('Темы интерфейса', () => ['emerald','black','graphite','light','future','neonlime'].includes(state.profile.theme));
     test('Уникальность счетов', () => new Set(state.accounts.map(item => item.id)).size === state.accounts.length);
     test('Категории расходов', () => new Set(expenseCategoryList().map(([id]) => id)).size === expenseCategoryList().length);
     test('Безопасное восстановление', () => Boolean(normalizeState(clone(state)).accounts.length));
@@ -803,6 +811,24 @@
     return state.obligations.filter(item => item.status === 'open' && (!type || item.type === type));
   }
 
+  function isCushionAccount(account) {
+    if (!account) return false;
+    const purpose = String(account.purpose || '').trim().toLowerCase();
+    const normalizedName = String(account.name || '').trim().toLowerCase().replace(/ё/g, 'е');
+    return purpose === 'cushion' || /(^|\s)(финансовая\s+)?подушк/.test(normalizedName);
+  }
+
+  function getCushionAccounts() {
+    return state.accounts.filter(isCushionAccount);
+  }
+
+  function getCushionBalance() {
+    // Важно: здесь нет fallback на общий капитал, ликвидные средства или основной счёт.
+    // На главной показывается только сумма счетов, помеченных как «Финансовая подушка»
+    // или содержащих слово «Подушка» в названии.
+    return sum(getCushionAccounts().map(account => Number(account.balance || 0)));
+  }
+
   function getFinanceAnalytics(selectedMonthKey = null) {
     const now = new Date();
     const selectedKey = selectedMonthKey || monthKey(now);
@@ -822,6 +848,7 @@
     const assets = sum(state.accounts.map(account => account.balance));
     const investment = sum(state.accounts.filter(account => account.type === 'investment').map(account => account.balance));
     const liquid = sum(state.accounts.filter(account => account.type !== 'investment').map(account => account.balance));
+    const cushion = getCushionBalance();
     const debt = sum(openObligations('debt').map(item => item.amount));
     const expected = sum(openObligations('expected').map(item => item.amount));
     const upcomingPayments = sum(openObligations().filter(item => item.type !== 'expected' && item.dueDate && dateInRange(item.dueDate, now, addDays(now, 30))).map(item => item.amount));
@@ -850,7 +877,7 @@
     const remainingLimit = Number(state.profile.monthlyExpenseLimit || 0) - monthExpense;
 
     return {
-      assets, investment, liquid, debt, expected, capital, upcomingPayments, freeBalance,
+      assets, investment, liquid, cushion, debt, expected, capital, upcomingPayments, freeBalance,
       weekExpense, previousWeekExpense,
       monthExpense, previousMonthExpense,
       monthIncome, previousMonthIncome,
@@ -1251,7 +1278,7 @@
     const finance = getFinanceAnalytics();
     const taskScore = taskCompletionToday();
     const habitScore = habitCompletionToday();
-    const cushionScore = Math.max(0, Math.min(100, Math.round(finance.liquid / Math.max(1, state.profile.cushionTarget) * 100)));
+    const cushionScore = Math.max(0, Math.min(100, Math.round(finance.cushion / Math.max(1, state.profile.cushionTarget) * 100)));
     return Math.round(taskScore * 0.4 + habitScore * 0.25 + cushionScore * 0.35);
   }
 
@@ -1301,13 +1328,11 @@
       .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1) || (a.due || '9999').localeCompare(b.due || '9999'))
       .slice(0, 3);
     const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-    const capitalSeries = estimatedCapitalSeries(6);
-    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
     const greetingHour = new Date().getHours();
     const greeting = greetingHour < 12 ? 'Доброе утро' : greetingHour < 18 ? 'Добрый день' : 'Добрый вечер';
     const capitalProgress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, Number(state.profile.capitalTarget || 1)) * 100)));
     const incomeProgress = Math.max(0, Math.min(100, Math.round(analytics.monthIncome / Math.max(1, Number(state.profile.monthlyIncomeTarget || 1)) * 100)));
-    const cushionProgress = Math.max(0, Math.min(100, Math.round(analytics.liquid / Math.max(1, Number(state.profile.cushionTarget || 1)) * 100)));
+    const cushionProgress = Math.max(0, Math.min(100, Math.round(analytics.cushion / Math.max(1, Number(state.profile.cushionTarget || 1)) * 100)));
     const featuredHabit = state.habits.find(habit => /чтен/i.test(habit.title)) || state.habits[0];
 
     app.innerHTML = `
@@ -1316,16 +1341,16 @@
         <h2>${greeting}, ${escapeHtml(state.profile.name || 'Пользователь')}! <span>👋</span></h2>
       </section>
 
-      <section class="card home-premium-capital">
+      <section class="card home-premium-capital home-premium-cushion" data-value-source="cushion-accounts">
         <div class="home-capital-head">
-          <div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div>
-          <span class="compare ${capitalChange === null ? 'neutral' : capitalChange >= 0 ? 'good' : 'bad'}">${capitalChange === null ? 'первая база' : `${capitalChange >= 0 ? '↑' : '↓'} ${Math.abs(capitalChange)}%`}</span>
+          <div><small>Финансовая подушка</small><strong id="dashboardCushionValue">${money(analytics.cushion)}</strong></div>
+          <span class="compare ${cushionProgress >= 100 ? 'good' : 'neutral'}">${cushionProgress}% цели</span>
         </div>
-        <div class="premium-progress hero-progress" aria-label="Прогресс капитала ${capitalProgress}%">
-          <i style="width:${capitalProgress}%"></i>
-          <b style="left:${Math.max(8, Math.min(92, capitalProgress))}%">${capitalProgress}%</b>
+        <div class="premium-progress hero-progress" aria-label="Прогресс финансовой подушки ${cushionProgress}%">
+          <i style="width:${cushionProgress}%"></i>
+          <b style="left:${Math.max(8, Math.min(92, cushionProgress))}%">${cushionProgress}%</b>
         </div>
-        <div class="home-capital-goal"><span>Цель: ${money(state.profile.capitalTarget)}</span><em>${capitalProgress >= 100 ? 'Цель достигнута' : 'До цели ' + money(Math.max(0, state.profile.capitalTarget - analytics.capital))}</em></div>
+        <div class="home-capital-goal"><span>Цель: ${money(state.profile.cushionTarget)}</span><em>${cushionProgress >= 100 ? 'Подушка сформирована' : 'Осталось ' + money(Math.max(0, state.profile.cushionTarget - analytics.cushion))}</em></div>
       </section>
 
       <section class="home-goal-grid">
@@ -1336,10 +1361,10 @@
           <div class="premium-progress compact"><i style="width:${incomeProgress}%"></i></div>
         </button>
         <button type="button" class="card home-goal-card" data-go="finance">
-          <div class="home-goal-title"><span>⚑</span><small>Финансовая подушка</small><strong>${cushionProgress}%</strong></div>
-          <b>${money(analytics.liquid)}</b>
-          <p>из ${money(state.profile.cushionTarget)}</p>
-          <div class="premium-progress compact"><i style="width:${cushionProgress}%"></i></div>
+          <div class="home-goal-title"><span>↗</span><small>Общий капитал</small><strong>${capitalProgress}%</strong></div>
+          <b>${money(analytics.capital)}</b>
+          <p>из ${money(state.profile.capitalTarget)}</p>
+          <div class="premium-progress compact"><i style="width:${capitalProgress}%"></i></div>
         </button>
       </section>
 
@@ -1532,7 +1557,8 @@
     const sources = incomeSourceTotals(analytics);
     const progress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, state.profile.capitalTarget) * 100)));
     const capitalSeries = estimatedCapitalSeries(6);
-    const capitalChange = percentageChange(capitalSeries.at(-1)?.capital || 0, capitalSeries.at(-2)?.capital || 0);
+    const previousCapital = capitalSeries.length > 1 ? Number(capitalSeries.at(-2)?.capital || 0) : 0;
+    const capitalChange = previousCapital ? percentageChange(analytics.capital, previousCapital) : null;
     const monthIsCurrent = analytics.selectedMonth === monthKey(new Date());
     app.innerHTML = `
       <section class="hero compact finance-hero finance-master-card">
@@ -1704,9 +1730,10 @@
   }
 
   function accountItem(account) {
-    return `<div class="item">
-      <div class="account-icon">${account.type === 'cash' ? '₽' : account.type === 'savings' ? '◆' : account.type === 'investment' ? '↗' : '▣'}</div>
-      <div class="item-main"><div class="item-title">${escapeHtml(account.name)}${account.isDefault ? ' <span class="badge">основной</span>' : ''}</div><div class="item-meta">${accountTypeText(account.type)}</div></div>
+    const cushion = isCushionAccount(account);
+    return `<div class="item ${cushion ? 'cushion-account' : ''}">
+      <div class="account-icon">${cushion ? '⚑' : account.type === 'cash' ? '₽' : account.type === 'savings' ? '◆' : account.type === 'investment' ? '↗' : '▣'}</div>
+      <div class="item-main"><div class="item-title">${escapeHtml(account.name)}${account.isDefault ? ' <span class="badge">основной</span>' : ''}${cushion ? ' <span class="badge cushion-badge">подушка</span>' : ''}</div><div class="item-meta">${accountTypeText(account.type)}</div></div>
       <div class="amount-block"><strong>${money(account.balance)}</strong><div class="item-actions"><button class="mini-btn edit-account" type="button" data-id="${account.id}">✎</button><button class="mini-btn delete-account" type="button" data-id="${account.id}">×</button></div></div>
     </div>`;
   }
@@ -2581,8 +2608,9 @@
       <div class="field"><label>Название</label><input name="name" required value="${escapeHtml(item?.name || '')}" placeholder="Основная карта, наличные, вклад"></div>
       <div class="form-grid">
         <div class="field"><label>Тип</label><select name="type"><option value="card" ${!item || item?.type === 'card' ? 'selected' : ''}>Карта</option><option value="cash" ${item?.type === 'cash' ? 'selected' : ''}>Наличные</option><option value="savings" ${item?.type === 'savings' ? 'selected' : ''}>Накопительный счёт</option><option value="investment" ${item?.type === 'investment' ? 'selected' : ''}>Инвестиции</option></select></div>
-        <div class="field"><label>Текущий баланс, ₽</label><input name="balance" type="number" step="0.01" required value="${item?.balance ?? 0}"></div>
+        <div class="field"><label>Назначение</label><select name="purpose"><option value="general" ${!item || !isCushionAccount(item) ? 'selected' : ''}>Обычный счёт</option><option value="cushion" ${item && isCushionAccount(item) ? 'selected' : ''}>Финансовая подушка</option></select></div>
       </div>
+      <div class="field"><label>Текущий баланс, ₽</label><input name="balance" type="number" step="0.01" required value="${item?.balance ?? 0}"></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.balance = Number(data.balance || 0);
@@ -3119,9 +3147,9 @@
 
   function openAppearanceSettings() {
     openModal('Внешний вид', `
-      <p class="modal-description">Четыре темы используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
+      <p class="modal-description">Пять тем используют одну систему контрастов, поэтому текст, поля и кнопки остаются читаемыми.</p>
       <div class="theme-picker exact-theme-picker" role="radiogroup">
-        ${[['emerald','Изумрудная','#42e778','Основная'],['neonlime','Неон лайм','#d7ff19','Контрастная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
+        ${[['black','Чёрная','#000000','Премиальная'],['emerald','Изумрудная','#42e778','Основная'],['neonlime','Неон лайм','#d7ff19','Контрастная'],['graphite','Графитовая','#59636b','Нейтральная'],['light','Светлая','#f5f7f6','Дневная']].map(([key,label,color,subtitle]) => `<button type="button" class="theme-choice ${state.profile.theme === key ? 'active' : ''}" data-theme-modal="${key}" role="radio" aria-checked="${state.profile.theme === key}"><span style="--theme-dot:${color}"></span><b>${label}</b><small>${subtitle}</small></button>`).join('')}
       </div>`, null, { hideActions: true });
     $$('[data-theme-modal]', modalBody).forEach(button => button.addEventListener('click', () => {
       state.profile.theme = button.dataset.themeModal;
@@ -3511,7 +3539,7 @@
         <section class="card v11-theme-card">
           <div class="section-head"><div><h2>Внешний вид</h2><small>Тема меняется мгновенно</small></div></div>
           <div class="v11-theme-picker">
-            ${[['emerald','Изумрудная','#33e36d'],['neonlime','Неон лайм','#d7ff19'],['graphite','Графитовая','#364149'],['light','Светлая','#f2efe5']].map(([key,label,color]) => `<button type="button" class="v11-theme-choice ${state.profile.theme===key?'active':''}" data-theme-inline="${key}"><span style="--theme-swatch:${color}"></span><b>${label}</b></button>`).join('')}
+            ${[['black','Чёрная','#000000'],['emerald','Изумрудная','#33e36d'],['neonlime','Неон лайм','#d7ff19'],['graphite','Графитовая','#364149'],['light','Светлая','#f2efe5']].map(([key,label,color]) => `<button type="button" class="v11-theme-choice ${state.profile.theme===key?'active':''}" data-theme-inline="${key}"><span style="--theme-swatch:${color}"></span><b>${label}</b></button>`).join('')}
           </div>
         </section>
 
@@ -3541,7 +3569,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V12.8 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V13.0.1 · Video Workouts RU</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3758,6 +3786,7 @@
 - Общий капитал: ${money(analytics.capital)}
 - Активы: ${money(analytics.assets)}
 - Долги: ${money(analytics.debt)}
+- Финансовая подушка: ${money(analytics.cushion)}
 - Ликвидно: ${money(analytics.liquid)}
 - Свободный остаток после ближайших платежей: ${money(analytics.freeBalance)}
 - Доход за текущий месяц: ${money(analytics.monthIncome)}
@@ -3877,7 +3906,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 12.8;
+      state.version = 13.0;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -4008,7 +4037,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=12.8.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=13.0.1');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

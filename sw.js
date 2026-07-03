@@ -1,7 +1,7 @@
-const CACHE = 'alexander-os-v13-0-black-cushion';
+const CACHE = 'alexander-os-v13-0-1-clean-deploy';
 const ASSETS = [
-  './', './index.html', './styles-v13.css', './app-v13.js',
-  './manifest.webmanifest?v=13.0.0', './icon-192.png', './icon-512.png'
+  './', './index.html', './styles.css?v=13.0.1', './app.js?v=13.0.1',
+  './manifest.webmanifest?v=13.0.1', './icon-192.png', './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -50,6 +50,6 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
     for (const client of list) if ('focus' in client) return client.focus();
-    return clients.openWindow('./?build=13.0.0');
+    return clients.openWindow('./?build=13.0.1');
   }));
 });
