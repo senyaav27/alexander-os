@@ -1,8 +1,10 @@
-Alexander OS V13.0
-Build: 13.0.0-black-cushion
+Alexander OS V13.1
+Build: 13.1.0-home-builder
 
-Главная карточка «Финансовая подушка» использует только:
-- счета с назначением purpose = cushion;
-- счета, в названии которых есть слово «Подушка».
+Default home layout:
+- hero: capital
+- left: monthly income goal
+- right: financial cushion
 
-Общий капитал рассчитывается отдельно и не подменяет сумму подушки.
+Quick expense recognition UI: removed
+Monthly income targets: enabled

@@ -1,96 +1,12 @@
-Alexander OS V13.0 - QA
+Alexander OS V13.1 - QA
 
-[
-  {
-    "theme": "black",
-    "body": "rgb(0, 0, 0)",
-    "card": "rgb(12, 15, 12)",
-    "text": "rgb(247, 250, 247)",
-    "muted": "rgb(146, 154, 147)",
-    "overflow": 0,
-    "cushion": "50 000 ₽",
-    "version": "V13.0",
-    "textContrast": 18.34,
-    "mutedContrast": 6.67,
-    "themeChoices": 5,
-    "overflow_finance": 0,
-    "overflow_tasks": 0,
-    "overflow_projects": 0,
-    "overflow_growth": 0,
-    "errors": []
-  },
-  {
-    "theme": "emerald",
-    "body": "rgb(3, 19, 11)",
-    "card": "rgb(13, 41, 28)",
-    "text": "rgb(247, 255, 249)",
-    "muted": "rgb(160, 182, 166)",
-    "overflow": 0,
-    "cushion": "50 000 ₽",
-    "version": "V13.0",
-    "textContrast": 15.27,
-    "mutedContrast": 7.21,
-    "themeChoices": 5,
-    "overflow_finance": 0,
-    "overflow_tasks": 0,
-    "overflow_projects": 0,
-    "overflow_growth": 0,
-    "errors": []
-  },
-  {
-    "theme": "neonlime",
-    "body": "rgb(16, 18, 20)",
-    "card": "rgb(28, 32, 35)",
-    "text": "rgb(250, 251, 247)",
-    "muted": "rgb(166, 170, 171)",
-    "overflow": 0,
-    "cushion": "50 000 ₽",
-    "version": "V13.0",
-    "textContrast": 15.78,
-    "mutedContrast": 7.0,
-    "themeChoices": 5,
-    "overflow_finance": 0,
-    "overflow_tasks": 0,
-    "overflow_projects": 0,
-    "overflow_growth": 0,
-    "errors": []
-  },
-  {
-    "theme": "graphite",
-    "body": "rgb(9, 13, 17)",
-    "card": "rgb(21, 28, 33)",
-    "text": "rgb(245, 248, 250)",
-    "muted": "rgb(156, 167, 174)",
-    "overflow": 0,
-    "cushion": "50 000 ₽",
-    "version": "V13.0",
-    "textContrast": 16.14,
-    "mutedContrast": 7.01,
-    "themeChoices": 5,
-    "overflow_finance": 0,
-    "overflow_tasks": 0,
-    "overflow_projects": 0,
-    "overflow_growth": 0,
-    "errors": []
-  },
-  {
-    "theme": "light",
-    "body": "rgb(238, 243, 239)",
-    "card": "rgb(255, 255, 255)",
-    "text": "rgb(16, 32, 24)",
-    "muted": "rgb(101, 115, 107)",
-    "overflow": 0,
-    "cushion": "50 000 ₽",
-    "version": "V13.0",
-    "textContrast": 16.91,
-    "mutedContrast": 4.98,
-    "themeChoices": 5,
-    "overflow_finance": 0,
-    "overflow_tasks": 0,
-    "overflow_projects": 0,
-    "overflow_growth": 0,
-    "errors": []
-  }
-]
-
-JS errors: none
+PASS: JavaScript syntax check
+PASS: manifest JSON validation
+PASS: default dashboard layout is capital / income / cushion
+PASS: dashboard layout settings handler exists
+PASS: duplicate dashboard metrics are rejected
+PASS: monthly income targets are stored by YYYY-MM
+PASS: quick expense recognition input is removed
+PASS: quick expense recognition button is removed
+PASS: service worker cache bumped to V13.1
+PASS: no horizontal-layout changes introduced

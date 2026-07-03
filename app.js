@@ -90,34 +90,20 @@
   ];
   const ALL_CATEGORIES = new Map([...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES]);
   const CATEGORY_REDUCIBLE = new Set(['cafes', 'taxi', 'subscriptions', 'clothing', 'entertainment', 'travel', 'other_expense']);
-  const BUILTIN_EXPENSE_KEYWORDS = {
-    groceries: ['продукт', 'супермаркет', 'магазин', 'пятероч', 'перекрест', 'вкусвилл', 'магнит', 'ашан', 'лента', 'самокат', 'овощ', 'молок', 'хлеб'],
-    cafes: ['кафе', 'ресторан', 'кофе', 'обед', 'ужин', 'завтрак', 'доставка еды', 'яндекс еда', 'delivery club', 'бургер', 'пицц', 'суши'],
-    transport: ['метро', 'автобус', 'транспорт', 'проезд', 'электрич', 'бензин', 'топливо', 'парковк', 'мойка'],
-    taxi: ['такси', 'яндекс go', 'яндекс такси', 'uber', 'ситимобил'],
-    housing: ['аренд', 'жкх', 'квартплат', 'коммунал', 'квартир', 'электричеств', 'вода', 'газ', 'ремонт дома'],
-    subscriptions: ['подписк', 'интернет', 'мобильная связь', 'связь', 'телефон', 'spotify', 'youtube', 'apple music', 'icloud', 'telegram premium'],
-    health: ['аптек', 'врач', 'анализ', 'лекар', 'стоматолог', 'клиник', 'медицин', 'витамин'],
-    clothing: ['одежд', 'обув', 'куртк', 'футболк', 'джинс', 'рубашк', 'кроссовк'],
-    entertainment: ['кино', 'игр', 'развлеч', 'концерт', 'театр', 'аттракцион'],
-    education: ['курс', 'книга', 'обучен', 'skillbox', 'университет', 'лекци'],
-    business: ['реклама', 'директ', 'домен', 'хостинг', 'сервис', 'crm', 'подрядчик', 'дизайнер', 'маркетинг'],
-    gifts: ['подарок', 'цветы', 'сюрприз'],
-    debt_payment: ['кредит', 'займ', 'долг', 'ипотек', 'рассрочк', 'платеж банку', 'погашен'],
-    travel: ['билет', 'отель', 'гостиниц', 'поездк', 'путешеств', 'авиабилет', 'тур'],
-    other_expense: []
-  };
-  const EXPENSE_STOP_WORDS = new Set(['расход', 'покупка', 'оплата', 'заплатил', 'заплатила', 'сегодня', 'вчера', 'руб', 'рубль', 'рублей', 'р', 'на', 'за', 'для', 'и', 'в', 'во', 'по', 'от']);
 
   function freshState() {
     return {
-      version: 13.0,
+      version: 13.1,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
         monthlyIncomeTarget: 200000,
+        monthlyIncomeTargets: {},
         cushionTarget: 200000,
         monthlyExpenseLimit: 70000,
+        dashboardHeroMetric: 'capital',
+        dashboardLeftMetric: 'income',
+        dashboardRightMetric: 'cushion',
         theme: 'black',
         notificationsEnabled: false,
         lastBackup: null,
@@ -212,7 +198,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 12.9,
+      version: 13.1,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -240,6 +226,19 @@
     // V13: пользователь просил отдельную настоящую чёрную тему. Старую выбранную
     // графитовую тему один раз переводим в чёрную, остальные темы сохраняем.
     if (Number(raw.version || 0) < 13 && result.profile.theme === 'graphite') result.profile.theme = 'black';
+
+    result.profile.monthlyIncomeTargets = result.profile.monthlyIncomeTargets && typeof result.profile.monthlyIncomeTargets === 'object' && !Array.isArray(result.profile.monthlyIncomeTargets)
+      ? result.profile.monthlyIncomeTargets
+      : {};
+    const dashboardDefaults = { hero: 'capital', left: 'income', right: 'cushion' };
+    const allowedDashboardMetrics = new Set(['capital', 'income', 'cushion']);
+    const selectedDashboardMetrics = [result.profile.dashboardHeroMetric, result.profile.dashboardLeftMetric, result.profile.dashboardRightMetric];
+    const dashboardIsValid = selectedDashboardMetrics.every(metric => allowedDashboardMetrics.has(metric)) && new Set(selectedDashboardMetrics).size === 3;
+    if (!dashboardIsValid) {
+      result.profile.dashboardHeroMetric = dashboardDefaults.hero;
+      result.profile.dashboardLeftMetric = dashboardDefaults.left;
+      result.profile.dashboardRightMetric = dashboardDefaults.right;
+    }
 
     result.tasks = result.tasks.map(task => ({
       projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
@@ -353,7 +352,7 @@
   }
 
   function saveState(options = {}) {
-    state.version = 13.0;
+    state.version = 13.1;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -489,70 +488,6 @@
     const duplicate = findDuplicateTransaction(candidate, excludeId);
     if (!duplicate) return true;
     return confirm(`Похожая операция уже существует: «${duplicate.title}», ${money(duplicate.amount)}, ${longDateText(duplicate.date)}. Добавить ещё одну?`);
-  }
-
-  function smartExpenseCategory(textValue) {
-    const text = normalizeExpenseText(textValue);
-    if (!text) return state.profile.lastExpenseCategory || 'other_expense';
-    let best = { id: state.profile.lastExpenseCategory || 'other_expense', score: 0, longest: 0 };
-    expenseCategoryList().forEach(([categoryId]) => {
-      let score = 0;
-      let longest = 0;
-      const customPriority = categoryId.startsWith('custom_') ? 12 : 0;
-      expenseCategoryKeywords(categoryId).forEach(keyword => {
-        if (!keyword) return;
-        if (text === keyword) {
-          score += 100 + keyword.length + customPriority;
-          longest = Math.max(longest, keyword.length);
-          return;
-        }
-        if (text.includes(keyword)) {
-          score += 20 + Math.min(keyword.length, 18) + customPriority;
-          longest = Math.max(longest, keyword.length);
-          return;
-        }
-        const keywordTokens = keyword.split(' ').filter(Boolean);
-        if (keywordTokens.length > 1 && keywordTokens.every(token => text.includes(token))) {
-          score += 12 + keywordTokens.length * 3 + customPriority;
-          longest = Math.max(longest, keyword.length);
-        }
-      });
-      if (score > best.score || (score === best.score && longest > best.longest)) best = { id: categoryId, score, longest };
-    });
-    return best.score > 0 ? best.id : (state.profile.lastExpenseCategory || 'other_expense');
-  }
-
-  function parseSmartAmount(rawValue) {
-    const raw = normalizeExpenseText(rawValue).replace(/ /g, ' ');
-    const regex = /(\d{1,3}(?:\s\d{3})+|\d+(?:[.,]\d{1,2})?)\s*(тыс(?:\.|яч[аи]?)?|к|k|₽|р(?:\.|уб(?:\.|ля|лей)?)?)?/giu;
-    const candidates = [];
-    let match;
-    while ((match = regex.exec(raw))) {
-      const compact = match[1].replace(/\s/g, '').replace(',', '.');
-      let value = Number(compact);
-      const suffix = String(match[2] || '').toLowerCase();
-      if (!Number.isFinite(value)) continue;
-      if (/^(тыс|к|k)/i.test(suffix)) value *= 1000;
-      const yearLike = Number.isInteger(value) && value >= 2000 && value <= 2100 && !suffix;
-      const score = (suffix ? 5 : 0) + (value >= 10 ? 2 : 0) + (value >= 100 ? 1 : 0) - (yearLike ? 4 : 0);
-      candidates.push({ value, score, index: match.index, raw: match[0] });
-    }
-    if (!candidates.length) return { amount: 0, matched: '' };
-    candidates.sort((a, b) => b.score - a.score || b.value - a.value || a.index - b.index);
-    return { amount: Math.round(candidates[0].value * 100) / 100, matched: candidates[0].raw };
-  }
-
-  function parseSmartExpense(value) {
-    const raw = String(value || '').trim();
-    const amountResult = parseSmartAmount(raw);
-    const escaped = amountResult.matched.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const title = raw
-      .replace(escaped ? new RegExp(escaped, 'i') : /$^/, ' ')
-      .replace(/\b(руб(?:лей|ля)?|р|₽)\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const cleanedTitle = title || 'Расход';
-    return { amount: amountResult.amount, title: cleanedTitle, category: smartExpenseCategory(cleanedTitle) };
   }
 
   function createCustomExpenseCategory(nameValue, keywordsValue = '') {
@@ -724,7 +659,6 @@
     test('Основной счёт существует', () => Boolean(getDefaultAccount()?.id));
     test('Финансовая аналитика', () => Number.isFinite(getFinanceAnalytics().capital));
     test('Экспортируемая копия', () => validateBackupData(extractBackupData(createBackupPayload(state))));
-    test('Парсер быстрого расхода', () => { const first = parseSmartExpense('550 обед'); const second = parseSmartExpense('Кредит 1 300'); const third = parseSmartExpense('кофе 1,5к'); return first.amount === 550 && first.category === 'cafes' && second.amount === 1300 && second.category === 'debt_payment' && third.amount === 1500 && third.category === 'cafes'; });
     test('Календарный диапазон', () => monthRange(monthKey(new Date())).end >= monthRange(monthKey(new Date())).start);
     test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
     test('Темы интерфейса', () => ['emerald','black','graphite','light','future','neonlime'].includes(state.profile.theme));
@@ -968,33 +902,6 @@
       .replace(/[^a-zа-я0-9+.,₽\s-]/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-  }
-
-  function expensePhraseTokens(value) {
-    return normalizeExpenseText(value)
-      .split(' ')
-      .map(token => token.replace(/^[+.,-]+|[+.,-]+$/g, ''))
-      .filter(token => token.length >= 3 && !/^\d/.test(token) && !EXPENSE_STOP_WORDS.has(token));
-  }
-
-  function expenseCategoryKeywords(categoryId) {
-    const custom = customExpenseCategoryById(categoryId);
-    const aliases = Array.isArray(state.profile.expenseCategoryAliases?.[categoryId]) ? state.profile.expenseCategoryAliases[categoryId] : [];
-    const base = custom ? [custom.name, ...(custom.keywords || [])] : [categoryLabel(categoryId), ...(BUILTIN_EXPENSE_KEYWORDS[categoryId] || [])];
-    return [...new Set([...base, ...aliases].map(normalizeExpenseText).filter(Boolean))];
-  }
-
-  function learnExpenseCategory(value, categoryId) {
-    const tokens = expensePhraseTokens(value).slice(0, 8);
-    if (!tokens.length || !categoryId) return;
-    const custom = customExpenseCategoryById(categoryId);
-    if (custom) {
-      custom.keywords = [...new Set([...(custom.keywords || []), ...tokens])].slice(0, 30);
-      return;
-    }
-    state.profile.expenseCategoryAliases ||= {};
-    const current = Array.isArray(state.profile.expenseCategoryAliases[categoryId]) ? state.profile.expenseCategoryAliases[categoryId] : [];
-    state.profile.expenseCategoryAliases[categoryId] = [...new Set([...current, ...tokens])].slice(-30);
   }
 
   function accountTypeText(type) {
@@ -1321,6 +1228,84 @@
     </section>`;
   }
 
+  const DASHBOARD_METRIC_OPTIONS = [
+    ['capital', 'Общий капитал'],
+    ['income', 'Цель дохода'],
+    ['cushion', 'Финансовая подушка']
+  ];
+
+  function getIncomeTargetForMonth(monthValue = monthKey(new Date())) {
+    const monthlyTargets = state.profile.monthlyIncomeTargets || {};
+    const selected = Number(monthlyTargets[monthValue]);
+    return Number.isFinite(selected) && selected > 0 ? selected : Number(state.profile.monthlyIncomeTarget || 0);
+  }
+
+  function dashboardLayout() {
+    const layout = {
+      hero: state.profile.dashboardHeroMetric || 'capital',
+      left: state.profile.dashboardLeftMetric || 'income',
+      right: state.profile.dashboardRightMetric || 'cushion'
+    };
+    const values = [layout.hero, layout.left, layout.right];
+    const allowed = new Set(DASHBOARD_METRIC_OPTIONS.map(([key]) => key));
+    if (!values.every(value => allowed.has(value)) || new Set(values).size !== 3) {
+      return { hero: 'capital', left: 'income', right: 'cushion' };
+    }
+    return layout;
+  }
+
+  function dashboardMetricData(key, analytics) {
+    const incomeTarget = getIncomeTargetForMonth();
+    const metrics = {
+      capital: {
+        key: 'capital', label: 'Общий капитал', icon: '↗', value: analytics.capital,
+        target: Number(state.profile.capitalTarget || 0), suffix: '',
+        source: 'Сумма счетов минус открытые долги'
+      },
+      income: {
+        key: 'income', label: 'Цель дохода', icon: '◎', value: analytics.monthIncome,
+        target: incomeTarget, suffix: ' в месяц',
+        source: 'Доходы за текущий месяц'
+      },
+      cushion: {
+        key: 'cushion', label: 'Финансовая подушка', icon: '⚑', value: analytics.cushion,
+        target: Number(state.profile.cushionTarget || 0), suffix: '',
+        source: 'Только счета с назначением «Подушка»'
+      }
+    };
+    const metric = metrics[key] || metrics.capital;
+    metric.progress = Math.max(0, Math.min(100, Math.round(metric.value / Math.max(1, metric.target || 1) * 100)));
+    metric.remaining = Math.max(0, metric.target - metric.value);
+    return metric;
+  }
+
+  function dashboardHeroMarkup(metric) {
+    return `<section class="card home-premium-capital home-premium-${metric.key}" data-value-source="${metric.key}">
+      <div class="home-capital-head">
+        <div><small>${metric.label}</small><strong>${money(metric.value)}</strong></div>
+        <span class="compare ${metric.progress >= 100 ? 'good' : 'neutral'}">${metric.progress}% цели</span>
+      </div>
+      <div class="premium-progress hero-progress" aria-label="${metric.label}: ${metric.progress}%">
+        <i style="width:${metric.progress}%"></i>
+        <b style="left:${Math.max(8, Math.min(92, metric.progress))}%">${metric.progress}%</b>
+      </div>
+      <div class="home-capital-goal"><span>Цель: ${money(metric.target)}${metric.suffix}</span><em>${metric.progress >= 100 ? 'Цель достигнута' : 'Осталось ' + money(metric.remaining)}</em></div>
+    </section>`;
+  }
+
+  function dashboardSmallMetricMarkup(metric) {
+    return `<button type="button" class="card home-goal-card" data-go="finance" data-home-metric="${metric.key}">
+      <div class="home-goal-title"><span>${metric.icon}</span><small>${metric.label}</small><strong>${metric.progress}%</strong></div>
+      <b>${money(metric.value)}</b>
+      <p>из ${money(metric.target)}${metric.suffix}</p>
+      <div class="premium-progress compact"><i style="width:${metric.progress}%"></i></div>
+    </button>`;
+  }
+
+  function dashboardMetricOptionsMarkup(selected) {
+    return DASHBOARD_METRIC_OPTIONS.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+  }
+
   function renderDashboard() {
     const analytics = getFinanceAnalytics();
     const mainTasks = state.tasks
@@ -1330,9 +1315,10 @@
     const upcoming = openObligations().filter(item => item.dueDate && dateInRange(item.dueDate, new Date(), addDays(new Date(), 14))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
     const greetingHour = new Date().getHours();
     const greeting = greetingHour < 12 ? 'Доброе утро' : greetingHour < 18 ? 'Добрый день' : 'Добрый вечер';
-    const capitalProgress = Math.max(0, Math.min(100, Math.round(analytics.capital / Math.max(1, Number(state.profile.capitalTarget || 1)) * 100)));
-    const incomeProgress = Math.max(0, Math.min(100, Math.round(analytics.monthIncome / Math.max(1, Number(state.profile.monthlyIncomeTarget || 1)) * 100)));
-    const cushionProgress = Math.max(0, Math.min(100, Math.round(analytics.cushion / Math.max(1, Number(state.profile.cushionTarget || 1)) * 100)));
+    const layout = dashboardLayout();
+    const heroMetric = dashboardMetricData(layout.hero, analytics);
+    const leftMetric = dashboardMetricData(layout.left, analytics);
+    const rightMetric = dashboardMetricData(layout.right, analytics);
     const featuredHabit = state.habits.find(habit => /чтен/i.test(habit.title)) || state.habits[0];
 
     app.innerHTML = `
@@ -1341,31 +1327,11 @@
         <h2>${greeting}, ${escapeHtml(state.profile.name || 'Пользователь')}! <span>👋</span></h2>
       </section>
 
-      <section class="card home-premium-capital home-premium-cushion" data-value-source="cushion-accounts">
-        <div class="home-capital-head">
-          <div><small>Финансовая подушка</small><strong id="dashboardCushionValue">${money(analytics.cushion)}</strong></div>
-          <span class="compare ${cushionProgress >= 100 ? 'good' : 'neutral'}">${cushionProgress}% цели</span>
-        </div>
-        <div class="premium-progress hero-progress" aria-label="Прогресс финансовой подушки ${cushionProgress}%">
-          <i style="width:${cushionProgress}%"></i>
-          <b style="left:${Math.max(8, Math.min(92, cushionProgress))}%">${cushionProgress}%</b>
-        </div>
-        <div class="home-capital-goal"><span>Цель: ${money(state.profile.cushionTarget)}</span><em>${cushionProgress >= 100 ? 'Подушка сформирована' : 'Осталось ' + money(Math.max(0, state.profile.cushionTarget - analytics.cushion))}</em></div>
-      </section>
+      ${dashboardHeroMarkup(heroMetric)}
 
       <section class="home-goal-grid">
-        <button type="button" class="card home-goal-card" data-go="finance">
-          <div class="home-goal-title"><span>◎</span><small>Цель дохода</small><strong>${incomeProgress}%</strong></div>
-          <b>${money(analytics.monthIncome)}</b>
-          <p>из ${money(state.profile.monthlyIncomeTarget)} в месяц</p>
-          <div class="premium-progress compact"><i style="width:${incomeProgress}%"></i></div>
-        </button>
-        <button type="button" class="card home-goal-card" data-go="finance">
-          <div class="home-goal-title"><span>↗</span><small>Общий капитал</small><strong>${capitalProgress}%</strong></div>
-          <b>${money(analytics.capital)}</b>
-          <p>из ${money(state.profile.capitalTarget)}</p>
-          <div class="premium-progress compact"><i style="width:${capitalProgress}%"></i></div>
-        </button>
+        ${dashboardSmallMetricMarkup(leftMetric)}
+        ${dashboardSmallMetricMarkup(rightMetric)}
       </section>
 
       <section class="card home-week-expense-card">
@@ -2355,18 +2321,15 @@
       <div class="category-tools"><button type="button" id="toggleCustomCategory">+ Своя категория</button>${custom.length ? '<button type="button" id="toggleCustomCategoryList">Мои категории</button>' : ''}</div>
       <div class="custom-category-editor" id="customCategoryEditor" hidden>
         <div class="field"><label>Название категории</label><input id="customCategoryName" type="text" maxlength="32" placeholder="Например, Автомобиль"></div>
-        <div class="field"><label>Слова для распознавания <small>через запятую</small></label><input id="customCategoryKeywords" type="text" placeholder="бензин, мойка, сервис"></div>
         <button type="button" class="btn primary full" id="saveCustomCategory">Добавить категорию</button>
       </div>
-      <div class="custom-category-list" id="customCategoryList" hidden>${custom.map(category => `<div><span><b>${escapeHtml(category.name)}</b><small>${escapeHtml((category.keywords || []).slice(0, 5).join(', ') || 'Распознавание по названию')}</small></span><button type="button" data-delete-custom-category="${category.id}" aria-label="Удалить ${escapeHtml(category.name)}">×</button></div>`).join('')}</div>`;
+      <div class="custom-category-list" id="customCategoryList" hidden>${custom.map(category => `<div><span><b>${escapeHtml(category.name)}</b><small>Своя категория расходов</small></span><button type="button" data-delete-custom-category="${category.id}" aria-label="Удалить ${escapeHtml(category.name)}">×</button></div>`).join('')}</div>`;
   }
 
   function openQuickExpenseModal() {
     const initialCategory = expenseCategoryList().some(([id]) => id === state.profile.lastExpenseCategory) ? state.profile.lastExpenseCategory : 'groceries';
     openModal('Быстрый расход', `
       <div class="quick-expense-form">
-        <div class="smart-expense-line"><input id="smartExpenseInput" type="text" inputmode="text" autocomplete="off" placeholder="Например: кредит 1300"><button type="button" id="parseSmartExpense">Распознать</button></div>
-        <small class="smart-expense-hint">Можно написать «кредит 1300», «1,5к кофе» или название своей категории.</small>
         <div class="quick-amount-wrap"><span>−</span><input id="quickExpenseAmount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"><b>₽</b></div>
         <div class="quick-amounts"><button type="button" data-add-amount="100">+100</button><button type="button" data-add-amount="500">+500</button><button type="button" data-add-amount="1000">+1 000</button></div>
         <input type="hidden" name="category" id="quickExpenseCategory" value="${escapeHtml(initialCategory)}">
@@ -2376,7 +2339,7 @@
           <div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div>
         </div>
         <div class="field"><label>Комментарий <small>необязательно</small></label><input name="title" placeholder="Например, кредит или такси"></div>
-        <button class="quick-more-actions" type="button" id="openOtherActions">Доход, задача или счёт</button>
+        <button class="quick-more-actions" type="button" id="openOtherActions">Доход, задача или проект</button>
       </div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
@@ -2390,7 +2353,6 @@
       applyTransactionToAccount(transaction, 1);
       state.profile.lastExpenseCategory = category;
       state.profile.lastExpenseAccountId = transaction.accountId;
-      learnExpenseCategory(`${$('#smartExpenseInput')?.value || ''} ${title}`, category);
       return true;
     }, { submitText: 'Сохранить расход' });
 
@@ -2413,7 +2375,7 @@
       });
       $('#saveCustomCategory')?.addEventListener('click', () => {
         try {
-          const categoryId = createCustomExpenseCategory($('#customCategoryName')?.value, $('#customCategoryKeywords')?.value);
+          const categoryId = createCustomExpenseCategory($('#customCategoryName')?.value, '');
           $('#quickExpenseCategory').value = categoryId;
           area.innerHTML = quickExpenseCategoryMarkup(categoryId);
           bindCategoryArea();
@@ -2432,20 +2394,7 @@
       }));
     };
 
-    const applySmartExpense = () => {
-      const parsed = parseSmartExpense($('#smartExpenseInput')?.value || '');
-      if (!parsed.amount) { toast('Укажи сумму, например: кредит 1300'); return; }
-      $('#quickExpenseAmount').value = parsed.amount;
-      const titleInput = modalForm.elements.title;
-      if (titleInput) titleInput.value = parsed.title;
-      $('#quickExpenseCategory').value = parsed.category;
-      $('#quickCategoryArea').innerHTML = quickExpenseCategoryMarkup(parsed.category);
-      bindCategoryArea();
-      toast(`Распознано: ${money(parsed.amount)} · ${categoryLabel(parsed.category)}`);
-    };
     bindCategoryArea();
-    $('#parseSmartExpense')?.addEventListener('click', applySmartExpense);
-    $('#smartExpenseInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applySmartExpense(); } });
     $$('[data-add-amount]', modalBody).forEach(button => button.addEventListener('click', () => {
       const input = $('#quickExpenseAmount');
       input.value = Number(input.value || 0) + Number(button.dataset.addAmount || 0);
@@ -3132,15 +3081,68 @@
   }
 
   function openFinancePreferences() {
+    const selectedIncomeMonth = monthKey(new Date());
+    const selectedIncomeTarget = getIncomeTargetForMonth(selectedIncomeMonth);
     openModal('Финансы и цели', `
-      <div class="form-grid"><div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div><div class="field"><label>Цель дохода, ₽/мес.</label><input name="monthlyIncomeTarget" type="number" min="0" value="${state.profile.monthlyIncomeTarget}"></div></div>
-      <div class="form-grid"><div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div><div class="field"><label>Лимит расходов, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div></div>
+      <div class="settings-help-card">
+        <b>Как работает цель дохода</b>
+        <p>Фактический доход считается автоматически из операций типа «Доход» за выбранный месяц. Здесь ты задаёшь только план.</p>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Месяц цели дохода</label><input name="incomeTargetMonth" id="incomeTargetMonth" type="month" value="${selectedIncomeMonth}"></div>
+        <div class="field"><label>Цель дохода на месяц, ₽</label><input name="monthlyIncomeTarget" id="monthlyIncomeTarget" type="number" min="0" value="${selectedIncomeTarget}"></div>
+      </div>
+      <div class="form-grid"><div class="field"><label>Цель капитала, ₽</label><input name="capitalTarget" type="number" min="0" value="${state.profile.capitalTarget}"></div><div class="field"><label>Цель подушки, ₽</label><input name="cushionTarget" type="number" min="0" value="${state.profile.cushionTarget}"></div></div>
+      <div class="field"><label>Лимит расходов на месяц, ₽</label><input name="monthlyExpenseLimit" type="number" min="0" value="${state.profile.monthlyExpenseLimit}"></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
+      const incomeMonth = String(data.incomeTargetMonth || monthKey(new Date()));
+      const incomeTarget = Number(data.monthlyIncomeTarget || 0);
+      state.profile.monthlyIncomeTargets = state.profile.monthlyIncomeTargets || {};
+      state.profile.monthlyIncomeTargets[incomeMonth] = incomeTarget;
+      if (incomeMonth === monthKey(new Date())) state.profile.monthlyIncomeTarget = incomeTarget;
       state.profile.capitalTarget = Number(data.capitalTarget || 0);
-      state.profile.monthlyIncomeTarget = Number(data.monthlyIncomeTarget || 0);
       state.profile.cushionTarget = Number(data.cushionTarget || 0);
       state.profile.monthlyExpenseLimit = Number(data.monthlyExpenseLimit || 0);
+      return true;
+    });
+    $('#incomeTargetMonth')?.addEventListener('change', event => {
+      const input = $('#monthlyIncomeTarget');
+      if (input) input.value = getIncomeTargetForMonth(event.target.value);
+    });
+  }
+
+  function openHomePreferences() {
+    const layout = dashboardLayout();
+    openModal('Настройка главной', `
+      <div class="settings-help-card">
+        <b>Расположение финансовых блоков</b>
+        <p>Выбери, что показывать в большой карточке и в двух компактных карточках. Один показатель нельзя поставить дважды.</p>
+      </div>
+      <div class="dashboard-slot-preview">
+        <div class="dashboard-slot-preview-hero">Большая карточка</div>
+        <div>Левая карточка</div><div>Правая карточка</div>
+      </div>
+      <div class="field"><label>Большая карточка</label><select name="dashboardHeroMetric">${dashboardMetricOptionsMarkup(layout.hero)}</select></div>
+      <div class="form-grid">
+        <div class="field"><label>Левая карточка</label><select name="dashboardLeftMetric">${dashboardMetricOptionsMarkup(layout.left)}</select></div>
+        <div class="field"><label>Правая карточка</label><select name="dashboardRightMetric">${dashboardMetricOptionsMarkup(layout.right)}</select></div>
+      </div>
+      <div class="dashboard-metric-guide">
+        <p><b>Общий капитал</b><span>Все счета минус открытые долги.</span></p>
+        <p><b>Финансовая подушка</b><span>Только счета с назначением «Финансовая подушка».</span></p>
+        <p><b>Цель дохода</b><span>Доходы текущего месяца относительно плана.</span></p>
+      </div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      const values = [data.dashboardHeroMetric, data.dashboardLeftMetric, data.dashboardRightMetric];
+      if (new Set(values).size !== 3) {
+        alert('Выбери три разных показателя, чтобы на главной не было повторов.');
+        return false;
+      }
+      state.profile.dashboardHeroMetric = data.dashboardHeroMetric;
+      state.profile.dashboardLeftMetric = data.dashboardLeftMetric;
+      state.profile.dashboardRightMetric = data.dashboardRightMetric;
       return true;
     });
   }
@@ -3545,7 +3547,8 @@
 
         <section class="settings-list card exact-settings-list">
           <button class="settings-row" type="button" id="securitySettings"><i class="settings-icon">◇</i><span>Безопасность<small>${securityStatus} · автоблокировка</small></span><b>›</b></button>
-          <button class="settings-row" type="button" id="financePreferences"><i class="settings-icon">▥</i><span>Финансы<small>Валюта, категории и цели</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="homePreferences"><i class="settings-icon">⌂</i><span>Главная страница<small>Настроить расположение финансовых блоков</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="financePreferences"><i class="settings-icon">▥</i><span>Финансы и цели<small>Доход по месяцам, капитал, подушка и лимит</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="notificationSettings"><i class="settings-icon">♢</i><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
         </section>
 
@@ -3569,11 +3572,12 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V13.0.1 · Video Workouts RU</p>
+        <p class="app-version">Alexander OS V13.1 · Home Builder</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
     $('#securitySettings')?.addEventListener('click', openSecuritySettings);
+    $('#homePreferences')?.addEventListener('click', openHomePreferences);
     $('#financePreferences')?.addEventListener('click', openFinancePreferences);
     $('#lockNow')?.addEventListener('click', () => lockApp());
     $('#openKnowledgeBase')?.addEventListener('click', openKnowledgeBase);
@@ -3777,7 +3781,7 @@
 
 - Имя: ${state.profile.name || 'Не указано'}
 - Цель капитала: ${money(state.profile.capitalTarget)}
-- Цель дохода в месяц: ${money(state.profile.monthlyIncomeTarget)}
+- Цель дохода в месяц: ${money(getIncomeTargetForMonth())}
 - Цель подушки: ${money(state.profile.cushionTarget)}
 - Лимит расходов в месяц: ${money(state.profile.monthlyExpenseLimit)}
 
@@ -3906,7 +3910,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 13.0;
+      state.version = 13.1;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -4037,7 +4041,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=13.0.1');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=13.1.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

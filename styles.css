@@ -6016,3 +6016,60 @@ select option { color:var(--v13-text)!important; background:var(--v13-sheet)!imp
 @media (max-width:520px) {
   .theme-picker,.v11-theme-picker,.exact-theme-picker { grid-template-columns:repeat(2,minmax(0,1fr))!important; }
 }
+
+
+/* Alexander OS V13.1 - configurable home and clearer finance settings */
+.settings-help-card {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 16px;
+  padding: 14px 15px;
+  border: 1px solid var(--v13-line, var(--line));
+  border-radius: 17px;
+  background: var(--v13-card-2, var(--surface-2));
+}
+.settings-help-card b { color: var(--v13-text, var(--text)); font-size: 14px; }
+.settings-help-card p { margin: 0; color: var(--v13-muted, var(--muted)); font-size: 11px; line-height: 1.45; }
+.dashboard-slot-preview {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.dashboard-slot-preview > div {
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px solid var(--v13-line, var(--line));
+  border-radius: 15px;
+  background: var(--v13-card, var(--surface));
+  color: var(--v13-muted, var(--muted));
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+.dashboard-slot-preview .dashboard-slot-preview-hero {
+  grid-column: 1 / -1;
+  min-height: 82px;
+  border-color: var(--v13-line-strong, var(--line-strong));
+  color: var(--v13-accent, var(--accent));
+}
+.dashboard-metric-guide {
+  display: grid;
+  gap: 8px;
+  margin-top: 15px;
+}
+.dashboard-metric-guide p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--v13-line, var(--line));
+  border-radius: 14px;
+  background: var(--v13-card-2, var(--surface-2));
+}
+.dashboard-metric-guide b { color: var(--v13-text, var(--text)); font-size: 11px; }
+.dashboard-metric-guide span { color: var(--v13-muted, var(--muted)); font-size: 10px; line-height: 1.35; }
+.home-premium-income .home-capital-goal em { color: var(--v13-accent, var(--accent)); }
+.quick-expense-form { padding-top: 2px; }
