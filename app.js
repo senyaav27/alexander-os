@@ -82,6 +82,44 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[char]);
   const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
 
+  const transactionDelta = tx => Number(tx?.amount || 0) * (tx?.type === 'income' ? 1 : -1);
+
+  function accountLedgerDelta(target, accountId) {
+    return sum((target?.transactions || []).filter(tx => tx.accountId === accountId).map(transactionDelta));
+  }
+
+  function normalizeAccountLedger(target) {
+    target.accounts ||= [];
+    target.transactions ||= [];
+    target.accounts.forEach(account => {
+      const current = Number(account.balance || 0);
+      if (!Number.isFinite(Number(account.baseBalance))) {
+        account.baseBalance = current - accountLedgerDelta(target, account.id);
+      } else {
+        account.baseBalance = Number(account.baseBalance || 0);
+        account.balance = account.baseBalance + accountLedgerDelta(target, account.id);
+      }
+    });
+    return target;
+  }
+
+  function recalculateAccountBalances(target = state) {
+    if (!target?.accounts) return target;
+    target.accounts.forEach(account => {
+      if (!Number.isFinite(Number(account.baseBalance))) account.baseBalance = Number(account.balance || 0) - accountLedgerDelta(target, account.id);
+      account.baseBalance = Number(account.baseBalance || 0);
+      account.balance = account.baseBalance + accountLedgerDelta(target, account.id);
+    });
+    return target;
+  }
+
+  function setAccountCurrentBalance(account, currentBalance) {
+    if (!account) return;
+    const desired = Number(currentBalance || 0);
+    account.baseBalance = desired - accountLedgerDelta(state, account.id);
+    account.balance = desired;
+  }
+
   const INCOME_CATEGORIES = [
     ['salary', 'Зарплата'], ['client', 'Клиенты'], ['project_income', 'Свои проекты'], ['shop', 'Магазин'], ['refund', 'Возврат'], ['gift_income', 'Подарок'], ['other_income', 'Другой доход']
   ];
@@ -93,7 +131,7 @@
 
   function freshState() {
     return {
-      version: 13.2,
+      version: 13.3,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -122,7 +160,7 @@
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
         { id: uid(), title: 'Проверить финансы и обязательные платежи', projectId: '', project: 'Финансы', priority: 'medium', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'weekly', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null }
       ],
-      accounts: [{ id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true }],
+      accounts: [{ id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', baseBalance: 0, balance: 0, isDefault: true }],
       transactions: [],
       obligations: [],
       projects: [],
@@ -169,7 +207,7 @@
     let defaultAccount = target.accounts.find(account => account.isDefault);
     if (!defaultAccount) defaultAccount = target.accounts.find(account => account.name === 'Основной баланс');
     if (!defaultAccount) {
-      defaultAccount = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true };
+      defaultAccount = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', baseBalance: 0, balance: 0, isDefault: true };
       target.accounts.unshift(defaultAccount);
     }
 
@@ -187,7 +225,7 @@
   function getDefaultAccount() {
     let account = state.accounts.find(item => item.isDefault) || state.accounts[0];
     if (!account) {
-      account = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', balance: 0, isDefault: true };
+      account = { id: uid(), name: 'Основной баланс', type: 'card', purpose: 'general', baseBalance: 0, balance: 0, isDefault: true };
       state.accounts.push(account);
     }
     return account;
@@ -198,7 +236,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 13.2,
+      version: 13.3,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -249,7 +287,7 @@
       const normalizedName = String(account?.name || '').trim().toLowerCase();
       const inferredPurpose = /подушк/.test(normalizedName) ? 'cushion' : 'general';
       const purpose = account?.purpose === 'cushion' ? 'cushion' : inferredPurpose;
-      return { type: 'card', purpose, balance: 0, ...account, purpose, balance: Number(account.balance || 0) };
+      return { type: 'card', purpose, baseBalance: null, balance: 0, ...account, purpose, balance: Number(account.balance || 0), baseBalance: Number.isFinite(Number(account.baseBalance)) ? Number(account.baseBalance) : null };
     });
     result.transactions = result.transactions.map(tx => ({ notes: '', accountId: '', category: tx.type === 'income' ? 'other_income' : 'other_expense', necessity: tx.type === 'expense' ? 'unknown' : '', scope: 'personal', projectId: '', createdAt: new Date().toISOString(), ...tx, amount: Number(tx.amount || 0) }));
     result.obligations = result.obligations.map(item => ({ status: 'open', type: 'payment', notes: '', dueDate: '', ...item, amount: Number(item.amount || 0) }));
@@ -278,7 +316,7 @@
     result.profile.expenseCategoryAliases = result.profile.expenseCategoryAliases && typeof result.profile.expenseCategoryAliases === 'object' ? result.profile.expenseCategoryAliases : {};
     result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Силовая тренировка', duration: Number(log.duration || 45), effort: Number(log.effort || 3), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
     result.workoutFavorites = [...new Set(result.workoutFavorites.map(String))];
-    return ensureAccountIntegrity(result);
+    return normalizeAccountLedger(ensureAccountIntegrity(result));
   }
 
   function migrateState(raw) {
@@ -352,7 +390,8 @@
   }
 
   function saveState(options = {}) {
-    state.version = 13.2;
+    recalculateAccountBalances();
+    state.version = 13.3;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -663,6 +702,7 @@
     test('План тренировок', () => workoutPlan(state.workoutProfile).length >= 2);
     test('Темы интерфейса', () => ['emerald','black','graphite','light','future','neonlime'].includes(state.profile.theme));
     test('Уникальность счетов', () => new Set(state.accounts.map(item => item.id)).size === state.accounts.length);
+    test('Баланс счетов совпадает с операциями', () => state.accounts.every(account => Math.abs(Number(account.balance || 0) - (Number(account.baseBalance || 0) + accountLedgerDelta(state, account.id))) < 0.01));
     test('Категории расходов', () => new Set(expenseCategoryList().map(([id]) => id)).size === expenseCategoryList().length);
     test('Безопасное восстановление', () => Boolean(normalizeState(clone(state)).accounts.length));
     return tests;
@@ -1154,6 +1194,7 @@
   }
 
   function render() {
+    recalculateAccountBalances();
     applyTheme();
     $('#todayLabel').textContent = fullDate();
     document.body.dataset.screen = currentScreen;
@@ -2276,7 +2317,8 @@
     if (!transaction.accountId || !state.accounts.some(item => item.id === transaction.accountId)) transaction.accountId = getDefaultAccount().id;
     const account = state.accounts.find(item => item.id === transaction.accountId);
     if (!account) return;
-    const delta = Number(transaction.amount || 0) * (transaction.type === 'income' ? 1 : -1) * direction;
+    if (!Number.isFinite(Number(account.baseBalance))) account.baseBalance = Number(account.balance || 0) - accountLedgerDelta(state, account.id);
+    const delta = transactionDelta(transaction) * direction;
     account.balance = Number(account.balance || 0) + delta;
   }
 
@@ -2293,10 +2335,12 @@
     }
     if (!confirm(`Удалить счёт «${account.name}»? Связанные операции будут перенесены на основной счёт.`)) return;
     let fallback = state.accounts.find(item => item.id !== id && item.isDefault) || state.accounts.find(item => item.id !== id);
-    fallback.balance = Number(fallback.balance || 0) + Number(account.balance || 0);
+    recalculateAccountBalances();
+    fallback.baseBalance = Number(fallback.baseBalance || 0) + Number(account.baseBalance || 0);
     state.transactions.filter(tx => tx.accountId === id).forEach(tx => { tx.accountId = fallback.id; });
     state.accounts = state.accounts.filter(item => item.id !== id);
     if (account.isDefault) fallback.isDefault = true;
+    recalculateAccountBalances();
     saveState();
     render();
   }
@@ -2562,9 +2606,16 @@
       <div class="field"><label>Текущий баланс, ₽</label><input name="balance" type="number" step="0.01" required value="${item?.balance ?? 0}"></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
-      data.balance = Number(data.balance || 0);
+      const desiredBalance = Number(data.balance || 0);
       if (!data.name.trim()) return false;
-      if (item) Object.assign(item, data); else state.accounts.push({ id: uid(), ...data });
+      if (item) {
+        delete data.balance;
+        Object.assign(item, data);
+        setAccountCurrentBalance(item, desiredBalance);
+      } else {
+        state.accounts.push({ id: uid(), ...data, baseBalance: desiredBalance, balance: desiredBalance });
+      }
+      recalculateAccountBalances();
       return true;
     });
   }
@@ -3572,7 +3623,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V13.2 · WhatsApp Tab Bar</p>
+        <p class="app-version">Alexander OS V13.3 · WhatsApp Tab Bar</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3910,7 +3961,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 13.2;
+      state.version = 13.3;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -4041,7 +4092,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=13.2.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=13.3.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

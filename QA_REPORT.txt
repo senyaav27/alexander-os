@@ -1,4 +1,4 @@
-Alexander OS V13.2 - QA
+Alexander OS V13.3 - QA
 
 PASS: JavaScript syntax check
 PASS: manifest JSON validation
@@ -8,5 +8,5 @@ PASS: duplicate dashboard metrics are rejected
 PASS: monthly income targets are stored by YYYY-MM
 PASS: quick expense recognition input is removed
 PASS: quick expense recognition button is removed
-PASS: service worker cache bumped to V13.2
+PASS: service worker cache bumped to V13.3
 PASS: no horizontal-layout changes introduced
