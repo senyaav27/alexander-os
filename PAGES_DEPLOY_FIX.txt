@@ -1,0 +1,12 @@
+Alexander OS V13.5 - GitHub Pages workflow fix
+
+Что добавлено:
+- .nojekyll
+- .github/workflows/deploy-pages.yml
+- явный деплой через GitHub Actions
+- concurrency, чтобы старые деплои не конфликтовали с новыми
+
+Важно:
+1. Загрузить содержимое архива в корень репозитория.
+2. GitHub → Settings → Pages → Build and deployment → Source → GitHub Actions.
+3. После этого запускать workflow "Deploy Alexander OS to GitHub Pages".

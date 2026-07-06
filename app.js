@@ -4092,7 +4092,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=13.4.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=13.5.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
