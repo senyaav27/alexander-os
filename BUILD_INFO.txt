@@ -1,10 +1,11 @@
-Alexander OS V13.3
-Build: 13.3.0-whatsapp-tabbar
+Alexander OS V13.4
+Build: 13.4.0-startup-splash
 
-Default home layout:
-- hero: capital
-- left: monthly income goal
-- right: financial cushion
+Добавлен экран загрузки при запуске приложения:
+- мгновенный чёрный фон;
+- логотип S;
+- подпись Alexander OS;
+- мягкий зелёный индикатор загрузки;
+- автоматическое скрытие после готовности приложения.
 
-Quick expense recognition UI: removed
-Monthly income targets: enabled
+Финансовая логика V13.3 сохранена.

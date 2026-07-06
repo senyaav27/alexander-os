@@ -131,7 +131,7 @@
 
   function freshState() {
     return {
-      version: 13.3,
+      version: 13.4,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -236,7 +236,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 13.3,
+      version: 13.4,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -391,7 +391,7 @@
 
   function saveState(options = {}) {
     recalculateAccountBalances();
-    state.version = 13.3;
+    state.version = 13.4;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -3623,7 +3623,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V13.3 · WhatsApp Tab Bar</p>
+        <p class="app-version">Alexander OS V13.4 · WhatsApp Tab Bar</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3961,7 +3961,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 13.3;
+      state.version = 13.4;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -4092,7 +4092,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=13.3.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=13.4.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
@@ -4122,12 +4122,27 @@ ${JSON.stringify(state, null, 2)}
     }
   });
 
+
+  function hideStartupSplash() {
+    window.__AOS_APP_READY = true;
+    const splash = document.getElementById('appSplash');
+    if (!splash) return;
+    const startedAt = Number(window.__AOS_SPLASH_STARTED_AT || Date.now());
+    const minVisibleMs = 640;
+    const delay = Math.max(80, minVisibleMs - (Date.now() - startedAt));
+    window.setTimeout(() => {
+      splash.classList.add('splash-hidden');
+      window.setTimeout(() => splash.remove(), 420);
+    }, delay);
+  }
+
   saveState({ history: false, snapshot: false });
   ensureRecurringObligations();
   render();
   const reviewWeek = localISO(startOfWeek(new Date()));
   const hasCurrentReview = state.weeklyReviews.some(review => review.weekStart === reviewWeek);
   if (security.pinEnabled || security.faceIdEnabled) lockApp();
+  requestAnimationFrame(hideStartupSplash);
 })();
 
 

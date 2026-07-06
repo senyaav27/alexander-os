@@ -1,12 +1,9 @@
-Alexander OS V13.3 - QA
+Alexander OS V13.4 - QA
 
-PASS: JavaScript syntax check
-PASS: manifest JSON validation
-PASS: default dashboard layout is capital / income / cushion
-PASS: dashboard layout settings handler exists
-PASS: duplicate dashboard metrics are rejected
-PASS: monthly income targets are stored by YYYY-MM
-PASS: quick expense recognition input is removed
-PASS: quick expense recognition button is removed
-PASS: service worker cache bumped to V13.3
-PASS: no horizontal-layout changes introduced
+PASS: JavaScript syntax checked.
+PASS: startup splash markup exists in index.html.
+PASS: critical splash CSS is inline in head.
+PASS: splash is removed after render.
+PASS: manifest build bumped to 13.4.0.
+PASS: service worker cache bumped to V13.4.
+PASS: finance ledger fix from V13.3 preserved.
