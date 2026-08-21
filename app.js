@@ -2202,7 +2202,7 @@
     const nextCapitalStep = Math.ceil((analytics.capital + 1) / 50000) * 50000;
     const capitalStepLeft = Math.max(0, nextCapitalStep - analytics.capital);
     return `<section class="section compact-section strategy-modules" id="strategyModules">
-      <div class="section-head"><div><h2>Операционный центр</h2><small>Деньги, клиенты, дисциплина и ревизия</small></div><span class="badge">V14.1</span></div>
+      <div class="section-head"><div><h2>Операционный центр</h2><small>Деньги, клиенты, дисциплина и ревизия</small></div><span class="badge">V14.2</span></div>
       <div class="strategy-grid">
         <button class="card strategy-card" type="button" id="openBudgetModule"><span class="strategy-icon">◷</span><small>До зарплаты</small><strong>${money(budget.daily)} / день</strong><p>${budget.days} дн. · резерв ${money(budget.obligatory)}</p></button>
         <button class="card strategy-card" type="button" id="openIncomePlanModule"><span class="strategy-icon">↗</span><small>План дохода</small><strong>${money(incomeGap)}</strong><p>нужно добрать · рычаги ${money(leverPotential)}</p></button>
@@ -3721,7 +3721,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V14.1 · Strategy Modules</p>
+        <p class="app-version">Alexander OS V14.2 · Strategy Modules</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -4192,7 +4192,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=14.1.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=14.2.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

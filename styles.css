@@ -6268,7 +6268,7 @@ select option { color:var(--v13-text)!important; background:var(--v13-sheet)!imp
 
 
 
-/* V14.1 Compact Island UI - premium black dynamic widgets */
+/* V14.2 Compact Island UI - premium black dynamic widgets */
 :root {
   --island-bg: #050706;
   --island-card: rgba(8, 11, 9, .96);
@@ -6680,7 +6680,7 @@ body[data-screen="dashboard"] .section-head h2 {
 
 
 
-/* V14.1 Strategy modules and body tracker */
+/* V14.2 Strategy modules and body tracker */
 .strategy-modules { margin-top: 14px; }
 .strategy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .strategy-card { min-height:128px; padding:15px!important; text-align:left; border-radius:22px!important; }
@@ -6700,3 +6700,299 @@ body[data-screen="dashboard"] .section-head h2 {
 .utility-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--app-accent); }
 .btn.full { width:100%; margin-top:10px; }
 @media (max-width: 430px) { .strategy-grid { grid-template-columns:1fr 1fr; gap:9px; } .strategy-card { min-height:118px; padding:13px!important; } .strategy-card strong { font-size:21px; } .body-stats { grid-template-columns:repeat(2,minmax(0,1fr))!important; } }
+
+
+
+
+/* V14.2 Typography Tune - softer readable scale */
+:root {
+  --aos-title-tight: -.045em;
+  --aos-number-tight: -.055em;
+}
+
+/* Header: calmer, less heavy */
+.topbar {
+  padding: calc(16px + env(safe-area-inset-top)) 18px 13px !important;
+}
+
+.brand-mark {
+  width: 40px !important;
+  height: 40px !important;
+  flex-basis: 40px !important;
+  border-radius: 14px !important;
+  font-size: 23px !important;
+}
+
+.brand-line {
+  font-size: 11px !important;
+  font-weight: 820 !important;
+}
+
+.brand-line span {
+  font-size: 9px !important;
+  padding: 2px 6px !important;
+}
+
+.topbar-copy .eyebrow,
+.eyebrow {
+  font-size: 10px !important;
+  letter-spacing: .11em !important;
+}
+
+.topbar-copy h1 {
+  font-size: clamp(24px, 6.4vw, 32px) !important;
+  line-height: .96 !important;
+  letter-spacing: var(--aos-title-tight) !important;
+}
+
+.global-add.top-add {
+  width: 46px !important;
+  height: 46px !important;
+}
+
+.global-add.top-add svg {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* Dashboard greeting: still premium, no screaming */
+body[data-screen="dashboard"] .premium-home-welcome {
+  margin: 2px 0 15px !important;
+}
+
+body[data-screen="dashboard"] .premium-home-welcome small {
+  font-size: 13px !important;
+  line-height: 1.15 !important;
+}
+
+body[data-screen="dashboard"] .premium-home-welcome h2 {
+  font-size: clamp(25px, 7vw, 35px) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -.052em !important;
+  max-width: 92% !important;
+}
+
+body[data-screen="dashboard"] .premium-home-welcome h2 span {
+  font-size: .78em !important;
+}
+
+/* Main island card */
+body[data-screen="dashboard"] .home-premium-capital {
+  min-height: 146px !important;
+  padding: 20px 20px 18px !important;
+  border-radius: 27px !important;
+}
+
+body[data-screen="dashboard"] .home-capital-head small {
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+}
+
+body[data-screen="dashboard"] .home-capital-head strong {
+  margin-top: 7px !important;
+  font-size: clamp(38px, 10.7vw, 54px) !important;
+  line-height: .94 !important;
+  letter-spacing: -.065em !important;
+  font-weight: 760 !important;
+}
+
+body[data-screen="dashboard"] .compare {
+  padding: 7px 11px !important;
+  font-size: 13px !important;
+  line-height: 1.05 !important;
+}
+
+body[data-screen="dashboard"] .home-premium-capital .hero-progress {
+  margin-top: 20px !important;
+}
+
+body[data-screen="dashboard"] .premium-progress > b {
+  min-width: 42px !important;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+}
+
+body[data-screen="dashboard"] .home-capital-goal {
+  margin-top: 14px !important;
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+}
+
+/* Small metric cards */
+body[data-screen="dashboard"] .home-goal-grid {
+  gap: 10px !important;
+  margin-top: 10px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-card {
+  min-height: 122px !important;
+  padding: 14px !important;
+  border-radius: 22px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title {
+  grid-template-columns: 36px 1fr auto !important;
+  gap: 9px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title > span {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 13px !important;
+  font-size: 19px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title small {
+  font-size: 11px !important;
+  line-height: 1.18 !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title strong {
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+body[data-screen="dashboard"] .home-goal-card > b {
+  margin-top: 14px !important;
+  font-size: clamp(22px, 6.6vw, 31px) !important;
+  line-height: 1 !important;
+  letter-spacing: -.055em !important;
+  font-weight: 740 !important;
+}
+
+body[data-screen="dashboard"] .home-goal-card p {
+  margin: 4px 0 12px !important;
+  font-size: 10.5px !important;
+}
+
+/* Small strategy cards added in V14.1 */
+body[data-screen="dashboard"] .strategy-card,
+body[data-screen="dashboard"] .income-plan-card,
+body[data-screen="dashboard"] .capital-structure-card,
+body[data-screen="dashboard"] .payday-card,
+body[data-screen="dashboard"] .focus-card {
+  font-size: 13px !important;
+}
+
+body[data-screen="dashboard"] .strategy-card strong,
+body[data-screen="dashboard"] .income-plan-card strong,
+body[data-screen="dashboard"] .capital-structure-card strong,
+body[data-screen="dashboard"] .payday-card strong,
+body[data-screen="dashboard"] .focus-card strong {
+  font-size: clamp(22px, 6.2vw, 31px) !important;
+  line-height: 1 !important;
+  letter-spacing: -.05em !important;
+}
+
+/* Weekly chart and habits */
+body[data-screen="dashboard"] .home-week-expense-card {
+  min-height: 136px !important;
+  padding: 16px !important;
+  border-radius: 24px !important;
+}
+
+body[data-screen="dashboard"] .home-week-copy small,
+body[data-screen="dashboard"] .home-week-copy span {
+  font-size: 11px !important;
+}
+
+body[data-screen="dashboard"] .home-week-copy strong {
+  font-size: clamp(25px, 7vw, 34px) !important;
+  line-height: 1 !important;
+  letter-spacing: -.05em !important;
+}
+
+body[data-screen="dashboard"] .home-week-bars {
+  height: 76px !important;
+}
+
+body[data-screen="dashboard"] .home-week-bar small {
+  font-size: 10px !important;
+}
+
+body[data-screen="dashboard"] .home-island-habits .home-habit-preview {
+  min-height: 138px !important;
+  padding: 13px !important;
+  border-radius: 22px !important;
+}
+
+body[data-screen="dashboard"] .home-island-habits .home-habit-head h3 {
+  font-size: 15px !important;
+  line-height: 1.08 !important;
+}
+
+body[data-screen="dashboard"] .home-habit-streak strong {
+  font-size: 18px !important;
+}
+
+/* Bottom navigation: less bulky */
+.bottom-nav {
+  padding: 8px 9px calc(8px + env(safe-area-inset-bottom)) !important;
+}
+
+.nav-item {
+  gap: 3px !important;
+  padding: 6px 1px 2px !important;
+}
+
+.nav-item svg {
+  width: 21px !important;
+  height: 21px !important;
+}
+
+.nav-item small {
+  font-size: 10px !important;
+  line-height: 1.1 !important;
+  font-weight: 650 !important;
+  letter-spacing: -.01em !important;
+}
+
+.global-add {
+  width: 48px !important;
+  height: 48px !important;
+  margin-top: -18px !important;
+}
+
+.global-add svg {
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.floating-add {
+  width: 58px !important;
+  height: 58px !important;
+}
+
+.floating-add svg {
+  width: 30px !important;
+  height: 30px !important;
+}
+
+/* Forms and modal typography keep iOS no-zoom but look calmer */
+.modal-head h2 {
+  font-size: clamp(22px, 6vw, 30px) !important;
+}
+
+.field label,
+.form-section-title,
+.section-head h2 {
+  letter-spacing: -.02em !important;
+}
+
+@media (max-width: 390px) {
+  body[data-screen="dashboard"] .premium-home-welcome h2 {
+    font-size: clamp(24px, 6.7vw, 32px) !important;
+  }
+
+  body[data-screen="dashboard"] .home-capital-head strong {
+    font-size: clamp(36px, 10.1vw, 50px) !important;
+  }
+
+  body[data-screen="dashboard"] .home-goal-card > b {
+    font-size: clamp(21px, 6.2vw, 28px) !important;
+  }
+
+  .topbar-copy h1 {
+    font-size: clamp(23px, 6vw, 30px) !important;
+  }
+}

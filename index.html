@@ -4,16 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
-  <meta name="alexander-os-build" content="14.1.0" />
+  <meta name="alexander-os-build" content="14.2.0" />
   <meta name="description" content="Alexander OS - личная система финансов, задач, проектов и прогресса" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Alexander OS" />
-  <link rel="manifest" href="manifest.webmanifest?v=14.1.0" />
+  <link rel="manifest" href="manifest.webmanifest?v=14.2.0" />
   <script>
-    window.ALEXANDER_OS_BUILD = '14.1.0';
+    window.ALEXANDER_OS_BUILD = '14.2.0';
     if ('caches' in window) {
-      caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v14-1')).map(key => caches.delete(key)))).catch(() => {});
+      caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v14-2')).map(key => caches.delete(key)))).catch(() => {});
     }
   </script>
   <link rel="apple-touch-icon" href="icon-192.png" />
@@ -90,8 +90,8 @@
     @keyframes aosSplashLoad { from { transform: translateX(0); } to { transform: translateX(138%); } }
     @media (prefers-reduced-motion: reduce) { #appSplash .splash-track::before { animation: none; width: 72%; } }
   </style>
-  <link rel="stylesheet" href="styles.css?v=14.1.0" />
-  <title>Alexander OS V14.1.0</title>
+  <link rel="stylesheet" href="styles.css?v=14.2.0" />
+  <title>Alexander OS V14.2.0</title>
 </head>
 <body>
   <div id="appSplash" role="status" aria-live="polite">
@@ -108,7 +108,7 @@
       <button class="topbar-brand profile-settings-trigger" id="profileSettingsTrigger" type="button" aria-label="Открыть настройки">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="topbar-copy">
-          <div class="brand-line">Alexander OS <span>V14.1.0</span></div>
+          <div class="brand-line">Alexander OS <span>V14.2.0</span></div>
           <p class="eyebrow" id="todayLabel">Сегодня</p>
           <h1 id="screenTitle">Главная</h1>
         </div>
@@ -150,7 +150,7 @@
         <span class="face-corners"><i></i><i></i><i></i><i></i></span>
         <svg viewBox="0 0 64 64"><path d="M22 28v-4a6 6 0 0 1 6-6h2M42 28v-4a6 6 0 0 0-6-6h-2M22 36v4a6 6 0 0 0 6 6h2M42 36v4a6 6 0 0 1-6 6h-2"/><path d="M26 31h.1M38 31h.1M27 38c3 2.4 7 2.4 10 0"/></svg>
       </div>
-      <p class="eyebrow">Alexander OS V14.1.0</p>
+      <p class="eyebrow">Alexander OS V14.2.0</p>
       <h2>Разблокировка Face ID</h2>
       <p id="lockHint">Подтверди вход, чтобы открыть личные данные.</p>
       <div class="face-status" id="faceStatus"><span></span> Ожидание подтверждения</div>
@@ -179,6 +179,6 @@
   </dialog>
 
 
-  <script src="app.js?v=14.1.0"></script>
+  <script src="app.js?v=14.2.0"></script>
 </body>
 </html>

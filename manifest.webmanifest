@@ -1,8 +1,8 @@
 {
-  "name": "Alexander OS V14.1",
+  "name": "Alexander OS V14.2",
   "short_name": "Alexander OS",
   "description": "Личная система финансов, задач, проектов, прогресса и защищённых данных.",
-  "start_url": "./?build=14.1.0",
+  "start_url": "./?build=14.2.0",
   "scope": "./",
   "display": "standalone",
   "background_color": "#000000",

@@ -1,7 +1,10 @@
-JS syntax: OK
-No video workout button: OK
-Strategy functions: OK
-Body tracker: OK
-V14.1 version: OK
-Workflow file: OK
-Open workout modal redirected to body profile: OK
+Alexander OS V14.2 - QA
+
+Проверено:
+- JavaScript синтаксис валиден.
+- ZIP архив собирается корректно.
+- index.html обновлён до V14.2.0.
+- app.js, styles.css, sw.js и manifest обновлены до V14.2.0.
+- .nojekyll присутствует.
+- .github/workflows/deploy-pages.yml присутствует.
+- Изменения внесены только в типографику и визуальный масштаб, логика приложения не трогалась.
