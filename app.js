@@ -131,7 +131,7 @@
 
   function freshState() {
     return {
-      version: 13.4,
+      version: 14.1,
       profile: {
         name: 'Александр',
         capitalTarget: 1000000,
@@ -177,14 +177,23 @@
       ],
       workoutProfile: {
         height: 177,
-        age: 27,
-        weight: 78,
-        goal: 'health',
-        level: 'beginner',
-        days: 3,
-        equipment: 'mixed',
+        age: 28,
+        weight: 89,
+        targetWeight: 82,
+        startWeight: 89,
+        goal: 'weight_loss',
+        level: 'none',
+        days: 0,
+        equipment: 'none',
         savedAt: null
       },
+      bodyLogs: [],
+      focusItems: [],
+      impulsePurchases: [],
+      clientPipeline: [],
+      incomeLevers: [],
+      monthlyReviews: [],
+      appNotifications: [],
       weeklyReviews: [],
       noteFolders: [{ id: 'inbox', name: 'Входящие', createdAt: new Date().toISOString() }],
       notes: [],
@@ -236,7 +245,7 @@
     const result = {
       ...base,
       ...raw,
-      version: 13.4,
+      version: 14.1,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
@@ -246,6 +255,13 @@
       goals: Array.isArray(raw.goals) ? raw.goals : [],
       habits: Array.isArray(raw.habits) ? raw.habits : [],
       workoutProfile: { ...base.workoutProfile, ...(raw.workoutProfile || {}) },
+      bodyLogs: Array.isArray(raw.bodyLogs) ? raw.bodyLogs : [],
+      focusItems: Array.isArray(raw.focusItems) ? raw.focusItems : [],
+      impulsePurchases: Array.isArray(raw.impulsePurchases) ? raw.impulsePurchases : [],
+      clientPipeline: Array.isArray(raw.clientPipeline) ? raw.clientPipeline : [],
+      incomeLevers: Array.isArray(raw.incomeLevers) ? raw.incomeLevers : [],
+      monthlyReviews: Array.isArray(raw.monthlyReviews) ? raw.monthlyReviews : [],
+      appNotifications: Array.isArray(raw.appNotifications) ? raw.appNotifications : [],
       weeklyReviews: Array.isArray(raw.weeklyReviews) ? raw.weeklyReviews : [],
       noteFolders: Array.isArray(raw.noteFolders) && raw.noteFolders.length ? raw.noteFolders : clone(base.noteFolders),
       notes: Array.isArray(raw.notes) ? raw.notes : [],
@@ -314,7 +330,15 @@
       createdAt: category.createdAt || new Date().toISOString()
     })).filter((category, index, list) => category.name && list.findIndex(item => item.id === category.id) === index);
     result.profile.expenseCategoryAliases = result.profile.expenseCategoryAliases && typeof result.profile.expenseCategoryAliases === 'object' ? result.profile.expenseCategoryAliases : {};
-    result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Силовая тренировка', duration: Number(log.duration || 45), effort: Number(log.effort || 3), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
+    result.workoutProfile = { ...base.workoutProfile, ...(result.workoutProfile || {}), height: Number(result.workoutProfile?.height || base.workoutProfile.height), age: Number(result.workoutProfile?.age || base.workoutProfile.age), weight: Number(result.workoutProfile?.weight || base.workoutProfile.weight), startWeight: Number(result.workoutProfile?.startWeight || result.workoutProfile?.weight || base.workoutProfile.startWeight), targetWeight: Number(result.workoutProfile?.targetWeight || base.workoutProfile.targetWeight) };
+    result.bodyLogs = result.bodyLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), weight: Number(log.weight || 0), change: Number(log.change || 0), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() })).filter(log => log.weight > 0 || log.change !== 0).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    result.focusItems = result.focusItems.map(item => ({ id: item.id || uid(), date: item.date || todayISO(), title: item.title || '', priority: item.priority || 'medium', done: Boolean(item.done), createdAt: item.createdAt || new Date().toISOString() })).filter(item => item.title.trim());
+    result.impulsePurchases = result.impulsePurchases.map(item => ({ id: item.id || uid(), title: item.title || '', amount: Number(item.amount || 0), reason: item.reason || '', category: item.category || 'comfort', waitDays: Math.max(1, Number(item.waitDays || 3)), status: item.status || 'waiting', createdAt: item.createdAt || new Date().toISOString(), decidedAt: item.decidedAt || '' })).filter(item => item.title.trim());
+    result.clientPipeline = result.clientPipeline.map(item => ({ id: item.id || uid(), name: item.name || '', status: item.status || 'lead', potential: Number(item.potential || 0), probability: Math.max(0, Math.min(100, Number(item.probability || 30))), nextAction: item.nextAction || '', nextDate: item.nextDate || '', notes: item.notes || '', createdAt: item.createdAt || new Date().toISOString() })).filter(item => item.name.trim());
+    result.incomeLevers = result.incomeLevers.map(item => ({ id: item.id || uid(), title: item.title || '', amount: Number(item.amount || 0), status: item.status || 'planned', nextAction: item.nextAction || '', createdAt: item.createdAt || new Date().toISOString() })).filter(item => item.title.trim());
+    result.monthlyReviews = result.monthlyReviews.map(item => ({ id: item.id || uid(), month: item.month || monthKey(new Date()), income: Number(item.income || 0), expense: Number(item.expense || 0), saved: Number(item.saved || 0), lesson: item.lesson || '', repeat: item.repeat || '', stop: item.stop || '', nextFocus: item.nextFocus || '', createdAt: item.createdAt || new Date().toISOString() })).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+    result.appNotifications = result.appNotifications.map(item => ({ id: item.id || uid(), title: item.title || '', dueDate: item.dueDate || todayISO(), done: Boolean(item.done), createdAt: item.createdAt || new Date().toISOString() })).filter(item => item.title.trim());
+    result.workoutLogs = result.workoutLogs.map(log => ({ id: log.id || uid(), date: log.date || todayISO(), type: log.type || 'Тренировка', duration: Number(log.duration || 0), effort: Number(log.effort || 0), notes: log.notes || '', createdAt: log.createdAt || new Date().toISOString() }));
     result.workoutFavorites = [...new Set(result.workoutFavorites.map(String))];
     return normalizeAccountLedger(ensureAccountIntegrity(result));
   }
@@ -669,7 +693,7 @@
   function buildDiagnostics() {
     const checks = [];
     const ids = [];
-    ['tasks','accounts','transactions','obligations','projects','goals','habits','notes','recurringRules','customExpenseCategories','workoutLogs'].forEach(collection => (state[collection] || []).forEach(item => ids.push(`${collection}:${item.id}`)));
+    ['tasks','accounts','transactions','obligations','projects','goals','habits','notes','recurringRules','customExpenseCategories','workoutLogs','bodyLogs','focusItems','impulsePurchases','clientPipeline','incomeLevers','monthlyReviews','appNotifications'].forEach(collection => (state[collection] || []).forEach(item => ids.push(`${collection}:${item.id}`)));
     const idValues = ids.map(value => value.split(':').slice(1).join(':'));
     const duplicateIds = idValues.filter((id, index) => idValues.indexOf(id) !== index);
     const duplicateTransactions = [];
@@ -694,7 +718,7 @@
   function runSelfTests() {
     const tests = [];
     const test = (name, fn) => { try { const result = fn(); tests.push({ name, ok: result !== false, detail: result === false ? 'Не пройден' : 'Пройден' }); } catch (error) { tests.push({ name, ok: false, detail: error.message }); } };
-    test('Структура состояния', () => ['tasks','accounts','transactions','projects','goals','habits','history','trash','recurringRules','customExpenseCategories','workoutLogs'].every(key => Array.isArray(state[key])));
+    test('Структура состояния', () => ['tasks','accounts','transactions','projects','goals','habits','history','trash','recurringRules','customExpenseCategories','workoutLogs','bodyLogs','focusItems','impulsePurchases','clientPipeline','incomeLevers','monthlyReviews','appNotifications'].every(key => Array.isArray(state[key])));
     test('Основной счёт существует', () => Boolean(getDefaultAccount()?.id));
     test('Финансовая аналитика', () => Number.isFinite(getFinanceAnalytics().capital));
     test('Экспортируемая копия', () => validateBackupData(extractBackupData(createBackupPayload(state))));
@@ -1361,6 +1385,7 @@
     const leftMetric = dashboardMetricData(layout.left, analytics);
     const rightMetric = dashboardMetricData(layout.right, analytics);
     const featuredHabit = state.habits.find(habit => /чтен/i.test(habit.title)) || state.habits[0];
+    const secondHabit = state.habits.find(habit => habit.id !== featuredHabit?.id && /спорт|зал|трен/i.test(habit.title)) || state.habits.find(habit => habit.id !== featuredHabit?.id);
 
     app.innerHTML = `
       <section class="home-welcome premium-home-welcome">
@@ -1375,12 +1400,19 @@
         ${dashboardSmallMetricMarkup(rightMetric)}
       </section>
 
+      <section class="home-mini-strategy-grid">
+        ${(() => { const s = strategicSummary(); return `<button class="card strategy-mini" type="button" id="openBudgetModule"><small>Деньги до зарплаты</small><strong>${money(s.budget.daily)} / день</strong></button><button class="card strategy-mini" type="button" id="openFocusModule"><small>Фокус дня</small><strong>${state.focusItems.filter(item => item.date === todayISO() && item.done).length}/${state.focusItems.filter(item => item.date === todayISO()).length || 3}</strong></button>`; })()}
+      </section>
+
       <section class="card home-week-expense-card">
         <div class="home-week-copy"><small>Расходы за неделю</small><strong>${money(analytics.weekExpense)}</strong><span>${compareSentence('Расход', analytics.weekExpense, analytics.previousWeekExpense, true).replace(/<[^>]+>/g, '')}</span></div>
         ${weekExpenseBarsMarkup()}
       </section>
 
-      ${homeHabitPreviewMarkup(featuredHabit)}
+      <section class="home-island-habits">
+        ${homeHabitPreviewMarkup(featuredHabit)}
+        ${secondHabit ? homeHabitPreviewMarkup(secondHabit) : ''}
+      </section>
 
       <section class="section compact-section">
         <div class="section-head"><h2>Ближайшие задачи</h2><button class="link-btn" type="button" data-go="tasks">Все</button></div>
@@ -1394,6 +1426,7 @@
     `;
     bindCommon();
     bindFinanceActions();
+    bindStrategicModules();
   }
 
   function taskItem(task) {
@@ -2113,6 +2146,248 @@
     });
   }
 
+
+  function daysUntil(dateValue) {
+    if (!dateValue) return 0;
+    return Math.max(0, Math.ceil((new Date(dateValue + 'T00:00:00').getTime() - new Date(todayISO() + 'T00:00:00').getTime()) / 86400000));
+  }
+
+  function moneyToSalaryModel(analytics = getFinanceAnalytics()) {
+    const nextDate = state.profile.nextSalaryDate || '';
+    const days = Math.max(1, daysUntil(nextDate));
+    const reserved = Number(state.profile.dailyBudgetReserve || 0);
+    const untilDate = nextDate ? new Date(nextDate) : addDays(new Date(), 14);
+    const obligations = openObligations().filter(item => item.type !== 'expected' && item.status === 'open' && item.dueDate && dateInRange(item.dueDate, new Date(), untilDate));
+    const obligatory = sum(obligations.map(item => Number(item.amount || 0))) + reserved;
+    const available = Math.max(0, analytics.free - obligatory);
+    return { nextDate, days, obligatory, available, daily: Math.floor(available / days), obligationsCount: obligations.length };
+  }
+
+  function lifeMapPriorityScore(item) {
+    const priority = { high: 3, medium: 2, low: 1 }[item.priority] || 1;
+    const budgetPenalty = Number(item.budget || 0) > getFinanceAnalytics().free ? 1 : 0;
+    return priority * 10 - budgetPenalty;
+  }
+
+  function strategicSummary() {
+    const analytics = getFinanceAnalytics();
+    const budget = moneyToSalaryModel(analytics);
+    const activeClients = state.clientPipeline.filter(item => !['paid','lost'].includes(item.status));
+    const clientPotential = sum(activeClients.map(item => Number(item.potential || 0)));
+    const probableIncome = sum(activeClients.map(item => Number(item.potential || 0) * Number(item.probability || 0) / 100));
+    const activeImpulses = state.impulsePurchases.filter(item => item.status === 'waiting');
+    const pendingNotifications = state.appNotifications.filter(item => !item.done && (!item.dueDate || item.dueDate <= localISO(addDays(new Date(), 7))));
+    return { analytics, budget, activeClients, clientPotential, probableIncome, activeImpulses, pendingNotifications };
+  }
+
+  function strategicModulesMarkup() {
+    const { analytics, budget, clientPotential, probableIncome, activeImpulses, pendingNotifications } = strategicSummary();
+    const month = monthKey(new Date());
+    const incomeTarget = getIncomeTargetForMonth(month);
+    const incomeGap = Math.max(0, incomeTarget - analytics.monthIncome);
+    const levers = state.incomeLevers.filter(item => item.status !== 'done');
+    const leverPotential = sum(levers.map(item => Number(item.amount || 0)));
+    const lifeItem = state.lifeMap.filter(item => item.status !== 'done').sort((a,b)=>lifeMapPriorityScore(b)-lifeMapPriorityScore(a))[0];
+    const monthReview = state.monthlyReviews.find(item => item.month === month);
+    const weekStart = localISO(startOfWeek(new Date()));
+    const currentReview = state.weeklyReviews.find(review => review.weekStart === weekStart);
+    const focusToday = state.focusItems.filter(item => item.date === todayISO());
+    const focusDone = focusToday.filter(item => item.done).length;
+    const devHabits = state.habits.filter(habit => /проф|чтен|англ|курс|обуч|проект/i.test(habit.title));
+    const devRate = devHabits.length ? Math.round(sum(devHabits.map(habit => habitMonthPercent(habit))) / devHabits.length) : 0;
+    const debts = openObligations('debt');
+    const payments = openObligations('payment');
+    const debtTotal = sum(debts.map(item => Number(item.amount || 0)));
+    const requiredMonth = sum(payments.filter(item => item.dueDate && item.dueDate.slice(0,7) === month).map(item => Number(item.amount || 0))) + debtTotal;
+    const nextCapitalStep = Math.ceil((analytics.capital + 1) / 50000) * 50000;
+    const capitalStepLeft = Math.max(0, nextCapitalStep - analytics.capital);
+    return `<section class="section compact-section strategy-modules" id="strategyModules">
+      <div class="section-head"><div><h2>Операционный центр</h2><small>Деньги, клиенты, дисциплина и ревизия</small></div><span class="badge">V14.1</span></div>
+      <div class="strategy-grid">
+        <button class="card strategy-card" type="button" id="openBudgetModule"><span class="strategy-icon">◷</span><small>До зарплаты</small><strong>${money(budget.daily)} / день</strong><p>${budget.days} дн. · резерв ${money(budget.obligatory)}</p></button>
+        <button class="card strategy-card" type="button" id="openIncomePlanModule"><span class="strategy-icon">↗</span><small>План дохода</small><strong>${money(incomeGap)}</strong><p>нужно добрать · рычаги ${money(leverPotential)}</p></button>
+        <button class="card strategy-card" type="button" id="openImpulseModule"><span class="strategy-icon">⌛</span><small>Антиимпульс</small><strong>${activeImpulses.length}</strong><p>покупок ждут решения</p></button>
+        <button class="card strategy-card" type="button" id="openClientsModule"><span class="strategy-icon">▦</span><small>Клиенты</small><strong>${money(Math.round(probableIncome))}</strong><p>вероятно из ${money(clientPotential)}</p></button>
+        <button class="card strategy-card" type="button" id="openFocusModule"><span class="strategy-icon">✓</span><small>Фокус дня</small><strong>${focusDone}/${focusToday.length || 3}</strong><p>только ключевые действия</p></button>
+        <button class="card strategy-card" type="button" id="openProfessionalModule"><span class="strategy-icon">✦</span><small>Развитие</small><strong>${devRate}%</strong><p>${devHabits.length} привычек роста</p></button>
+        <button class="card strategy-card" type="button" id="openLifeFilterModule"><span class="strategy-icon">◇</span><small>Life Map фильтр</small><strong>${lifeItem ? money(lifeItem.budget) : '0 ₽'}</strong><p>${lifeItem ? escapeHtml(lifeItem.title).slice(0,42) : 'желаний пока нет'}</p></button>
+        <button class="card strategy-card" type="button" id="openDebtModule"><span class="strategy-icon">!</span><small>Долги и платежи</small><strong>${money(requiredMonth)}</strong><p>обязательства месяца</p></button>
+        <button class="card strategy-card" type="button" id="openCapitalModule"><span class="strategy-icon">▰</span><small>Капитал</small><strong>${money(analytics.capital)}</strong><p>до рубежа ${money(capitalStepLeft)}</p></button>
+        <button class="card strategy-card" type="button" id="openNotificationsModule"><span class="strategy-icon">•</span><small>Напоминания</small><strong>${pendingNotifications.length}</strong><p>важных сигналов</p></button>
+        <button class="card strategy-card" type="button" id="openWeeklyReviewModule"><span class="strategy-icon">↺</span><small>Неделя</small><strong>${currentReview ? 'есть' : 'нет'}</strong><p>разбор недели</p></button>
+        <button class="card strategy-card" type="button" id="openMonthlyReviewModule"><span class="strategy-icon">☷</span><small>Месяц</small><strong>${monthReview ? 'есть' : 'нет'}</strong><p>ревизия решений</p></button>
+      </div>
+    </section>`;
+  }
+
+  function bodyTrackerMarkup() {
+    const profile = state.workoutProfile || freshState().workoutProfile;
+    const logs = state.bodyLogs.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    const latest = logs[0];
+    const currentWeight = Number(latest?.weight || profile.weight || 0);
+    const start = Number(profile.startWeight || profile.weight || currentWeight || 0);
+    const target = Number(profile.targetWeight || 0);
+    const lost = Math.max(0, start - currentWeight);
+    const toTarget = target ? Math.max(0, currentWeight - target) : 0;
+    const progress = start > target ? Math.max(0, Math.min(100, Math.round((start - currentWeight) / Math.max(1, start - target) * 100))) : 0;
+    return `<section class="card body-tracker-card" id="bodyTracker">
+      <div class="workout-card-head"><span class="workout-icon">◉</span><div><small>Тело</small><h2>Вес и параметры</h2><p>Без видео-тренировок. Только рост, вес, возраст и история похудения.</p></div><strong>${progress}%</strong></div>
+      <div class="workout-card-stats body-stats"><span><b>${Number(profile.height || 0)} см</b><small>рост</small></span><span><b>${Number(profile.age || 0)}</b><small>возраст</small></span><span><b>${currentWeight || 0} кг</b><small>текущий вес</small></span><span><b>${lost.toFixed(1)} кг</b><small>сброшено</small></span></div>
+      <div class="premium-progress compact"><i style="width:${progress}%"></i></div>
+      <div class="body-note">${target ? `До цели осталось ${toTarget.toFixed(1)} кг` : 'Укажи целевой вес, чтобы видеть прогресс.'}</div>
+      <div class="workout-card-actions"><button class="btn primary" type="button" id="openBodyLog">Записать вес</button><button class="btn secondary" type="button" id="openBodyProfile">Параметры</button></div>
+      ${logs.length ? `<div class="body-log-mini">${logs.slice(0,4).map(log => `<span><b>${longDateText(log.date)}</b>${log.weight} кг${log.change ? ` · ${log.change > 0 ? '+' : ''}${log.change} кг` : ''}</span>`).join('')}</div>` : ''}
+    </section>`;
+  }
+
+  function bindStrategicModules() {
+    $('#openBudgetModule')?.addEventListener('click', openBudgetModule);
+    $('#openIncomePlanModule')?.addEventListener('click', openIncomePlanModule);
+    $('#openImpulseModule')?.addEventListener('click', openImpulseModule);
+    $('#openClientsModule')?.addEventListener('click', openClientPipelineModule);
+    $('#openFocusModule')?.addEventListener('click', openFocusModule);
+    $('#openProfessionalModule')?.addEventListener('click', openProfessionalModule);
+    $('#openLifeFilterModule')?.addEventListener('click', openLifeFilterModule);
+    $('#openDebtModule')?.addEventListener('click', openDebtModule);
+    $('#openCapitalModule')?.addEventListener('click', openCapitalModule);
+    $('#openNotificationsModule')?.addEventListener('click', openNotificationsModule);
+    $('#openWeeklyReviewModule')?.addEventListener('click', openAutoWeeklyReview);
+    $('#openMonthlyReviewModule')?.addEventListener('click', openMonthlyReviewModule);
+    $('#openBodyLog')?.addEventListener('click', openBodyLogModal);
+    $('#openBodyProfile')?.addEventListener('click', openBodyProfileModal);
+  }
+
+  function openBudgetModule() {
+    const model = moneyToSalaryModel();
+    openModal('Деньги до зарплаты', `
+      <div class="settings-help-card"><b>${money(model.daily)} в день</b><p>Свободный остаток минус обязательные платежи до зарплаты. Это твой безопасный дневной лимит, а не приглашение всё спустить, как будто банк тебе друг.</p></div>
+      <div class="form-grid"><div class="field"><label>Следующая зарплата</label><input name="nextSalaryDate" type="date" value="${state.profile.nextSalaryDate || localISO(addDays(new Date(), 14))}"></div><div class="field"><label>Резерв до зарплаты, ₽</label><input name="dailyBudgetReserve" type="number" min="0" value="${Number(state.profile.dailyBudgetReserve || 0)}"></div></div>
+      <div class="project-metrics two-cols"><div><small>Дней</small><strong>${model.days}</strong></div><div><small>Обязательства</small><strong>${money(model.obligatory)}</strong></div><div><small>Можно тратить</small><strong>${money(model.available)}</strong></div><div><small>Дневной лимит</small><strong>${money(model.daily)}</strong></div></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); state.profile.nextSalaryDate = data.nextSalaryDate || ''; state.profile.dailyBudgetReserve = Number(data.dailyBudgetReserve || 0); return true; });
+  }
+
+  function openIncomePlanModule() {
+    const analytics = getFinanceAnalytics();
+    const target = getIncomeTargetForMonth();
+    const gap = Math.max(0, target - analytics.monthIncome);
+    const items = state.incomeLevers.filter(item => item.status !== 'done');
+    openModal('План дохода', `
+      <div class="settings-help-card"><b>Нужно добрать: ${money(gap)}</b><p>Цель не должна жить в голове. Она должна быть разложена на рычаги: клиент, настройка, допродажа, проект.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<div class="utility-row"><div><b>${escapeHtml(item.title)}</b><small>${money(item.amount)} · ${escapeHtml(item.nextAction || 'следующий шаг не указан')}</small></div><button class="mini-action danger delete-income-lever" type="button" data-id="${item.id}">Удалить</button></div>`).join('') : empty('Добавьте первый источник добора дохода.')}</div>
+      <div class="field"><label>Что принесёт деньги</label><input name="title" placeholder="Например, 1 клиент на ведение"></div><div class="form-grid"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" min="0"></div><div class="field"><label>Статус</label><select name="status"><option value="planned">План</option><option value="in_progress">В работе</option><option value="done">Сделано</option></select></div></div><div class="field"><label>Следующий шаг</label><input name="nextAction" placeholder="Что сделать конкретно"></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); if (!String(data.title||'').trim()) return true; state.incomeLevers.push({ id: uid(), title: data.title.trim(), amount: Number(data.amount||0), status: data.status || 'planned', nextAction: data.nextAction || '', createdAt: new Date().toISOString() }); return true; }, { submitText:'Добавить' });
+    $$('.delete-income-lever', modalBody).forEach(btn => btn.addEventListener('click', () => { state.incomeLevers = state.incomeLevers.filter(item => item.id !== btn.dataset.id); saveState(); closeModal(); render(); openIncomePlanModule(); }));
+  }
+
+  function openImpulseModule() {
+    const items = state.impulsePurchases.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+    const statusText = { waiting:'Ожидает', approved:'Куплено', canceled:'Отменено', postponed:'Перенесено' };
+    openModal('Покупка подождёт', `
+      <div class="settings-help-card"><b>Антиимпульс</b><p>Сначала записал, потом подождал, потом решил. Удивительно, но так капитал выживает.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<div class="utility-row"><div><b>${escapeHtml(item.title)} · ${money(item.amount)}</b><small>${statusText[item.status] || item.status} · ожидание ${item.waitDays} дн. · ${escapeHtml(item.reason || 'без причины')}</small></div><div><button class="mini-action mark-impulse" data-status="approved" data-id="${item.id}" type="button">Купить</button><button class="mini-action danger mark-impulse" data-status="canceled" data-id="${item.id}" type="button">Отмена</button></div></div>`).join('') : empty('Импульсивных покупок нет. Редкое проявление цивилизации.')}</div>
+      <div class="field"><label>Что хочешь купить</label><input name="title" placeholder="Например, новый гаджет"></div><div class="form-grid"><div class="field"><label>Цена, ₽</label><input name="amount" type="number" min="0"></div><div class="field"><label>Охлаждение</label><select name="waitDays"><option value="1">24 часа</option><option value="3" selected>3 дня</option><option value="7">7 дней</option></select></div></div><div class="field"><label>Зачем хочу</label><input name="reason" placeholder="Работа, здоровье, комфорт или понты"></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); if (!String(data.title||'').trim()) return true; state.impulsePurchases.push({ id: uid(), title: data.title.trim(), amount: Number(data.amount||0), reason: data.reason || '', category: 'other', waitDays: Number(data.waitDays||3), status: 'waiting', createdAt: new Date().toISOString(), decidedAt:'' }); return true; }, { submitText:'Добавить' });
+    $$('.mark-impulse', modalBody).forEach(btn => btn.addEventListener('click', () => { const item = state.impulsePurchases.find(x=>x.id===btn.dataset.id); if (item) { item.status = btn.dataset.status; item.decidedAt = new Date().toISOString(); saveState(); closeModal(); render(); openImpulseModule(); } }));
+  }
+
+  function openClientPipelineModule() {
+    const items = state.clientPipeline.slice().sort((a,b)=>Number(b.potential||0)-Number(a.potential||0));
+    const labels = { lead:'Лид', call:'Созвон', proposal:'КП', thinking:'Думает', paid:'Оплатил', lost:'Отказ', retainer:'На ведении' };
+    openModal('Клиентская воронка', `
+      <div class="settings-help-card"><b>Потенциал: ${money(sum(items.map(i=>Number(i.potential||0))))}</b><p>Следующее действие важнее красивой CRM. Клиент без следующего шага превращается в цифровую пыль.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<div class="utility-row"><div><b>${escapeHtml(item.name)} · ${money(item.potential)}</b><small>${labels[item.status] || item.status} · вероятность ${item.probability}% · ${escapeHtml(item.nextAction || 'нет следующего шага')}</small></div><button class="mini-action danger delete-client" data-id="${item.id}" type="button">Удалить</button></div>`).join('') : empty('Лидов пока нет.')}</div>
+      <div class="field"><label>Клиент / ниша</label><input name="name" placeholder="Автосервис, мебель, врач"></div><div class="form-grid"><div class="field"><label>Потенциал, ₽/мес</label><input name="potential" type="number" min="0"></div><div class="field"><label>Вероятность, %</label><input name="probability" type="number" min="0" max="100" value="30"></div></div><div class="form-grid"><div class="field"><label>Статус</label><select name="status"><option value="lead">Лид</option><option value="call">Созвон</option><option value="proposal">КП</option><option value="thinking">Думает</option><option value="paid">Оплатил</option><option value="retainer">На ведении</option><option value="lost">Отказ</option></select></div><div class="field"><label>Дата шага</label><input name="nextDate" type="date" value="${todayISO()}"></div></div><div class="field"><label>Следующий шаг</label><input name="nextAction" placeholder="Написать, созвониться, отправить КП"></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); if (!String(data.name||'').trim()) return true; state.clientPipeline.push({ id: uid(), name: data.name.trim(), status: data.status || 'lead', potential: Number(data.potential||0), probability: Number(data.probability||30), nextAction: data.nextAction || '', nextDate: data.nextDate || '', notes:'', createdAt: new Date().toISOString() }); return true; }, { submitText:'Добавить' });
+    $$('.delete-client', modalBody).forEach(btn => btn.addEventListener('click', () => { state.clientPipeline = state.clientPipeline.filter(item=>item.id!==btn.dataset.id); saveState(); closeModal(); render(); openClientPipelineModule(); }));
+  }
+
+  function openFocusModule() {
+    const items = state.focusItems.filter(item => item.date === todayISO());
+    openModal('Фокус дня', `
+      <div class="settings-help-card"><b>Только 3 действия</b><p>Если задач больше двадцати, это не план, а коллекция поводов себя ненавидеть. Тут оставляем главное.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<label class="utility-row"><div><b>${escapeHtml(item.title)}</b><small>${item.priority === 'high' ? 'высокий приоритет' : 'обычный приоритет'}</small></div><input class="focus-toggle" type="checkbox" data-id="${item.id}" ${item.done ? 'checked' : ''}></label>`).join('') : empty('Фокус дня не задан.')}</div>
+      <div class="field"><label>Ключевое действие</label><input name="title" placeholder="Что сегодня реально двигает жизнь вперёд"></div><div class="field"><label>Приоритет</label><select name="priority"><option value="high">Высокий</option><option value="medium">Средний</option></select></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); if (!String(data.title||'').trim()) return true; state.focusItems.push({ id: uid(), date: todayISO(), title: data.title.trim(), priority: data.priority || 'medium', done:false, createdAt: new Date().toISOString() }); return true; }, { submitText:'Добавить' });
+    $$('.focus-toggle', modalBody).forEach(input => input.addEventListener('change', () => { const item = state.focusItems.find(x=>x.id===input.dataset.id); if (item) { item.done = input.checked; saveState(); } }));
+  }
+
+  function openProfessionalModule() {
+    const habits = state.habits.filter(habit => /проф|чтен|англ|курс|обуч|проект/i.test(habit.title));
+    openModal('Профессиональное развитие', `
+      <div class="settings-help-card"><b>${habits.length} привычек роста</b><p>Маркетолог растёт не от мотивационных цитат, а от системного повторения: курс, кейсы, чтение, практика.</p></div>
+      <div class="utility-list">${habits.length ? habits.map(habit => `<div class="utility-row"><div><b>${escapeHtml(habit.title)}</b><small>${habitMonthPercent(habit)}% за месяц · серия ${habitStreak(habit)} дн.</small></div><button class="mini-action" type="button" data-dev-task="${escapeHtml(habit.title)}">Задача</button></div>`).join('') : empty('Добавь привычку развития: чтение, курс, английский, кейсы.')}</div>
+    `, null, { hideActions:true });
+    $$('[data-dev-task]', modalBody).forEach(btn => btn.addEventListener('click', () => { state.tasks.push({ id: uid(), title: `Сделать: ${btn.dataset.devTask}`, projectId:'', project:'Профессиональное развитие', priority:'medium', due:todayISO(), dueTime:'', status:'todo', notes:'Автозадача из блока развития', repeat:'none', reminder:'none', createdAt:new Date().toISOString(), completedAt:null }); saveState(); closeModal(); render(); toast('Задача добавлена'); }));
+  }
+
+  function openLifeFilterModule() {
+    const analytics = getFinanceAnalytics();
+    const items = state.lifeMap.filter(item => item.status !== 'done').sort((a,b)=>lifeMapPriorityScore(b)-lifeMapPriorityScore(a)).slice(0,6);
+    openModal('Life Map фильтр', `
+      <div class="settings-help-card"><b>Фильтр реальности</b><p>Желание нормально только тогда, когда у него есть бюджет, причина и следующий шаг. Иначе это просто красивая дырка в кошельке.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<div class="utility-row"><div><b>${escapeHtml(item.title)} · ${money(item.budget)}</b><small>${Number(item.budget||0) <= analytics.free ? 'можно без удара по свободным деньгам' : 'пока рано: сначала капитал/подушка'} · шаг: ${escapeHtml(item.nextStep || 'не указан')}</small></div><button class="mini-action" type="button" data-go-life="1">Life</button></div>`).join('') : empty('В Life Map пока нет активных желаний.')}</div>
+    `, null, { hideActions:true });
+    $('[data-go-life]')?.addEventListener('click', () => { closeModal(); switchScreen('life'); });
+  }
+
+  function openDebtModule() {
+    const items = openObligations().filter(item => ['debt','payment'].includes(item.type));
+    openModal('Долги и обязательства', `
+      <div class="settings-help-card"><b>${money(sum(items.map(i=>Number(i.amount||0))))}</b><p>Деньги, которые уже обещаны банкам и обязательствам, не являются свободными. Жаль, конечно. Но математика бесчеловечна.</p></div>
+      <div class="utility-list">${items.length ? items.map(item => `<div class="utility-row"><div><b>${escapeHtml(item.title)} · ${money(item.amount)}</b><small>${obligationTypeText(item.type)} · срок ${longDateText(item.dueDate)} · ${item.status}</small></div><button class="mini-action edit-obligation-inline" data-id="${item.id}" type="button">Изм.</button></div>`).join('') : empty('Долгов и платежей нет.')}</div>
+      <button class="btn primary full" type="button" id="addDebtFromModule">Добавить обязательство</button>
+    `, null, { hideActions:true });
+    $('#addDebtFromModule')?.addEventListener('click', () => { closeModal(); openObligationModal(); });
+    $$('.edit-obligation-inline', modalBody).forEach(btn => btn.addEventListener('click', () => { const item = state.obligations.find(x=>x.id===btn.dataset.id); closeModal(); openObligationModal(item); }));
+  }
+
+  function openCapitalModule() {
+    const analytics = getFinanceAnalytics();
+    openModal('Капитал', `
+      <div class="project-metrics two-cols"><div><small>Общий капитал</small><strong>${money(analytics.capital)}</strong></div><div><small>Подушка</small><strong>${money(analytics.cushion)}</strong></div><div><small>Свободные деньги</small><strong>${money(analytics.free)}</strong></div><div><small>Долги</small><strong>${money(analytics.debt)}</strong></div></div>
+      <div class="settings-help-card"><b>Следующий рубеж: ${money(Math.ceil((analytics.capital + 1) / 50000) * 50000)}</b><p>Большая цель далеко. Ближайший рубеж ближе, поэтому мозг не делает вид, что умер.</p></div>
+    `, null, { hideActions:true });
+  }
+
+  function openNotificationsModule() {
+    const items = state.appNotifications.slice().sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
+    openModal('Внутренние напоминания', `
+      <div class="utility-list">${items.length ? items.map(item => `<label class="utility-row"><div><b>${escapeHtml(item.title)}</b><small>${longDateText(item.dueDate)}</small></div><input class="notify-toggle" type="checkbox" data-id="${item.id}" ${item.done ? 'checked' : ''}></label>`).join('') : empty('Напоминаний нет.')}</div>
+      <div class="field"><label>Напоминание</label><input name="title" placeholder="Оплатить кредит, проверить бюджет"></div><div class="field"><label>Дата</label><input name="dueDate" type="date" value="${todayISO()}"></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); if (!String(data.title||'').trim()) return true; state.appNotifications.push({ id: uid(), title: data.title.trim(), dueDate: data.dueDate || todayISO(), done:false, createdAt:new Date().toISOString() }); return true; }, { submitText:'Добавить' });
+    $$('.notify-toggle', modalBody).forEach(input => input.addEventListener('change', () => { const item = state.appNotifications.find(x=>x.id===input.dataset.id); if (item) { item.done = input.checked; saveState(); } }));
+  }
+
+  function openMonthlyReviewModule() {
+    const analytics = getFinanceAnalytics();
+    const month = monthKey(new Date());
+    const item = state.monthlyReviews.find(x=>x.month===month);
+    openModal('Месячная ревизия', `
+      <div class="settings-help-card"><b>${month}</b><p>Раз в месяц отвечаешь, что принесло деньги, что сожрало деньги и что повторять. Без этого жизнь превращается в автоповтор глупостей.</p></div>
+      <div class="form-grid"><div class="field"><label>Месяц</label><input name="month" type="month" value="${item?.month || month}"></div><div class="field"><label>Отложил, ₽</label><input name="saved" type="number" value="${item?.saved ?? Math.max(0, analytics.monthIncome - analytics.monthExpense)}"></div></div>
+      <div class="form-grid"><div class="field"><label>Доход, ₽</label><input name="income" type="number" value="${item?.income ?? analytics.monthIncome}"></div><div class="field"><label>Расход, ₽</label><input name="expense" type="number" value="${item?.expense ?? analytics.monthExpense}"></div></div>
+      <div class="field"><label>Что сработало</label><textarea name="repeat">${escapeHtml(item?.repeat || '')}</textarea></div><div class="field"><label>Что прекратить</label><textarea name="stop">${escapeHtml(item?.stop || '')}</textarea></div><div class="field"><label>Фокус следующего месяца</label><textarea name="nextFocus">${escapeHtml(item?.nextFocus || '')}</textarea></div><div class="field"><label>Главный вывод</label><textarea name="lesson">${escapeHtml(item?.lesson || '')}</textarea></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); const existing = state.monthlyReviews.find(x=>x.month===data.month); const payload = { id: existing?.id || item?.id || uid(), month: data.month || month, income:Number(data.income||0), expense:Number(data.expense||0), saved:Number(data.saved||0), repeat:data.repeat||'', stop:data.stop||'', nextFocus:data.nextFocus||'', lesson:data.lesson||'', createdAt: existing?.createdAt || new Date().toISOString() }; if (existing) Object.assign(existing, payload); else state.monthlyReviews.push(payload); return true; });
+  }
+
+  function openBodyProfileModal() {
+    const profile = state.workoutProfile || freshState().workoutProfile;
+    openModal('Параметры тела', `
+      <div class="form-grid"><div class="field"><label>Рост, см</label><input name="height" type="number" min="100" value="${profile.height || 177}"></div><div class="field"><label>Возраст</label><input name="age" type="number" min="1" value="${profile.age || 28}"></div></div>
+      <div class="form-grid"><div class="field"><label>Стартовый вес, кг</label><input name="startWeight" type="number" min="30" step="0.1" value="${profile.startWeight || profile.weight || 89}"></div><div class="field"><label>Целевой вес, кг</label><input name="targetWeight" type="number" min="30" step="0.1" value="${profile.targetWeight || 82}"></div></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); state.workoutProfile = { ...(state.workoutProfile || {}), height:Number(data.height||0), age:Number(data.age||0), startWeight:Number(data.startWeight||0), targetWeight:Number(data.targetWeight||0), weight: Number(state.workoutProfile?.weight || data.startWeight || 0), goal:'weight_loss', days:0, level:'none', equipment:'none', savedAt:new Date().toISOString() }; return true; });
+  }
+
+  function openBodyLogModal() {
+    const latest = state.bodyLogs.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+    const profile = state.workoutProfile || freshState().workoutProfile;
+    const previousWeight = Number(latest?.weight || profile.weight || profile.startWeight || 0);
+    openModal('Записать вес', `
+      <div class="settings-help-card"><b>Предыдущий вес: ${previousWeight || 0} кг</b><p>Записывай факт. Система сама посчитает, сколько кг ушло или вернулось, этот маленький предатель.</p></div>
+      <div class="form-grid"><div class="field"><label>Дата</label><input name="date" type="date" value="${todayISO()}"></div><div class="field"><label>Вес, кг</label><input name="weight" type="number" min="30" step="0.1" required value="${previousWeight || ''}"></div></div><div class="field"><label>Комментарий</label><input name="notes" placeholder="Самочувствие, питание, тренировка"></div>
+    `, form => { const data = Object.fromEntries(new FormData(form)); const weight = Number(data.weight||0); if (weight <= 0) return false; const prev = state.bodyLogs.filter(log => log.date < (data.date || todayISO())).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]; const base = Number(prev?.weight || state.workoutProfile?.startWeight || weight); state.bodyLogs.push({ id: uid(), date: data.date || todayISO(), weight, change: Number((weight - base).toFixed(1)), notes:data.notes || '', createdAt:new Date().toISOString() }); state.workoutProfile.weight = weight; if (!state.workoutProfile.startWeight) state.workoutProfile.startWeight = weight; return true; });
+  }
+
   function bindHabitDragAndDrop() {
     let draggedId = null;
     $$('.habit-card').forEach(card => {
@@ -2188,12 +2463,9 @@
         <div class="list premium-habit-list">${state.habits.length ? state.habits.map(habitItem).join('') : empty('Добавьте полезную привычку.')}</div>
       </section>
 
-      <section class="card v11-workout-card premium-workout-card">
-        <div class="workout-card-head"><span class="workout-icon">⌁</span><div><small>Тренировки</small><h2>Персональный план</h2><p>Сила, выносливость, мобильность и восстановление.</p></div><strong>${workoutRate}%</strong></div>
-        <div class="workout-card-stats"><span><b>${workoutLogsThisWeek.length}/${profile.days}</b><small>на неделе</small></span><span><b>${profile.height} см</b><small>рост</small></span><span><b>${profile.age}</b><small>возраст</small></span></div>
-        <div class="premium-progress compact"><i style="width:${workoutRate}%"></i></div>
-        <div class="workout-card-actions"><button class="btn primary" type="button" id="openWorkouts">Видео и план</button><button class="btn secondary" type="button" id="openWorkoutJournal">Журнал</button></div>
-      </section>
+      ${strategicModulesMarkup()}
+
+      ${bodyTrackerMarkup()}
 
       <section class="section compact-section weekly-review-section">
         <div class="section-head"><h2>Недельный разбор</h2><button class="link-btn" type="button" id="${currentReview ? 'editCurrentReview' : 'createAutoReview'}">${currentReview ? 'Изменить' : 'Создать'}</button></div>
@@ -2210,8 +2482,7 @@
     $$('[data-growth-range]').forEach(button => button.addEventListener('click', () => { growthRange = button.dataset.growthRange; renderGrowth(); }));
     $('#addGoal')?.addEventListener('click', () => openGoalModal());
     $('#addHabit')?.addEventListener('click', () => openHabitModal());
-    $('#openWorkouts')?.addEventListener('click', openWorkoutModal);
-    $('#openWorkoutJournal')?.addEventListener('click', openWorkoutJournal);
+    bindStrategicModules();
     $('#createAutoReview')?.addEventListener('click', openAutoWeeklyReview);
     $('#createAutoReviewCard')?.addEventListener('click', openAutoWeeklyReview);
     $('#editCurrentReview')?.addEventListener('click', () => openReviewModal(currentReview));
@@ -2454,6 +2725,8 @@
         <button type="button" data-quick="task"><span>✓</span><b>Задача</b><small>Добавить конкретное действие</small><i>›</i></button>
         <button type="button" data-quick="project"><span>▣</span><b>Проект</b><small>Клиент или собственный проект</small><i>›</i></button>
         <button type="button" data-quick="note"><span>✦</span><b>Заметка</b><small>Мысль, идея или наблюдение</small><i>›</i></button>
+        <button type="button" data-quick="focus"><span>◎</span><b>Фокус дня</b><small>Главное действие на сегодня</small><i>›</i></button>
+        <button type="button" data-quick="weight"><span>◉</span><b>Вес</b><small>Записать текущий вес</small><i>›</i></button>
       </div>`, null, { hideActions: true, dialogClass: 'quick-add-dialog' });
     $$('[data-quick]', modalBody).forEach(button => button.addEventListener('click', () => {
       const action = button.dataset.quick;
@@ -2463,6 +2736,8 @@
       if (action === 'task') openTaskModal();
       if (action === 'project') openProjectModal();
       if (action === 'note') openKnowledgeNoteModal();
+      if (action === 'focus') openFocusModule();
+      if (action === 'weight') openBodyLogModal();
     }));
   }
 
@@ -3395,189 +3670,10 @@
     return `<div class="exercise-filters workout-video-filters">${WORKOUT_GROUPS.map(([key,label]) => `<button type="button" class="chip ${selected===key?'active':''}" data-workout-filter="${key}" data-filter-target="${target}">${label}</button>`).join('')}</div>`;
   }
 
-  function openWorkoutModal(initialTab = 'plan') {
-    const profile = { ...freshState().workoutProfile, ...(state.workoutProfile || {}) };
-    const plan = workoutPlan(profile);
-    openModal('Тренировки', `
-      <nav class="workout-hub-tabs" aria-label="Разделы тренировок">
-        ${[['plan','Мой план'],['catalog','Каталог'],['reels','Видео-лента'],['favorites','Избранное']].map(([key,label]) => `<button type="button" class="${initialTab===key?'active':''}" data-workout-tab="${key}">${label}</button>`).join('')}
-      </nav>
-
-      <section class="workout-tab-panel" data-workout-panel="plan" ${initialTab==='plan'?'':'hidden'}>
-        <section class="workout-profile-grid">
-          <label><span>Рост, см</span><input name="height" type="number" min="100" max="230" value="${profile.height}"></label>
-          <label><span>Возраст</span><input name="age" type="number" min="12" max="90" value="${profile.age}"></label>
-          <label><span>Вес, кг</span><input name="weight" type="number" min="30" max="250" step="0.1" value="${profile.weight}"></label>
-          <label><span>Цель</span><select name="goal"><option value="health" ${profile.goal==='health'?'selected':''}>Общее здоровье</option><option value="strength" ${profile.goal==='strength'?'selected':''}>Сила</option><option value="endurance" ${profile.goal==='endurance'?'selected':''}>Выносливость</option><option value="mobility" ${profile.goal==='mobility'?'selected':''}>Подвижность</option></select></label>
-          <label><span>Уровень</span><select name="level"><option value="beginner" ${profile.level==='beginner'?'selected':''}>Начальный</option><option value="intermediate" ${profile.level==='intermediate'?'selected':''}>Средний</option><option value="advanced" ${profile.level==='advanced'?'selected':''}>Опытный</option></select></label>
-          <label><span>Тренировок в неделю</span><select name="days">${[2,3,4,5].map(day => `<option value="${day}" ${Number(profile.days)===day?'selected':''}>${day}</option>`).join('')}</select></label>
-        </section>
-
-        <section class="workout-recommendation" id="workoutRecommendation">
-          <div><small>Рекомендация</small><strong>${profile.days} тренировки в неделю</strong><p>${workoutLevelLabel(profile.level)} уровень · ${workoutGoalLabel(profile.goal)} · 40–60 минут.</p></div>
-          <span class="workout-ring">${profile.days}</span>
-        </section>
-
-        <section class="workout-section">
-          <div class="section-head"><h3>План на неделю</h3><span class="badge">гибкий</span></div>
-          <div class="workout-week" id="workoutWeek">${plan.map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<button type="button" data-open-exercise-video="${exercise.id}"><span>${escapeHtml(exercise.title)}</span><small>${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</small><i>▶</i></button>`; }).join('')}</div></details>`).join('')}</div>
-        </section>
-
-        <section class="workout-section"><div class="section-head"><h3>Питание и восстановление</h3></div>${workoutNutritionMarkup(profile)}</section>
-
-        <section class="workout-section faq-section"><div class="section-head"><h3>Часто задаваемые вопросы</h3></div>
-          <details><summary>Как часто тренироваться?<i>⌄</i></summary><p>Начни с 2–3 тренировок в неделю. Добавляй день только после того, как восстановление и техника остаются стабильными.</p></details>
-          <details><summary>Что делать, если пропустил занятие?<i>⌄</i></summary><p>Продолжи со следующего запланированного дня. Не нужно выполнять две тяжёлые тренировки подряд, чтобы «догнать» график.</p></details>
-          <details><summary>Когда увеличивать нагрузку?<i>⌄</i></summary><p>Когда все повторения выполняются уверенно и с одинаковой техникой, добавь 1–2 повторения или небольшой вес.</p></details>
-          <details><summary>Нужна ли разминка?<i>⌄</i></summary><p>Да. 5–10 минут лёгкого движения и несколько подготовительных повторений перед первым тяжёлым упражнением.</p></details>
-        </section>
-        <button type="button" class="btn primary full workout-save-profile" id="saveWorkoutProfile">Сохранить мой план</button>
-      </section>
-
-      <section class="workout-tab-panel" data-workout-panel="catalog" ${initialTab==='catalog'?'':'hidden'}>
-        <div class="workout-video-intro"><div><small>Проверенная библиотека</small><h3>Техника упражнений</h3><p>Видео запускается только после нажатия. Одновременно работает один плеер.</p></div><span>${WORKOUT_EXERCISES.length}</span></div>
-        ${workoutFiltersMarkup('catalog')}
-        <div class="workout-video-grid" id="workoutCatalog">${workoutExerciseCards()}</div>
-      </section>
-
-      <section class="workout-tab-panel" data-workout-panel="reels" ${initialTab==='reels'?'':'hidden'}>
-        <div class="workout-video-intro"><div><small>Вертикальная лента</small><h3>Листай упражнения</h3><p>Листай вверх или вниз. Все видео и пояснения полностью на русском языке.</p></div><span>↕</span></div>
-        ${workoutFiltersMarkup('reels')}
-        <div class="workout-reels" id="workoutReels">${workoutReelsMarkup()}</div>
-      </section>
-
-      <section class="workout-tab-panel" data-workout-panel="favorites" ${initialTab==='favorites'?'':'hidden'}>
-        <div class="workout-video-intro"><div><small>Быстрый доступ</small><h3>Избранные упражнения</h3><p>Сохраняются внутри резервной копии Alexander OS.</p></div><span>☆</span></div>
-        <div class="workout-video-grid" id="workoutFavorites">${workoutFavoritesMarkup()}</div>
-      </section>
-
-      <p class="workout-video-disclaimer">Видео используются как справочник по технике. Выбирай комфортную нагрузку. При боли или плохом самочувствии остановись.</p>
-    `, () => false, { hideActions: true });
-
-    modal.classList.add('workout-dialog', 'video-workout-dialog');
-    let catalogGroup = 'all';
-    let reelsGroup = 'all';
-
-    const switchTab = tab => {
-      stopOtherPlayers();
-      $$('[data-workout-tab]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutTab === tab));
-      $$('[data-workout-panel]', modalBody).forEach(panel => { panel.hidden = panel.dataset.workoutPanel !== tab; });
-      if (tab === 'favorites') {
-        const container = $('#workoutFavorites');
-        if (container) container.innerHTML = workoutFavoritesMarkup();
-      }
-      modalBody.scrollTop = 0;
-    };
-
-    const refreshPreview = () => {
-      const formData = Object.fromEntries(new FormData(modalForm));
-      const live = { ...profile, ...formData, days:Number(formData.days || profile.days) };
-      const recommendation = $('#workoutRecommendation');
-      if (recommendation) recommendation.innerHTML = `<div><small>Рекомендация</small><strong>${live.days} тренировки в неделю</strong><p>${workoutLevelLabel(live.level)} уровень · ${workoutGoalLabel(live.goal)} · 40–60 минут.</p></div><span class="workout-ring">${live.days}</span>`;
-      const week = $('#workoutWeek');
-      if (week) week.innerHTML = workoutPlan(live).map((day,index) => `<details ${index===0?'open':''}><summary><span>День ${index+1}</span><b>${escapeHtml(day.title)}</b><small>${escapeHtml(day.subtitle)}</small><i>⌄</i></summary><div>${day.ids.map(id => { const exercise = WORKOUT_EXERCISES.find(item => item.id===id); return `<button type="button" data-open-exercise-video="${exercise.id}"><span>${escapeHtml(exercise.title)}</span><small>${escapeHtml(exercise.sets)} · ${escapeHtml(exercise.reps)}</small><i>▶</i></button>`; }).join('')}</div></details>`).join('');
-    };
-
-    const stopOtherPlayers = exceptShell => {
-      $$('[data-video-shell]', modalBody).forEach(shell => {
-        if (!shell.classList.contains('playing') || shell === exceptShell) return;
-        const item = WORKOUT_EXERCISES.find(value => value.id === shell.dataset.videoShell);
-        if (!item) return;
-        shell.classList.remove('playing');
-        shell.innerHTML = workoutVideoPosterInner(item, shell.classList.contains('compact'));
-      });
-    };
-
-    const playVideo = (id, trigger) => {
-      const item = WORKOUT_EXERCISES.find(value => value.id === id);
-      const card = trigger?.closest('[data-workout-item]');
-      const shell = trigger?.closest('[data-video-shell]') || card?.querySelector(`[data-video-shell="${id}"]`);
-      if (!item || !shell) return;
-      stopOtherPlayers(shell);
-      shell.classList.add('playing');
-      shell.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${item.videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1&hl=ru&cc_lang_pref=ru&iv_load_policy=3&controls=1" title="${escapeHtml(item.title)}" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="eager"></iframe>`;
-    };
-
-    const updateFavoriteButtons = id => {
-      const active = (state.workoutFavorites || []).includes(id);
-      $$(`[data-toggle-workout-favorite="${id}"]`, modalBody).forEach(button => {
-        button.classList.toggle('active', active);
-        button.setAttribute('aria-pressed', String(active));
-      });
-      const favorites = $('#workoutFavorites');
-      if (favorites && !favorites.closest('[hidden]')) favorites.innerHTML = workoutFavoritesMarkup();
-    };
-
-    $$('input,select', modalBody).forEach(input => input.addEventListener('change', refreshPreview));
-
-    modalBody.onclick = event => {
-      const tabButton = event.target.closest('[data-workout-tab]');
-      if (tabButton) { switchTab(tabButton.dataset.workoutTab); return; }
-
-      const filterButton = event.target.closest('[data-workout-filter]');
-      if (filterButton) {
-        const target = filterButton.dataset.filterTarget;
-        const group = filterButton.dataset.workoutFilter;
-        $$(`[data-filter-target="${target}"]`, modalBody).forEach(button => button.classList.toggle('active', button === filterButton));
-        if (target === 'catalog') { catalogGroup = group; $('#workoutCatalog').innerHTML = workoutExerciseCards(catalogGroup); }
-        if (target === 'reels') { reelsGroup = group; $('#workoutReels').innerHTML = workoutReelsMarkup(reelsGroup); }
-        return;
-      }
-
-      const planExercise = event.target.closest('[data-open-exercise-video]');
-      if (planExercise) {
-        switchTab('catalog');
-        const item = WORKOUT_EXERCISES.find(value => value.id === planExercise.dataset.openExerciseVideo);
-        if (item) {
-          catalogGroup = item.group;
-          $$('[data-filter-target="catalog"]', modalBody).forEach(button => button.classList.toggle('active', button.dataset.workoutFilter === item.group));
-          $('#workoutCatalog').innerHTML = workoutExerciseCards(item.group);
-          setTimeout(() => {
-            modalBody.querySelector(`[data-workout-item="${item.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
-          }, 40);
-        }
-        return;
-      }
-
-      const playButton = event.target.closest('[data-play-workout-video]');
-      if (playButton) { playVideo(playButton.dataset.playWorkoutVideo, playButton); return; }
-
-      const youtubeButton = event.target.closest('[data-open-workout-youtube]');
-      if (youtubeButton) {
-        const item = WORKOUT_EXERCISES.find(value => value.id === youtubeButton.dataset.openWorkoutYoutube);
-        if (item) window.open(workoutYoutubeUrl(item), '_blank', 'noopener,noreferrer');
-        return;
-      }
-
-      const favoriteButton = event.target.closest('[data-toggle-workout-favorite]');
-      if (favoriteButton) {
-        const id = favoriteButton.dataset.toggleWorkoutFavorite;
-        const values = new Set(state.workoutFavorites || []);
-        if (values.has(id)) values.delete(id); else values.add(id);
-        state.workoutFavorites = [...values];
-        saveState({ snapshot:false });
-        updateFavoriteButtons(id);
-        toast(values.has(id) ? 'Добавлено в избранное' : 'Удалено из избранного');
-        return;
-      }
-
-      if (event.target.closest('#saveWorkoutProfile')) {
-        const data = Object.fromEntries(new FormData(modalForm));
-        state.workoutProfile = {
-          height: Math.max(100, Math.min(230, Number(data.height || 177))),
-          age: Math.max(12, Math.min(90, Number(data.age || 18))),
-          weight: Math.max(30, Math.min(250, Number(data.weight || 70))),
-          goal: data.goal || 'health',
-          level: data.level || 'beginner',
-          days: Math.max(2, Math.min(5, Number(data.days || 3))),
-          equipment: 'mixed',
-          savedAt: new Date().toISOString()
-        };
-        saveState();
-        toast('План тренировок сохранён');
-      }
-    };
+  function openWorkoutModal() {
+    openBodyProfileModal();
   }
+
 
   function renderSettings(target = app) {
     const notificationSupported = 'Notification' in window && 'serviceWorker' in navigator;
@@ -3601,6 +3697,8 @@
           <button class="settings-row" type="button" id="homePreferences"><i class="settings-icon">⌂</i><span>Главная страница<small>Настроить расположение финансовых блоков</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="financePreferences"><i class="settings-icon">▥</i><span>Финансы и цели<small>Доход по месяцам, капитал, подушка и лимит</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="notificationSettings"><i class="settings-icon">♢</i><span>Уведомления<small>${notificationStatus}</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="budgetSettings"><i class="settings-icon">◷</i><span>Деньги до зарплаты<small>Дата зарплаты и дневной лимит</small></span><b>›</b></button>
+          <button class="settings-row" type="button" id="bodySettings"><i class="settings-icon">◉</i><span>Параметры тела<small>Рост, вес, возраст и цель</small></span><b>›</b></button>
         </section>
 
         <section class="settings-list card exact-settings-list">
@@ -3623,7 +3721,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V13.4 · WhatsApp Tab Bar</p>
+        <p class="app-version">Alexander OS V14.1 · Strategy Modules</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -3637,6 +3735,8 @@
     $('#openDiagnostics')?.addEventListener('click', openDiagnostics);
     $('#openRecurringFromSettings')?.addEventListener('click', openRecurringRules);
     $('#notificationSettings')?.addEventListener('click', requestNotifications);
+    $('#budgetSettings')?.addEventListener('click', openBudgetModule);
+    $('#bodySettings')?.addEventListener('click', openBodyProfileModal);
     $('#installHelp')?.addEventListener('click', () => alert('Открой приложение в Safari, нажми «Поделиться», затем «На экран Домой» и «Добавить».'));
     $('#exportData')?.addEventListener('click', exportData);
     $('#exportEncryptedData')?.addEventListener('click', exportEncryptedData);
@@ -4092,7 +4192,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=13.5.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=14.1.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

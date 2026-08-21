@@ -1,7 +1,7 @@
-const CACHE = 'alexander-os-v13-5-startup-splash';
+const CACHE = 'alexander-os-v14-1-compact-island-ui';
 const ASSETS = [
-  './', './index.html', './styles.css?v=13.5.0', './app.js?v=13.5.0',
-  './manifest.webmanifest?v=13.5.0', './icon-192.png', './icon-512.png'
+  './', './index.html', './styles.css?v=14.1.0', './app.js?v=14.1.0',
+  './manifest.webmanifest?v=14.1.0', './icon-192.png', './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -50,6 +50,6 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
     for (const client of list) if ('focus' in client) return client.focus();
-    return clients.openWindow('./?build=13.5.0');
+    return clients.openWindow('./?build=14.1.0');
   }));
 });

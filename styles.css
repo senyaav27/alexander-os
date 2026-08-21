@@ -6264,3 +6264,439 @@ select option { color:var(--v13-text)!important; background:var(--v13-sheet)!imp
     bottom: calc(65px + env(safe-area-inset-bottom)) !important;
   }
 }
+
+
+
+
+/* V14.1 Compact Island UI - premium black dynamic widgets */
+:root {
+  --island-bg: #050706;
+  --island-card: rgba(8, 11, 9, .96);
+  --island-card-soft: rgba(12, 16, 13, .92);
+  --island-border: rgba(255,255,255,.105);
+  --island-border-strong: rgba(120,255,140,.34);
+  --island-green: #72f783;
+  --island-green-2: #22d46b;
+  --island-muted: rgba(245,255,248,.58);
+  --island-shadow: 0 18px 42px rgba(0,0,0,.44), inset 0 1px 0 rgba(255,255,255,.045);
+  --island-glow: 0 0 26px rgba(82,255,123,.28);
+}
+
+:root[data-theme="black"] body,
+:root[data-theme="graphite"] body {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(75,255,118,.08), transparent 26%),
+    radial-gradient(circle at 96% 14%, rgba(78,255,137,.06), transparent 25%),
+    #000 !important;
+}
+
+/* Make all dashboard cards look like Dynamic Island widgets */
+body[data-screen="dashboard"] .app-shell {
+  padding-inline: clamp(14px, 4vw, 22px);
+}
+
+body[data-screen="dashboard"] .premium-home-welcome {
+  margin: 4px 0 18px !important;
+}
+
+body[data-screen="dashboard"] .premium-home-welcome small {
+  color: var(--island-green) !important;
+  letter-spacing: .01em;
+}
+
+body[data-screen="dashboard"] .premium-home-welcome h2 {
+  max-width: 100%;
+  font-size: clamp(28px, 8.2vw, 42px) !important;
+  line-height: .98 !important;
+  letter-spacing: -.07em !important;
+}
+
+body[data-screen="dashboard"] .card,
+body[data-screen="dashboard"] .home-premium-capital,
+body[data-screen="dashboard"] .home-goal-card,
+body[data-screen="dashboard"] .home-week-expense-card,
+body[data-screen="dashboard"] .home-habit-preview,
+body[data-screen="dashboard"] .item {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--island-border) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(114,247,131,.08), transparent 36%),
+    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012)),
+    var(--island-card) !important;
+  box-shadow: var(--island-shadow) !important;
+  backdrop-filter: blur(18px);
+}
+
+body[data-screen="dashboard"] .card::before,
+body[data-screen="dashboard"] .home-premium-capital::before,
+body[data-screen="dashboard"] .home-goal-card::before,
+body[data-screen="dashboard"] .home-week-expense-card::before,
+body[data-screen="dashboard"] .home-habit-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.055), transparent 30%),
+    radial-gradient(circle at 70% 100%, rgba(72,255,108,.05), transparent 38%);
+}
+
+body[data-screen="dashboard"] .home-premium-capital {
+  min-height: 158px;
+  padding: 22px 22px 20px !important;
+  border-radius: 28px !important;
+}
+
+body[data-screen="dashboard"] .home-capital-head {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-screen="dashboard"] .home-capital-head small,
+body[data-screen="dashboard"] .home-week-copy small,
+body[data-screen="dashboard"] .home-goal-title small,
+body[data-screen="dashboard"] .home-habit-head small,
+body[data-screen="dashboard"] .home-habit-head p,
+body[data-screen="dashboard"] .home-capital-goal,
+body[data-screen="dashboard"] .home-goal-card p {
+  color: var(--island-muted) !important;
+}
+
+body[data-screen="dashboard"] .home-capital-head strong {
+  margin-top: 8px;
+  font-size: clamp(43px, 13vw, 66px) !important;
+  font-weight: 780 !important;
+  letter-spacing: -.08em !important;
+  color: #f8fff9 !important;
+}
+
+body[data-screen="dashboard"] .compare {
+  border: 0 !important;
+  background: rgba(114,247,131,.105) !important;
+  color: rgba(245,255,248,.72) !important;
+  border-radius: 999px !important;
+  padding: 9px 13px !important;
+  font-weight: 720;
+}
+
+body[data-screen="dashboard"] .premium-progress {
+  height: 10px !important;
+  background: rgba(255,255,255,.08) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.7) !important;
+}
+
+body[data-screen="dashboard"] .premium-progress > i {
+  background: linear-gradient(90deg, var(--island-green-2), var(--island-green)) !important;
+  box-shadow: var(--island-glow), 0 0 8px rgba(114,247,131,.5) !important;
+}
+
+body[data-screen="dashboard"] .premium-progress > b {
+  background: linear-gradient(180deg, #89ff92, #46e96b) !important;
+  color: #061008 !important;
+  box-shadow: 0 0 30px rgba(82,255,123,.45) !important;
+  font-weight: 800 !important;
+}
+
+body[data-screen="dashboard"] .home-capital-goal {
+  position: relative;
+  z-index: 1;
+  margin-top: 18px !important;
+  font-size: 13px !important;
+}
+
+body[data-screen="dashboard"] .home-capital-goal em {
+  color: rgba(245,255,248,.68) !important;
+}
+
+/* Two compact upper widgets */
+body[data-screen="dashboard"] .home-goal-grid {
+  gap: 12px !important;
+  margin-top: 12px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-card {
+  min-height: 138px;
+  border-radius: 24px !important;
+  padding: 17px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title {
+  grid-template-columns: 44px 1fr auto !important;
+  gap: 11px !important;
+}
+
+body[data-screen="dashboard"] .home-goal-title > span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(72,255,108,.095);
+  color: var(--island-green) !important;
+  font-size: 24px !important;
+  box-shadow: inset 0 0 0 1px rgba(114,247,131,.14);
+}
+
+body[data-screen="dashboard"] .home-goal-title strong {
+  color: #f8fff9 !important;
+  font-weight: 780;
+}
+
+body[data-screen="dashboard"] .home-goal-card > b {
+  margin-top: 18px !important;
+  color: #f8fff9 !important;
+  font-size: clamp(27px, 8.6vw, 40px) !important;
+  font-weight: 760 !important;
+  letter-spacing: -.075em !important;
+}
+
+/* Weekly expenses island */
+body[data-screen="dashboard"] .home-week-expense-card {
+  grid-template-columns: minmax(0,.78fr) minmax(165px,1.22fr) !important;
+  gap: 14px !important;
+  min-height: 150px;
+  border-radius: 26px !important;
+  padding: 18px !important;
+}
+
+body[data-screen="dashboard"] .home-week-copy {
+  position: relative;
+  z-index: 1;
+}
+
+body[data-screen="dashboard"] .home-week-copy strong {
+  color: #f8fff9 !important;
+  font-size: clamp(30px, 8.5vw, 44px) !important;
+  line-height: 1;
+}
+
+body[data-screen="dashboard"] .home-week-copy span {
+  color: var(--island-green) !important;
+}
+
+body[data-screen="dashboard"] .home-week-bars {
+  height: 92px !important;
+  position: relative;
+  z-index: 1;
+  gap: 8px !important;
+}
+
+body[data-screen="dashboard"] .home-week-bar span {
+  width: 18px !important;
+  justify-self: center;
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, #8cff92, #22d46b) !important;
+  box-shadow: 0 0 20px rgba(82,255,123,.35) !important;
+}
+
+body[data-screen="dashboard"] .home-week-bar small {
+  color: rgba(245,255,248,.52) !important;
+  font-size: 11px !important;
+}
+
+/* Habit islands in the style of the reference */
+body[data-screen="dashboard"] .home-island-habits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+body[data-screen="dashboard"] .home-island-habits:empty {
+  display: none;
+}
+
+body[data-screen="dashboard"] .home-island-habits .home-habit-preview {
+  margin-top: 0 !important;
+  border-radius: 24px !important;
+  padding: 17px !important;
+  min-height: 160px;
+}
+
+body[data-screen="dashboard"] .home-island-habits .home-habit-head {
+  gap: 8px;
+}
+
+body[data-screen="dashboard"] .home-island-habits .home-habit-head h3 {
+  color: #f8fff9 !important;
+  font-size: 17px !important;
+  line-height: 1.05;
+}
+
+body[data-screen="dashboard"] .home-habit-streak {
+  color: #f8fff9 !important;
+}
+
+body[data-screen="dashboard"] .home-habit-streak span {
+  filter: drop-shadow(0 0 10px rgba(255,70,31,.5));
+}
+
+body[data-screen="dashboard"] .habit-orb-grid.home-habit-orbs {
+  grid-template-columns: repeat(7, minmax(0,1fr)) !important;
+  gap: 5px !important;
+  margin-top: 16px !important;
+}
+
+body[data-screen="dashboard"] .habit-day-orb {
+  min-height: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-screen="dashboard"] .habit-day-orb .habit-orb {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.075) !important;
+  border: 2px solid rgba(255,255,255,.06) !important;
+  color: #061008 !important;
+  font-size: 15px !important;
+  font-weight: 800;
+}
+
+body[data-screen="dashboard"] .habit-day-orb.done .habit-orb {
+  border-color: transparent !important;
+  background: radial-gradient(circle at 30% 20%, #baffb9, #49ed65 62%, #18a941) !important;
+  box-shadow: 0 0 20px rgba(82,255,123,.35) !important;
+}
+
+body[data-screen="dashboard"] .habit-day-orb.today:not(.done) .habit-orb {
+  border-color: var(--island-green) !important;
+  background: conic-gradient(var(--island-green) 0 68%, rgba(255,255,255,.08) 68% 100%) !important;
+  box-shadow: 0 0 18px rgba(82,255,123,.25) !important;
+}
+
+body[data-screen="dashboard"] .habit-day-orb small {
+  margin-top: 5px !important;
+  color: rgba(245,255,248,.45) !important;
+  font-size: 9px !important;
+}
+
+/* Task/payment compact sections */
+body[data-screen="dashboard"] .compact-section {
+  margin-top: 12px !important;
+}
+
+body[data-screen="dashboard"] .section-head h2 {
+  color: #f8fff9 !important;
+  letter-spacing: -.035em;
+}
+
+/* Bottom bar like a native app */
+.bottom-nav {
+  border-top: 1px solid rgba(255,255,255,.075) !important;
+  background: rgba(6,8,8,.93) !important;
+  box-shadow: 0 -10px 34px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.045) !important;
+}
+
+.bottom-nav .nav-item.active {
+  background: transparent !important;
+  color: var(--island-green) !important;
+}
+
+.global-add {
+  background: radial-gradient(circle at 32% 22%, #c8ffc5, #69f27b 55%, #17c960) !important;
+  box-shadow: 0 0 34px rgba(82,255,123,.45), 0 12px 30px rgba(0,0,0,.35) !important;
+}
+
+/* Mobile tuning */
+@media (max-width: 430px) {
+  body[data-screen="dashboard"] .home-goal-grid,
+  body[data-screen="dashboard"] .home-island-habits {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 10px;
+  }
+
+  body[data-screen="dashboard"] .home-goal-card {
+    min-height: 130px;
+    padding: 14px !important;
+  }
+
+  body[data-screen="dashboard"] .home-goal-title {
+    grid-template-columns: 36px 1fr auto !important;
+  }
+
+  body[data-screen="dashboard"] .home-goal-title > span {
+    width: 36px;
+    height: 36px;
+    font-size: 20px !important;
+  }
+
+  body[data-screen="dashboard"] .home-goal-card > b {
+    font-size: clamp(24px, 8vw, 34px) !important;
+  }
+
+  body[data-screen="dashboard"] .home-week-expense-card {
+    grid-template-columns: 1fr !important;
+  }
+
+  body[data-screen="dashboard"] .home-week-bars {
+    height: 84px !important;
+  }
+
+  body[data-screen="dashboard"] .home-island-habits .home-habit-preview {
+    min-height: 150px;
+    padding: 14px !important;
+  }
+
+  body[data-screen="dashboard"] .habit-day-orb .habit-orb {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 13px !important;
+  }
+}
+
+/* Keep light theme readable if user switches themes */
+:root[data-theme="light"] body[data-screen="dashboard"] .card,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-premium-capital,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-goal-card,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-week-expense-card,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-habit-preview {
+  background: rgba(255,255,255,.92) !important;
+  border-color: rgba(15,35,24,.12) !important;
+}
+
+:root[data-theme="light"] body[data-screen="dashboard"] .home-capital-head strong,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-goal-card > b,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-week-copy strong,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-island-habits .home-habit-head h3,
+:root[data-theme="light"] body[data-screen="dashboard"] .section-head h2 {
+  color: #102018 !important;
+}
+
+:root[data-theme="light"] body[data-screen="dashboard"] .home-capital-head small,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-week-copy small,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-goal-title small,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-habit-head small,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-habit-head p,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-capital-goal,
+:root[data-theme="light"] body[data-screen="dashboard"] .home-goal-card p {
+  color: #65736b !important;
+}
+
+
+
+/* V14.1 Strategy modules and body tracker */
+.strategy-modules { margin-top: 14px; }
+.strategy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.strategy-card { min-height:128px; padding:15px!important; text-align:left; border-radius:22px!important; }
+.strategy-icon { width:36px; height:36px; display:grid; place-items:center; margin-bottom:10px; border-radius:12px; background:color-mix(in srgb,var(--app-accent) 13%,transparent); color:var(--app-accent); font-weight:800; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--app-accent) 18%,transparent); }
+.strategy-card small, .strategy-mini small { display:block; color:var(--app-muted); font-size:10px; }
+.strategy-card strong { display:block; margin-top:5px; color:var(--app-text); font-size:clamp(20px,6vw,28px); letter-spacing:-.045em; }
+.strategy-card p { margin:6px 0 0; color:var(--app-muted); font-size:10px; line-height:1.25; }
+.home-mini-strategy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; }
+.strategy-mini { padding:14px!important; border-radius:20px!important; text-align:left; }
+.strategy-mini strong { display:block; margin-top:5px; font-size:clamp(19px,5.5vw,27px); letter-spacing:-.04em; }
+.body-tracker-card { margin-top:14px; padding:18px!important; border-radius:26px!important; }
+.body-stats { grid-template-columns:repeat(4,minmax(0,1fr))!important; }
+.body-note { margin-top:10px; color:var(--app-muted); font-size:12px; }
+.body-log-mini { display:grid; gap:6px; margin-top:12px; color:var(--app-muted); font-size:11px; }
+.body-log-mini span { display:flex; justify-content:space-between; gap:10px; padding:8px 10px; border-radius:12px; background:color-mix(in srgb,var(--app-card) 88%,transparent); border:1px solid var(--app-line); }
+.body-log-mini b { color:var(--app-text); }
+.utility-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--app-accent); }
+.btn.full { width:100%; margin-top:10px; }
+@media (max-width: 430px) { .strategy-grid { grid-template-columns:1fr 1fr; gap:9px; } .strategy-card { min-height:118px; padding:13px!important; } .strategy-card strong { font-size:21px; } .body-stats { grid-template-columns:repeat(2,minmax(0,1fr))!important; } }

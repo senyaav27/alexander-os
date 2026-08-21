@@ -1,9 +1,7 @@
-Alexander OS V13.4 - QA
-
-PASS: JavaScript syntax checked.
-PASS: startup splash markup exists in index.html.
-PASS: critical splash CSS is inline in head.
-PASS: splash is removed after render.
-PASS: manifest build bumped to 13.4.0.
-PASS: service worker cache bumped to V13.4.
-PASS: finance ledger fix from V13.3 preserved.
+JS syntax: OK
+No video workout button: OK
+Strategy functions: OK
+Body tracker: OK
+V14.1 version: OK
+Workflow file: OK
+Open workout modal redirected to body profile: OK
