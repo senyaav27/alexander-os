@@ -6268,7 +6268,7 @@ select option { color:var(--v13-text)!important; background:var(--v13-sheet)!imp
 
 
 
-/* V14.2 Compact Island UI - premium black dynamic widgets */
+/* V14.3 Compact Island UI - premium black dynamic widgets */
 :root {
   --island-bg: #050706;
   --island-card: rgba(8, 11, 9, .96);
@@ -6680,7 +6680,7 @@ body[data-screen="dashboard"] .section-head h2 {
 
 
 
-/* V14.2 Strategy modules and body tracker */
+/* V14.3 Strategy modules and body tracker */
 .strategy-modules { margin-top: 14px; }
 .strategy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .strategy-card { min-height:128px; padding:15px!important; text-align:left; border-radius:22px!important; }
@@ -6704,7 +6704,7 @@ body[data-screen="dashboard"] .section-head h2 {
 
 
 
-/* V14.2 Typography Tune - softer readable scale */
+/* V14.3 Typography Tune - softer readable scale */
 :root {
   --aos-title-tight: -.045em;
   --aos-number-tight: -.055em;
@@ -6995,4 +6995,31 @@ body[data-screen="dashboard"] .home-habit-streak strong {
   .topbar-copy h1 {
     font-size: clamp(23px, 6vw, 30px) !important;
   }
+}
+
+
+/* V14.3 Payday limit fix */
+.payday-summary-card b,
+#paydayDaily {
+  display: block;
+  font-size: clamp(24px, 7vw, 34px) !important;
+  line-height: 1 !important;
+  letter-spacing: -.05em !important;
+  color: var(--app-text) !important;
+}
+
+.payday-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.payday-metrics div {
+  min-height: 78px;
+}
+
+.payday-metrics small {
+  line-height: 1.15;
+}
+
+.payday-metrics strong {
+  font-size: clamp(20px, 5.8vw, 28px) !important;
 }

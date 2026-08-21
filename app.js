@@ -415,7 +415,7 @@
 
   function saveState(options = {}) {
     recalculateAccountBalances();
-    state.version = 13.4;
+    state.version = 14.3;
     const previousRaw = safeStorage.getItem(STORAGE_KEY);
     if (options.history !== false && previousRaw) {
       try {
@@ -2152,15 +2152,36 @@
     return Math.max(0, Math.ceil((new Date(dateValue + 'T00:00:00').getTime() - new Date(todayISO() + 'T00:00:00').getTime()) / 86400000));
   }
 
-  function moneyToSalaryModel(analytics = getFinanceAnalytics()) {
-    const nextDate = state.profile.nextSalaryDate || '';
+  function moneyToSalaryModel(analytics = getFinanceAnalytics(), override = {}) {
+    const nextDate = override.nextSalaryDate ?? state.profile.nextSalaryDate ?? '';
     const days = Math.max(1, daysUntil(nextDate));
-    const reserved = Number(state.profile.dailyBudgetReserve || 0);
+    const reserve = Math.max(0, Number(override.dailyBudgetReserve ?? state.profile.dailyBudgetReserve ?? 0));
     const untilDate = nextDate ? new Date(nextDate) : addDays(new Date(), 14);
-    const obligations = openObligations().filter(item => item.type !== 'expected' && item.status === 'open' && item.dueDate && dateInRange(item.dueDate, new Date(), untilDate));
-    const obligatory = sum(obligations.map(item => Number(item.amount || 0))) + reserved;
-    const available = Math.max(0, analytics.free - obligatory);
-    return { nextDate, days, obligatory, available, daily: Math.floor(available / days), obligationsCount: obligations.length };
+
+    const spendableAccounts = sum(state.accounts
+      .filter(account => account.type !== 'investment' && account.purpose !== 'cushion' && !/подуш/i.test(account.name || ''))
+      .map(account => Number(account.balance || 0)));
+    const fallbackSpendable = Math.max(0, Number(analytics.liquid || 0) - Number(analytics.cushion || 0));
+    const spendable = Math.max(0, spendableAccounts || fallbackSpendable);
+
+    const obligations = openObligations()
+      .filter(item => item.type !== 'expected' && item.status === 'open' && item.dueDate && dateInRange(item.dueDate, new Date(), untilDate));
+    const payments = sum(obligations.map(item => Number(item.amount || 0)));
+    const protectedAmount = payments + reserve;
+    const available = Math.max(0, spendable - protectedAmount);
+    const daily = Math.floor(available / days);
+
+    return {
+      nextDate,
+      days,
+      reserve,
+      payments,
+      obligatory: protectedAmount,
+      spendable,
+      available,
+      daily,
+      obligationsCount: obligations.length
+    };
   }
 
   function lifeMapPriorityScore(item) {
@@ -2202,7 +2223,7 @@
     const nextCapitalStep = Math.ceil((analytics.capital + 1) / 50000) * 50000;
     const capitalStepLeft = Math.max(0, nextCapitalStep - analytics.capital);
     return `<section class="section compact-section strategy-modules" id="strategyModules">
-      <div class="section-head"><div><h2>Операционный центр</h2><small>Деньги, клиенты, дисциплина и ревизия</small></div><span class="badge">V14.2</span></div>
+      <div class="section-head"><div><h2>Операционный центр</h2><small>Деньги, клиенты, дисциплина и ревизия</small></div><span class="badge">V14.3</span></div>
       <div class="strategy-grid">
         <button class="card strategy-card" type="button" id="openBudgetModule"><span class="strategy-icon">◷</span><small>До зарплаты</small><strong>${money(budget.daily)} / день</strong><p>${budget.days} дн. · резерв ${money(budget.obligatory)}</p></button>
         <button class="card strategy-card" type="button" id="openIncomePlanModule"><span class="strategy-icon">↗</span><small>План дохода</small><strong>${money(incomeGap)}</strong><p>нужно добрать · рычаги ${money(leverPotential)}</p></button>
@@ -2260,10 +2281,32 @@
   function openBudgetModule() {
     const model = moneyToSalaryModel();
     openModal('Деньги до зарплаты', `
-      <div class="settings-help-card"><b>${money(model.daily)} в день</b><p>Свободный остаток минус обязательные платежи до зарплаты. Это твой безопасный дневной лимит, а не приглашение всё спустить, как будто банк тебе друг.</p></div>
-      <div class="form-grid"><div class="field"><label>Следующая зарплата</label><input name="nextSalaryDate" type="date" value="${state.profile.nextSalaryDate || localISO(addDays(new Date(), 14))}"></div><div class="field"><label>Резерв до зарплаты, ₽</label><input name="dailyBudgetReserve" type="number" min="0" value="${Number(state.profile.dailyBudgetReserve || 0)}"></div></div>
-      <div class="project-metrics two-cols"><div><small>Дней</small><strong>${model.days}</strong></div><div><small>Обязательства</small><strong>${money(model.obligatory)}</strong></div><div><small>Можно тратить</small><strong>${money(model.available)}</strong></div><div><small>Дневной лимит</small><strong>${money(model.daily)}</strong></div></div>
+      <div class="settings-help-card payday-summary-card"><b id="paydayDaily">${money(model.daily)} в день</b><p>Формула простая: деньги на обычных счетах минус платежи до зарплаты минус сумма, которую нельзя трогать. Подушка в расчёт не входит, потому что подушка - это не кошелёк для капучино.</p></div>
+      <div class="form-grid"><div class="field"><label>Следующая зарплата</label><input name="nextSalaryDate" type="date" value="${state.profile.nextSalaryDate || localISO(addDays(new Date(), 14))}"></div><div class="field"><label>Не трогать до зарплаты, ₽</label><input name="dailyBudgetReserve" type="number" min="0" value="${Number(state.profile.dailyBudgetReserve || 0)}" placeholder="Например, 25000"></div></div>
+      <div class="settings-help-card subtle"><b>Как заполнять</b><p>В поле «Не трогать» укажи сумму, которую хочешь оставить на счёте до зарплаты. Обязательные платежи приложение берёт из раздела «Платежи» автоматически.</p></div>
+      <div class="project-metrics two-cols payday-metrics">
+        <div><small>Обычные счета</small><strong id="paydaySpendable">${money(model.spendable)}</strong></div>
+        <div><small>Дней</small><strong id="paydayDays">${model.days}</strong></div>
+        <div><small>Платежи до зарплаты</small><strong id="paydayPayments">${money(model.payments)}</strong></div>
+        <div><small>Не трогать</small><strong id="paydayReserve">${money(model.reserve)}</strong></div>
+        <div><small>Можно потратить</small><strong id="paydayAvailable">${money(model.available)}</strong></div>
+        <div><small>Лимит в день</small><strong id="paydayLimit">${money(model.daily)}</strong></div>
+      </div>
     `, form => { const data = Object.fromEntries(new FormData(form)); state.profile.nextSalaryDate = data.nextSalaryDate || ''; state.profile.dailyBudgetReserve = Number(data.dailyBudgetReserve || 0); return true; });
+
+    const updatePaydayPreview = () => {
+      const nextSalaryDate = modalBody.querySelector('[name="nextSalaryDate"]')?.value || '';
+      const dailyBudgetReserve = Number(modalBody.querySelector('[name="dailyBudgetReserve"]')?.value || 0);
+      const fresh = moneyToSalaryModel(getFinanceAnalytics(), { nextSalaryDate, dailyBudgetReserve });
+      modalBody.querySelector('#paydayDaily').textContent = `${money(fresh.daily)} в день`;
+      modalBody.querySelector('#paydaySpendable').textContent = money(fresh.spendable);
+      modalBody.querySelector('#paydayDays').textContent = String(fresh.days);
+      modalBody.querySelector('#paydayPayments').textContent = money(fresh.payments);
+      modalBody.querySelector('#paydayReserve').textContent = money(fresh.reserve);
+      modalBody.querySelector('#paydayAvailable').textContent = money(fresh.available);
+      modalBody.querySelector('#paydayLimit').textContent = money(fresh.daily);
+    };
+    ['nextSalaryDate', 'dailyBudgetReserve'].forEach(name => modalBody.querySelector(`[name="${name}"]`)?.addEventListener('input', updatePaydayPreview));
   }
 
   function openIncomePlanModule() {
@@ -3721,7 +3764,7 @@
           <button class="settings-row" type="button" id="lockNow" ${security.pinEnabled || security.faceIdEnabled ? '' : 'disabled'}><i class="settings-icon">⌁</i><span>Заблокировать сейчас<small>Проверить Face ID или PIN</small></span><b>›</b></button>
         </section>
         <section class="settings-list card exact-settings-list"><button class="settings-row danger" type="button" id="resetData"><i class="settings-icon">×</i><span>Сбросить все данные<small>Действие нельзя отменить</small></span><b>›</b></button></section>
-        <p class="app-version">Alexander OS V14.2 · Strategy Modules</p>
+        <p class="app-version">Alexander OS V14.3 · Strategy Modules</p>
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
@@ -4061,7 +4104,7 @@ ${JSON.stringify(state, null, 2)}
 
       safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
       state = normalizeState(clone(backupData));
-      state.version = 13.4;
+      state.version = 14.3;
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
@@ -4192,7 +4235,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=14.2.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=14.3.0');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
