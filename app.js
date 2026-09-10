@@ -154,7 +154,11 @@
         recurringReminderDays: 3,
         lastWeeklyReviewWeek: '',
         lastDiagnosticsAt: null,
-        expenseCategoryAliases: {}
+        expenseCategoryAliases: {},
+        aiSyncEnabled: false,
+        aiSyncEndpoint: '',
+        aiLastSyncAt: null,
+        aiLastSyncError: ''
       },
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
@@ -390,6 +394,7 @@
   let financeCompareBase = `${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getFullYear()}-${pad(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getMonth() + 1)}`;
   let financeSelectedMonth = financeCompareCurrent;
   let modalAction = null;
+  let aiSyncTimer = null;
 
   const app = $('#app');
   const modal = $('#modal');
@@ -438,6 +443,39 @@
     }
     if (options.snapshot !== false) recordSnapshot();
     safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (options.aiSync !== false) scheduleAiSync();
+  }
+
+  function aiSyncToken() { return safeStorage.getItem('alexander_ai_sync_token') || ''; }
+  function setAiSyncToken(value) { value ? safeStorage.setItem('alexander_ai_sync_token', value) : safeStorage.removeItem('alexander_ai_sync_token'); }
+  function aiSnapshot() {
+    const safeText = value => String(value || '').slice(0, 4000);
+    const aiNotes = state.notes.filter(note => String(note.tags || '').split(',').some(tag => tag.trim().toLowerCase() === 'ai'));
+    return {
+      schemaVersion: 'alexander-ai-snapshot/v1', sourceVersion: String(state.version || ''), capturedAt: new Date().toISOString(),
+      goals: state.goals.map(goal => ({ id:String(goal.id), title:safeText(goal.title), current:Number(goal.current||0), target:Number(goal.target||0), deadline:String(goal.deadline||''), unit:safeText(goal.unit), nextAction:safeText(goal.nextAction) })),
+      projects: state.projects.map(project => ({ id:String(project.id), name:safeText(project.name), status:String(project.status||''), expectedValue:Number(project.value||0), nextAction:safeText(project.next), adMetrics:Object.fromEntries(Object.entries({ spend:project.adSpend, budget:project.adBudget, impressions:project.impressions, clicks:project.clicks, cpm:project.cpm, cpc:project.cpc, leads:project.leads, registrations:project.registrations, trials:project.trials, purchases:project.purchases, cpa:project.cpa, cac:project.cac, revenue:project.adRevenue, roas:project.roas }).filter(([,value]) => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value))).map(([key,value])=>[key,Number(value)])) })),
+      tasks: state.tasks.map(task => ({ id:String(task.id), title:safeText(task.title), projectId:String(task.projectId||''), priority:String(task.priority||''), due:String(task.due||''), status:String(task.status||'') })),
+      finances: {
+        accounts: state.accounts.map(account => ({ id:String(account.id), purpose:String(account.purpose||'general'), balance:Number(account.balance||0) })),
+        transactions: state.transactions.filter(tx => tx.category !== 'health').map(tx => ({ id:String(tx.id), title:safeText(tx.title), amount:(tx.type === 'expense' ? -1 : 1) * Math.abs(Number(tx.amount||0)), date:String(tx.date||''), category:String(tx.category||''), necessity:String(tx.necessity||''), projectId:String(tx.projectId||'') })),
+        obligations: state.obligations.map(item => ({ id:String(item.id), title:safeText(item.title), amount:Number(item.amount||0), dueDate:String(item.dueDate||''), status:String(item.status||'') })),
+        monthlyIncomeTarget:Number(state.profile.monthlyIncomeTarget||0), monthlyExpenseLimit:Number(state.profile.monthlyExpenseLimit||0), cushionTarget:Number(state.profile.cushionTarget||0)
+      },
+      aiNotes: aiNotes.map(note => ({ id:String(note.id), title:safeText(note.title), body:safeText(note.body), updatedAt:String(note.updatedAt||note.createdAt||'') }))
+    };
+  }
+  function scheduleAiSync() { if (!state.profile.aiSyncEnabled) return; clearTimeout(aiSyncTimer); aiSyncTimer = setTimeout(() => syncAlexanderAi(false), 1500); }
+  async function syncAlexanderAi(showResult = true) {
+    if (!state.profile.aiSyncEnabled) { if (showResult) toast('AI Sync выключен'); return false; }
+    const endpoint=String(state.profile.aiSyncEndpoint||'').replace(/\/$/,''); const token=aiSyncToken();
+    if (!endpoint || !token) { state.profile.aiLastSyncError='Не настроены endpoint или sync token'; safeStorage.setItem(STORAGE_KEY, JSON.stringify(state)); if(showResult) alert(state.profile.aiLastSyncError); return false; }
+    try {
+      const response=await fetch(`${endpoint}/v1/snapshots`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(aiSnapshot())});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      state.profile.aiLastSyncAt=new Date().toISOString(); state.profile.aiLastSyncError=''; safeStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+      if(showResult) toast('Alexander AI синхронизирован'); return true;
+    } catch(error) { state.profile.aiLastSyncError=String(error?.message||error).slice(0,120); safeStorage.setItem(STORAGE_KEY,JSON.stringify(state)); if(showResult) alert(`AI Sync не выполнен: ${state.profile.aiLastSyncError}`); return false; }
   }
 
   function applyTheme() {
@@ -3028,11 +3066,27 @@
         <div class="field"><label>Фактически пришло, ₽</label><input name="actualIncome" type="number" min="0" value="${existingIncome?.amount ?? 0}"></div>
       </div>
       <div class="field"><label>Дата следующей оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
+      <div class="settings-help-card subtle"><b>Рекламные показатели для Alexander AI</b><p>Заполняй только те метрики, которые реально отслеживаешь. Они используются для анализа и alert rules, но никогда не изменяются AI автоматически.</p></div>
+      <div class="form-grid">
+        <div class="field"><label>Расход, ₽</label><input name="adSpend" type="number" min="0" step="any" value="${item?.adSpend ?? ''}"></div>
+        <div class="field"><label>Бюджет, ₽</label><input name="adBudget" type="number" min="0" step="any" value="${item?.adBudget ?? ''}"></div>
+        <div class="field"><label>Показы</label><input name="impressions" type="number" min="0" value="${item?.impressions ?? ''}"></div>
+        <div class="field"><label>Клики</label><input name="clicks" type="number" min="0" value="${item?.clicks ?? ''}"></div>
+        <div class="field"><label>Лиды</label><input name="leads" type="number" min="0" value="${item?.leads ?? ''}"></div>
+        <div class="field"><label>Покупки</label><input name="purchases" type="number" min="0" value="${item?.purchases ?? ''}"></div>
+        <div class="field"><label>CPA / CAC, ₽</label><input name="cpa" type="number" min="0" step="any" value="${item?.cpa ?? ''}"></div>
+        <div class="field"><label>Выручка, ₽</label><input name="adRevenue" type="number" min="0" step="any" value="${item?.adRevenue ?? ''}"></div>
+      </div>
       <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
       <div class="field"><label>Заметки</label><textarea name="notes" placeholder="Контекст, договорённости, идеи">${escapeHtml(item?.notes || '')}</textarea></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       data.value = Number(data.value || 0);
+      ['adSpend','adBudget','impressions','clicks','leads','purchases','cpa','adRevenue'].forEach(key => { data[key] = data[key] === '' ? null : Number(data[key]); });
+      if (Number(data.impressions) > 0 && Number(data.adSpend) >= 0) data.cpm = Number((Number(data.adSpend) / Number(data.impressions) * 1000).toFixed(2));
+      if (Number(data.clicks) > 0 && Number(data.adSpend) >= 0) data.cpc = Number((Number(data.adSpend) / Number(data.clicks)).toFixed(2));
+      if (Number(data.purchases) > 0 && Number(data.adSpend) >= 0 && !Number(data.cpa)) data.cpa = Number((Number(data.adSpend) / Number(data.purchases)).toFixed(2));
+      if (Number(data.adSpend) > 0 && Number(data.adRevenue) >= 0) data.roas = Number((Number(data.adRevenue) / Number(data.adSpend)).toFixed(3));
       const actualIncome = Number(data.actualIncome || 0);
       const actualMonth = data.actualMonth || monthKey(new Date());
       delete data.actualIncome;
@@ -3745,6 +3799,7 @@
         </section>
 
         <section class="settings-list card exact-settings-list">
+          <button class="settings-row featured" type="button" id="aiSyncSettings"><i class="settings-icon">AI</i><span>Alexander AI<small>${state.profile.aiSyncEnabled ? (state.profile.aiLastSyncAt ? `Синхронизирован ${longDateText(state.profile.aiLastSyncAt.slice(0,10))}` : 'Включён · ожидает первую синхронизацию') : 'Безопасный allowlisted sync выключен'}</small></span><b>›</b></button>
           <button class="settings-row featured" type="button" id="exportEncryptedData"><i class="settings-icon">⇧</i><span>Резервное копирование<small>Защищённая копия .aos</small></span><b>›</b></button>
           <button class="settings-row" type="button" id="exportData"><i class="settings-icon">⇩</i><span>Экспорт JSON<small>Полная копия всех данных</small></span><b>›</b></button>
           <label class="settings-row file-row"><i class="settings-icon">↺</i><span>Импорт данных<small>Точное восстановление JSON или .aos</small></span><b>›</b><input id="importData" type="file" accept=".json,.aos,application/json,application/octet-stream"></label>
@@ -3768,6 +3823,7 @@
       </section>`;
 
     $('#profileSettings')?.addEventListener('click', openProfileSettings);
+    $('#aiSyncSettings')?.addEventListener('click', openAiSyncSettings);
     $('#securitySettings')?.addEventListener('click', openSecuritySettings);
     $('#homePreferences')?.addEventListener('click', openHomePreferences);
     $('#financePreferences')?.addEventListener('click', openFinancePreferences);
@@ -3798,6 +3854,18 @@
       saveState();
       render();
     });
+  }
+
+  function openAiSyncSettings() {
+    openModal('Alexander AI Sync', `
+      <div class="settings-help-card"><b>Передаются только разрешённые данные</b><p>Цели, проекты, задачи, финансовые суммы, обязательства, рекламные метрики проектов и заметки с точным тегом <b>ai</b>. PIN, backup, история, health-данные и ключи не входят в snapshot.</p></div>
+      <label class="settings-row switch-row"><span>Включить AI Sync<small>Автосинхронизация после существенных изменений</small></span><input name="enabled" type="checkbox" ${state.profile.aiSyncEnabled?'checked':''}></label>
+      <div class="field"><label>Backend URL</label><input name="endpoint" type="url" placeholder="https://alexander-ai.example.com" value="${escapeHtml(state.profile.aiSyncEndpoint||'')}"></div>
+      <div class="field"><label>Sync token</label><input name="token" type="password" autocomplete="off" placeholder="Хранится отдельно от Alexander OS state" value=""></div>
+      <div class="settings-help-card subtle"><b>Последний успешный sync</b><p>${state.profile.aiLastSyncAt ? escapeHtml(new Date(state.profile.aiLastSyncAt).toLocaleString('ru-RU')) : 'Ещё не выполнялся'}${state.profile.aiLastSyncError?`<br>Ошибка: ${escapeHtml(state.profile.aiLastSyncError)}`:''}</p></div>
+      <button class="btn secondary full" id="manualAiSync" type="button">Синхронизировать сейчас</button>
+    `, form => { const data=new FormData(form); state.profile.aiSyncEnabled=data.get('enabled')==='on'; state.profile.aiSyncEndpoint=String(data.get('endpoint')||'').trim(); const token=String(data.get('token')||'').trim(); if(token)setAiSyncToken(token); return true; }, {submitText:'Сохранить'});
+    $('#manualAiSync',modalBody)?.addEventListener('click',async()=>{const form=modalForm;state.profile.aiSyncEnabled=$('[name="enabled"]',form)?.checked||false;state.profile.aiSyncEndpoint=$('[name="endpoint"]',form)?.value.trim()||'';const token=$('[name="token"]',form)?.value.trim();if(token)setAiSyncToken(token);saveState({history:false,snapshot:false,aiSync:false});await syncAlexanderAi(true);});
   }
 
   function openSettingsModal() {

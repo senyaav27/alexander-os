@@ -1,0 +1,32 @@
+databases:
+  - name: alexander-ai-db
+    plan: basic-256mb
+    databaseName: alexander_ai
+    user: alexander_ai
+services:
+  - type: web
+    name: alexander-ai-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    preDeployCommand: node backend/dist/migrate.js
+    envVars: &common
+      - { key: DATABASE_URL, fromDatabase: { name: alexander-ai-db, property: connectionString } }
+      - { key: DATABASE_SSL, value: "true" }
+      - { key: NODE_ENV, value: production }
+      - { key: OPENAI_API_KEY, sync: false }
+      - { key: OPENAI_MODEL, value: gpt-5-mini }
+      - { key: TELEGRAM_BOT_TOKEN, sync: false }
+      - { key: TELEGRAM_ALLOWED_USER_ID, sync: false }
+      - { key: TELEGRAM_WEBHOOK_SECRET, generateValue: true }
+      - { key: AI_SYNC_TOKEN, generateValue: true }
+      - { key: PUBLIC_BASE_URL, sync: false }
+      - { key: TIMEZONE, value: Europe/Moscow }
+      - { key: DAILY_BRIEF_HOUR, value: "8" }
+  - type: worker
+    name: alexander-ai-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node backend/dist/worker.js
+    envVars: *common
+

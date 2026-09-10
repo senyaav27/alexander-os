@@ -1,0 +1,8 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { dailyBrief, financeAnalysis, projectAnalysis } from '../src/analysis.js';
+import type { AiSnapshot } from '../src/types.js';
+export const fixture:AiSnapshot={schemaVersion:'alexander-ai-snapshot/v1',sourceVersion:'14.3.1',capturedAt:'2026-09-10T08:00:00.000Z',goals:[],projects:[{id:'p1',name:'RIFT',status:'active',expectedValue:100000,nextAction:'',adMetrics:{cpa:750,spend:8000,budget:10000}}],tasks:[{id:'t1',title:'Запустить тест',projectId:'p1',priority:'high',due:'2026-09-11',status:'todo'}],finances:{accounts:[{id:'a1',purpose:'general',balance:50000},{id:'a2',purpose:'cushion',balance:100000}],transactions:[{id:'i1',title:'Доход',amount:80000,date:'2026-09-01',category:'salary'},{id:'e1',title:'Реклама',amount:-20000,date:'2026-09-02',category:'business'}],obligations:[{id:'o1',title:'Аренда',amount:15000,dueDate:'2026-09-20',status:'open'}],monthlyIncomeTarget:200000,monthlyExpenseLimit:70000,cushionTarget:200000},aiNotes:[]};
+test('finance is deterministic and excludes cushion from free cash',()=>{assert.deepEqual(financeAnalysis(fixture,new Date('2026-09-10T12:00:00Z')),{income:80000,expenses:20000,openObligations:15000,availableCash:35000,budgetVariance:50000,incomeGap:120000,overBudget:false});});
+test('projects expose missing next action bottleneck',()=>{assert.equal(projectAnalysis(fixture)[0]?.bottleneck,'Нет следующего действия');});
+test('daily brief uses actual snapshot values',()=>{const brief=dailyBrief(fixture,new Date('2026-09-10T12:00:00Z'));assert.match(brief,/120\s000 ₽/);assert.match(brief,/RIFT/);});
+

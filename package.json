@@ -1,0 +1,33 @@
+{
+  "name": "alexander-ai",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p backend/tsconfig.json",
+    "dev": "tsx backend/src/server.ts",
+    "worker": "tsx backend/src/worker.ts",
+    "start": "node backend/dist/server.js",
+    "start:worker": "node backend/dist/worker.js",
+    "db:migrate": "tsx backend/src/migrate.ts",
+    "test": "node --import tsx --test backend/test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.17.2",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "openai": "^4.89.0",
+    "pg": "^8.14.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
