@@ -1,6 +1,6 @@
-const CACHE = 'alexander-os-v14-3-payday-limit-fix';
+const CACHE = 'alexander-os-v14-3-2-ai-review';
 const ASSETS = [
-  './', './index.html', './styles.css?v=14.3.0', './app.js?v=14.3.0',
+  './', './index.html', './styles.css?v=14.3.0', './app.js?v=14.3.2',
   './manifest.webmanifest?v=14.3.0', './icon-192.png', './icon-512.png'
 ];
 

@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.DS_Store
+coverage/
+
+*.pem
+*.key
+credentials*.json
+
+# Local verification artifacts and database dumps
+/work/
+/outputs/
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
