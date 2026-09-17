@@ -446,21 +446,21 @@
     if (options.aiSync !== false) scheduleAiSync();
   }
 
-  function aiSyncToken() { return safeStorage.getItem('alexander_ai_sync_token') || ''; }
-  function setAiSyncToken(value) { value ? safeStorage.setItem('alexander_ai_sync_token', value) : safeStorage.removeItem('alexander_ai_sync_token'); }
+  function aiSyncToken() { return safeStorage.getItem('alexander_ai_sync_endpoint') === String(state.profile.aiSyncEndpoint||'').replace(/\/$/,'') ? safeStorage.getItem('alexander_ai_sync_token') || '' : ''; }
+  function setAiSyncToken(value) { safeStorage.setItem('alexander_ai_sync_endpoint',String(state.profile.aiSyncEndpoint||'').replace(/\/$/,'')); value ? safeStorage.setItem('alexander_ai_sync_token', value) : safeStorage.removeItem('alexander_ai_sync_token'); }
   function aiSnapshot() {
-    const safeText = value => String(value || '').slice(0, 4000);
-    const aiNotes = state.notes.filter(note => String(note.tags || '').split(',').some(tag => tag.trim().toLowerCase() === 'ai'));
+    const safeText = value => String(value || '').replace(/sk-[A-Za-z0-9_-]{16,}|\b\d{12,19}\b|\b\d{6,12}:[A-Za-z0-9_-]{20,}|Bearer\s+\S+/gi, '[REDACTED]').slice(0, 4000);
+    const aiNotes = state.notes.filter(note => { const tags=String(note.tags||'').split(',').map(tag=>tag.trim().toLowerCase()); return tags.includes('ai') && !tags.some(tag=>['private','health','security'].includes(tag)); });
     return {
       schemaVersion: 'alexander-ai-snapshot/v1', sourceVersion: String(state.version || ''), capturedAt: new Date().toISOString(),
       goals: state.goals.map(goal => ({ id:String(goal.id), title:safeText(goal.title), current:Number(goal.current||0), target:Number(goal.target||0), deadline:String(goal.deadline||''), unit:safeText(goal.unit), nextAction:safeText(goal.nextAction) })),
       projects: state.projects.map(project => ({ id:String(project.id), name:safeText(project.name), status:String(project.status||''), expectedValue:Number(project.value||0), nextAction:safeText(project.next), adMetrics:Object.fromEntries(Object.entries({ spend:project.adSpend, budget:project.adBudget, impressions:project.impressions, clicks:project.clicks, cpm:project.cpm, cpc:project.cpc, leads:project.leads, registrations:project.registrations, trials:project.trials, purchases:project.purchases, cpa:project.cpa, cac:project.cac, revenue:project.adRevenue, roas:project.roas }).filter(([,value]) => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value))).map(([key,value])=>[key,Number(value)])) })),
       tasks: state.tasks.map(task => ({ id:String(task.id), title:safeText(task.title), projectId:String(task.projectId||''), priority:String(task.priority||''), due:String(task.due||''), status:String(task.status||'') })),
       finances: {
-        accounts: state.accounts.map(account => ({ id:String(account.id), purpose:String(account.purpose||'general'), balance:Number(account.balance||0) })),
-        transactions: state.transactions.filter(tx => tx.category !== 'health').map(tx => ({ id:String(tx.id), title:safeText(tx.title), amount:(tx.type === 'expense' ? -1 : 1) * Math.abs(Number(tx.amount||0)), date:String(tx.date||''), category:String(tx.category||''), necessity:String(tx.necessity||''), projectId:String(tx.projectId||'') })),
-        obligations: state.obligations.map(item => ({ id:String(item.id), title:safeText(item.title), amount:Number(item.amount||0), dueDate:String(item.dueDate||''), status:String(item.status||'') })),
-        monthlyIncomeTarget:Number(state.profile.monthlyIncomeTarget||0), monthlyExpenseLimit:Number(state.profile.monthlyExpenseLimit||0), cushionTarget:Number(state.profile.cushionTarget||0)
+        accounts: state.accounts.map(account => ({ id:String(account.id), purpose:isCushionAccount(account)?'cushion':account.type==='investment'?'investment':'general', balance:Number(account.balance||0) })),
+        transactions: state.transactions.filter(tx => ! /health|security|private/i.test(String(tx.category||''))).map(tx => ({ id:String(tx.id), title:safeText(tx.title), amount:(tx.type === 'expense' ? -1 : 1) * Math.abs(Number(tx.amount||0)), date:String(tx.date||''), category:String(tx.category||''), necessity:String(tx.necessity||''), projectId:String(tx.projectId||'') })),
+        obligations: state.obligations.map(item => ({ id:String(item.id), title:safeText(item.title), amount:Number(item.amount||0), dueDate:String(item.dueDate||''), status:String(item.status||'open'), type:String(item.type||'payment') })),
+        targetMonth:monthKey(new Date()), monthlyIncomeTarget:getIncomeTargetForMonth(monthKey(new Date())), monthlyExpenseLimit:Number(state.profile.monthlyExpenseLimit||0), cushionTarget:Number(state.profile.cushionTarget||0)
       },
       aiNotes: aiNotes.map(note => ({ id:String(note.id), title:safeText(note.title), body:safeText(note.body), updatedAt:String(note.updatedAt||note.createdAt||'') }))
     };
@@ -471,7 +471,9 @@
     const endpoint=String(state.profile.aiSyncEndpoint||'').replace(/\/$/,''); const token=aiSyncToken();
     if (!endpoint || !token) { state.profile.aiLastSyncError='Не настроены endpoint или sync token'; safeStorage.setItem(STORAGE_KEY, JSON.stringify(state)); if(showResult) alert(state.profile.aiLastSyncError); return false; }
     try {
-      const response=await fetch(`${endpoint}/v1/snapshots`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(aiSnapshot())});
+      const url=new URL(endpoint);
+      if ((url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname))) || url.username || url.password || url.search || url.hash) throw new Error('Нужен HTTPS backend URL (HTTP разрешён только для localhost)');
+      const response=await fetch(`${endpoint}/v1/snapshots`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(aiSnapshot())});
       if(!response.ok) throw new Error(`HTTP ${response.status}`);
       state.profile.aiLastSyncAt=new Date().toISOString(); state.profile.aiLastSyncError=''; safeStorage.setItem(STORAGE_KEY,JSON.stringify(state));
       if(showResult) toast('Alexander AI синхронизирован'); return true;
@@ -3068,14 +3070,14 @@
       <div class="field"><label>Дата следующей оплаты</label><input name="paymentDate" type="date" value="${item?.paymentDate || ''}"></div>
       <div class="settings-help-card subtle"><b>Рекламные показатели для Alexander AI</b><p>Заполняй только те метрики, которые реально отслеживаешь. Они используются для анализа и alert rules, но никогда не изменяются AI автоматически.</p></div>
       <div class="form-grid">
-        <div class="field"><label>Расход, ₽</label><input name="adSpend" type="number" min="0" step="any" value="${item?.adSpend ?? ''}"></div>
-        <div class="field"><label>Бюджет, ₽</label><input name="adBudget" type="number" min="0" step="any" value="${item?.adBudget ?? ''}"></div>
-        <div class="field"><label>Показы</label><input name="impressions" type="number" min="0" value="${item?.impressions ?? ''}"></div>
-        <div class="field"><label>Клики</label><input name="clicks" type="number" min="0" value="${item?.clicks ?? ''}"></div>
-        <div class="field"><label>Лиды</label><input name="leads" type="number" min="0" value="${item?.leads ?? ''}"></div>
-        <div class="field"><label>Покупки</label><input name="purchases" type="number" min="0" value="${item?.purchases ?? ''}"></div>
-        <div class="field"><label>CPA / CAC, ₽</label><input name="cpa" type="number" min="0" step="any" value="${item?.cpa ?? ''}"></div>
-        <div class="field"><label>Выручка, ₽</label><input name="adRevenue" type="number" min="0" step="any" value="${item?.adRevenue ?? ''}"></div>
+        <div class="field"><label>Расход, ₽</label><input name="adSpend" type="number" min="0" step="any" value="${escapeHtml(item?.adSpend ?? '')}"></div>
+        <div class="field"><label>Бюджет, ₽</label><input name="adBudget" type="number" min="0" step="any" value="${escapeHtml(item?.adBudget ?? '')}"></div>
+        <div class="field"><label>Показы</label><input name="impressions" type="number" min="0" value="${escapeHtml(item?.impressions ?? '')}"></div>
+        <div class="field"><label>Клики</label><input name="clicks" type="number" min="0" value="${escapeHtml(item?.clicks ?? '')}"></div>
+        <div class="field"><label>Лиды</label><input name="leads" type="number" min="0" value="${escapeHtml(item?.leads ?? '')}"></div>
+        <div class="field"><label>Покупки</label><input name="purchases" type="number" min="0" value="${escapeHtml(item?.purchases ?? '')}"></div>
+        <div class="field"><label>CPA / CAC, ₽</label><input name="cpa" type="number" min="0" step="any" value="${escapeHtml(item?.cpa ?? '')}"></div>
+        <div class="field"><label>Выручка, ₽</label><input name="adRevenue" type="number" min="0" step="any" value="${escapeHtml(item?.adRevenue ?? '')}"></div>
       </div>
       <div class="field"><label>Следующий шаг</label><textarea name="next" placeholder="Одно конкретное действие">${escapeHtml(item?.next || '')}</textarea></div>
       <div class="field"><label>Заметки</label><textarea name="notes" placeholder="Контекст, договорённости, идеи">${escapeHtml(item?.notes || '')}</textarea></div>
@@ -3083,10 +3085,11 @@
       const data = Object.fromEntries(new FormData(form));
       data.value = Number(data.value || 0);
       ['adSpend','adBudget','impressions','clicks','leads','purchases','cpa','adRevenue'].forEach(key => { data[key] = data[key] === '' ? null : Number(data[key]); });
-      if (Number(data.impressions) > 0 && Number(data.adSpend) >= 0) data.cpm = Number((Number(data.adSpend) / Number(data.impressions) * 1000).toFixed(2));
-      if (Number(data.clicks) > 0 && Number(data.adSpend) >= 0) data.cpc = Number((Number(data.adSpend) / Number(data.clicks)).toFixed(2));
-      if (Number(data.purchases) > 0 && Number(data.adSpend) >= 0 && !Number(data.cpa)) data.cpa = Number((Number(data.adSpend) / Number(data.purchases)).toFixed(2));
-      if (Number(data.adSpend) > 0 && Number(data.adRevenue) >= 0) data.roas = Number((Number(data.adRevenue) / Number(data.adSpend)).toFixed(3));
+      ['cpm','cpc','roas'].forEach(key => { data[key]=null; });
+      if (data.adSpend !== null && Number(data.impressions) > 0 && Number(data.adSpend) >= 0) data.cpm = Number((Number(data.adSpend) / Number(data.impressions) * 1000).toFixed(2));
+      if (data.adSpend !== null && Number(data.clicks) > 0 && Number(data.adSpend) >= 0) data.cpc = Number((Number(data.adSpend) / Number(data.clicks)).toFixed(2));
+      if (data.adSpend !== null && Number(data.purchases) > 0 && Number(data.adSpend) >= 0 && data.cpa === null) data.cpa = Number((Number(data.adSpend) / Number(data.purchases)).toFixed(2));
+      if (data.adRevenue !== null && Number(data.adSpend) > 0 && Number(data.adRevenue) >= 0) data.roas = Number((Number(data.adRevenue) / Number(data.adSpend)).toFixed(3));
       const actualIncome = Number(data.actualIncome || 0);
       const actualMonth = data.actualMonth || monthKey(new Date());
       delete data.actualIncome;

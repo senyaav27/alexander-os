@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- PostgreSQL 17 provides gen_random_uuid() without an extension.
 
 CREATE TABLE IF NOT EXISTS ai_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,3 +37,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS jobs_claim_idx ON jobs(status, run_at);
 CREATE TABLE IF NOT EXISTS app_state (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());
 
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS dedupe_key text UNIQUE;
+CREATE TABLE IF NOT EXISTS telegram_updates (update_id bigint PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS agent_runs_budget_idx ON agent_runs(kind,started_at);
