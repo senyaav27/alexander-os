@@ -1,12 +1,14 @@
-const CACHE = 'alexander-os-v15-0-motion-ui';
+const CACHE = 'alexander-os-v15-1-account-transfers';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=15.0.0',
-  './styles-v15.css?v=15.0.0',
-  './app.js?v=15.0.0',
-  './motion-v15.js?v=15.0.0',
-  './manifest.webmanifest?v=15.0.0',
+  './styles.css?v=15.1.0',
+  './styles-v15.css?v=15.1.0',
+  './finance-v151.css?v=15.1.0',
+  './app.js?v=15.1.0',
+  './motion-v15.js?v=15.1.0',
+  './finance-v151.js?v=15.1.0',
+  './manifest.webmanifest?v=15.1.0',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -63,6 +65,6 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     for (const client of list) if ('focus' in client) return client.focus();
-    return clients.openWindow('./?build=15.0.0');
+    return clients.openWindow('./?build=15.1.0');
   }));
 });
