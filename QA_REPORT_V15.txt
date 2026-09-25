@@ -1,0 +1,27 @@
+Alexander OS V15.0 - QA Report
+
+Repository source inspected: senyaav27/alexander-os (main)
+Changed files:
+- index.html
+- sw.js
+New files:
+- styles-v15.css
+- motion-v15.js
+
+Checks performed:
+1. JavaScript syntax: PASS (node --check motion-v15.js)
+2. Service worker syntax: PASS (node --check sw.js)
+3. CSS parsing: PASS (tinycss2, 0 parse errors)
+4. HTML parsing: PASS (lxml)
+5. Asset references in index.html: PASS
+6. New PWA cache asset references: PASS
+7. Browser smoke test, 390x844: PASS
+8. Browser page errors in motion test: 0
+9. Spring press interaction: PASS (scale 1 -> 0.972 -> 1)
+10. Screen entrance hook: PASS
+11. Progress reveal hook: PASS
+12. prefers-reduced-motion fallback included: PASS
+
+Important:
+- app.js and styles.css are intentionally unchanged.
+- V15 is an additive visual layer, reducing risk of breaking existing data and business logic.

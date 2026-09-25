@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#000000" />
-  <meta name="alexander-os-build" content="14.3.0" />
+  <meta name="theme-color" content="#020806" />
+  <meta name="alexander-os-build" content="15.0.0" />
   <meta name="description" content="Alexander OS - личная система финансов, задач, проектов и прогресса" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Alexander OS" />
-  <link rel="manifest" href="manifest.webmanifest?v=14.3.0" />
+  <link rel="manifest" href="manifest.webmanifest?v=15.0.0" />
   <script>
-    window.ALEXANDER_OS_BUILD = '14.3.0';
+    window.ALEXANDER_OS_BUILD = '15.0.0';
     if ('caches' in window) {
-      caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v14-3')).map(key => caches.delete(key)))).catch(() => {});
+      caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v15-0')).map(key => caches.delete(key)))).catch(() => {});
     }
   </script>
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" href="icon-192.png" />
 
   <style id="startupSplashStyle">
-    html, body { background:#000; }
+    html, body { background:#020806; }
     #appSplash {
       position: fixed;
       inset: 0;
@@ -30,52 +30,51 @@
       min-height: 100dvh;
       padding: calc(18px + env(safe-area-inset-top)) 24px calc(18px + env(safe-area-inset-bottom));
       background:
-        radial-gradient(circle at 50% 38%, rgba(72, 255, 115, .16), transparent 28%),
-        radial-gradient(circle at 50% 78%, rgba(95, 255, 128, .07), transparent 30%),
-        #000;
+        radial-gradient(circle at 50% 38%, rgba(88, 238, 130, .11), transparent 24%),
+        #020806;
       color: #f7faf7;
-      transition: opacity .34s ease, visibility .34s ease;
+      transition: opacity .28s ease, visibility .28s ease;
       touch-action: none;
     }
     #appSplash.splash-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     #appSplash .splash-inner {
       display: grid;
       justify-items: center;
-      gap: 14px;
+      gap: 13px;
       transform: translateY(-3vh);
       text-align: center;
     }
     #appSplash .splash-logo {
-      width: 94px;
-      height: 94px;
+      width: 88px;
+      height: 88px;
       display: grid;
       place-items: center;
-      border-radius: 28px;
-      background: linear-gradient(135deg, #d7ff54 0%, #69ee6e 42%, #1fc85a 100%);
-      color: #020703;
-      font: 900 58px/1 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      border: 1px solid rgba(153,255,181,.30);
+      border-radius: 25px;
+      background: linear-gradient(145deg, #79f59b, #43df74 55%, #22b95c);
+      color: #031009;
+      font: 900 54px/1 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
       letter-spacing: -.08em;
-      box-shadow: 0 0 0 1px rgba(255,255,255,.42) inset, 0 20px 70px rgba(49,255,93,.30);
+      box-shadow: 0 18px 45px rgba(28,184,82,.18), inset 0 1px 0 rgba(255,255,255,.38);
     }
     #appSplash .splash-title {
       margin-top: 6px;
-      font: 850 24px/1.05 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      font: 820 23px/1.05 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
       letter-spacing: -.04em;
     }
     #appSplash .splash-subtitle {
-      color: rgba(247,250,247,.58);
-      font: 650 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-      letter-spacing: .08em;
+      color: rgba(247,250,247,.50);
+      font: 620 11px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      letter-spacing: .10em;
       text-transform: uppercase;
     }
     #appSplash .splash-track {
-      width: 176px;
-      height: 6px;
-      margin-top: 10px;
+      width: 164px;
+      height: 5px;
+      margin-top: 8px;
       overflow: hidden;
       border-radius: 99px;
-      background: rgba(255,255,255,.11);
-      box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset;
+      background: rgba(255,255,255,.075);
     }
     #appSplash .splash-track::before {
       content: "";
@@ -83,15 +82,16 @@
       width: 42%;
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, #2bd75d, #83fb7b);
-      box-shadow: 0 0 24px rgba(75,255,105,.65);
-      animation: aosSplashLoad 1.05s ease-in-out infinite alternate;
+      background: linear-gradient(90deg, #37d76c, #82f49f);
+      animation: aosSplashLoad .95s cubic-bezier(.22,.75,.25,1) infinite alternate;
     }
     @keyframes aosSplashLoad { from { transform: translateX(0); } to { transform: translateX(138%); } }
     @media (prefers-reduced-motion: reduce) { #appSplash .splash-track::before { animation: none; width: 72%; } }
   </style>
-  <link rel="stylesheet" href="styles.css?v=14.3.0" />
-  <title>Alexander OS V14.3.0</title>
+
+  <link rel="stylesheet" href="styles.css?v=15.0.0" />
+  <link rel="stylesheet" href="styles-v15.css?v=15.0.0" />
+  <title>Alexander OS V15.0</title>
 </head>
 <body>
   <div id="appSplash" role="status" aria-live="polite">
@@ -103,12 +103,13 @@
     </div>
   </div>
   <script>window.__AOS_SPLASH_STARTED_AT = Date.now();</script>
+
   <div class="app-shell">
     <header class="topbar">
       <button class="topbar-brand profile-settings-trigger" id="profileSettingsTrigger" type="button" aria-label="Открыть настройки">
         <div class="brand-mark" aria-hidden="true">S</div>
         <div class="topbar-copy">
-          <div class="brand-line">Alexander OS <span>V14.3.0</span></div>
+          <div class="brand-line">Alexander OS <span>V15.0</span></div>
           <p class="eyebrow" id="todayLabel">Сегодня</p>
           <h1 id="screenTitle">Главная</h1>
         </div>
@@ -143,14 +144,13 @@
     </nav>
   </div>
 
-
   <section id="lockScreen" class="lock-screen" hidden aria-live="polite">
     <div class="lock-card">
       <div class="face-orb" aria-hidden="true">
         <span class="face-corners"><i></i><i></i><i></i><i></i></span>
         <svg viewBox="0 0 64 64"><path d="M22 28v-4a6 6 0 0 1 6-6h2M42 28v-4a6 6 0 0 0-6-6h-2M22 36v4a6 6 0 0 0 6 6h2M42 36v4a6 6 0 0 1-6 6h-2"/><path d="M26 31h.1M38 31h.1M27 38c3 2.4 7 2.4 10 0"/></svg>
       </div>
-      <p class="eyebrow">Alexander OS V14.3.0</p>
+      <p class="eyebrow">Alexander OS V15.0</p>
       <h2>Разблокировка Face ID</h2>
       <p id="lockHint">Подтверди вход, чтобы открыть личные данные.</p>
       <div class="face-status" id="faceStatus"><span></span> Ожидание подтверждения</div>
@@ -178,7 +178,7 @@
     </form>
   </dialog>
 
-
-  <script src="app.js?v=14.3.0"></script>
+  <script src="app.js?v=15.0.0"></script>
+  <script src="motion-v15.js?v=15.0.0"></script>
 </body>
 </html>
