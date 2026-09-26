@@ -1,0 +1,30 @@
+Alexander OS V15.2 - QA REPORT
+
+PASS - index: V15.2 build marker
+PASS - index: feature CSS connected
+PASS - index: feature JS connected
+PASS - splash: percent node
+PASS - splash: monotonic fill node
+PASS - CSS braces balanced
+PASS - settings labels UI present
+PASS - settings nested return logic present
+PASS - plan/fact present
+PASS - client funnel present
+PASS - health dynamics present
+PASS - expense icon map present
+PASS - project analytics present
+PASS - project status badge present
+PASS - service worker cache updated
+PASS - service worker caches feature files
+PASS - plan/fact calculation
+PASS - project growth calculation
+PASS - funnel stage calculation
+
+Additional checks:
+PASS - features-v152.js: node --check
+PASS - sw.js: node --check
+PASS - HTML parsed with BeautifulSoup
+PASS - CSS bracket balance
+
+Browser note:
+The sandbox browser blocks local/file test pages at the administrator layer, so a full end-to-end browser run against the assembled repository could not be executed here. The package was therefore verified by JavaScript syntax checks, HTML/CSS structure checks, selector/asset contract checks and calculation sanity tests.
