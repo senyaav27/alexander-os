@@ -1,0 +1,65 @@
+Alexander OS V15.3 - Performance / Stability QA
+Date: 26.09.2026
+
+ROOT CAUSE FOUND
+1. features-v152.js observed document.documentElement with subtree:true.
+2. Every observer pass called enhanceAll().
+3. renderPlanFact(), renderFunnel() and renderHealth() rewrote innerHTML even when nothing changed.
+4. Those writes generated new mutations, which scheduled enhanceAll() again on the next animation frame.
+5. finance-v151.js had another document-wide MutationObserver.
+6. motion-v15.js watched the whole app subtree and rescanned/animated the screen whenever nodes were added.
+
+Result: a self-sustaining render/mutation loop. On iPhone this can consume the main thread, so tab switching, scrolling and buttons begin to lag or stop responding.
+
+V15.3 FIX
+- Removed motion-v15.js, finance-v151.js and features-v152.js from the active script chain.
+- Replaced them with one runtime-v153.js.
+- Runtime has only 2 MutationObservers:
+  * #app, childList only, subtree:false
+  * #modalBody, childList only, subtree:false
+- No observer watches document.documentElement.
+- App observer reacts only to top-level core renders, not to V15.3's own injected UI.
+- Plan/Fact, funnel and health cards have data signatures and are not rebuilt if the data has not changed.
+- Motion no longer uses blur/filter on every card.
+- Motion is capped to the first 14 relevant elements per screen transition.
+- No setInterval or persistent animation loop in runtime-v153.js.
+- Startup loader now has a single progress layer. The old pseudo-element animation was removed from index.html.
+
+SOURCE / WIRING AUDIT
+- Core app.js + index.html: 69 unique static button IDs audited.
+- Unreferenced static button IDs: 0.
+- Main navigation: 5 screens wired.
+- Finance tabs: 4 wired.
+- Task tabs: 3 wired.
+- Project filters: 2 wired.
+- Growth ranges: 3 wired.
+- 6 old workout-video button templates were found without handlers, but their rendering functions are currently unreachable/dead code and are not part of the active UI. They do not execute and do not cause the current lag.
+
+SYNTAX / BUILD CHECKS
+PASS - runtime-v153.js: node --check
+PASS - sw.js: node --check
+PASS - both inline scripts in index.html: node --check
+PASS - index.html loads app.js + runtime-v153.js only for enhancements
+PASS - old motion-v15.js / finance-v151.js / features-v152.js are not loaded
+PASS - no documentElement MutationObserver in runtime-v153.js
+PASS - no subtree:true observer in runtime-v153.js
+PASS - no setInterval in runtime-v153.js
+PASS - no blur/filter motion in runtime-v153.js
+PASS - startup loader has no old @keyframes aosSplashLoad
+PASS - service worker cache bumped to alexander-os-v15-3-performance
+
+LIMITATION
+The environment blocks local/file/data pages in Chromium with ERR_BLOCKED_BY_ADMINISTRATOR, so a full browser E2E click-through could not be executed here. The code was therefore checked by source-level control-flow/button audit, syntax validation, cache/build validation and the identified performance feedback loop was removed structurally.
+
+Files to upload:
+- index.html (replace)
+- sw.js (replace)
+- runtime-v153.js (new)
+
+Existing CSS files stay unchanged:
+- styles.css
+- styles-v15.css
+- finance-v151.css
+- features-v152.css
+
+Old JS files may remain in the repository; V15.3 index.html no longer loads them.

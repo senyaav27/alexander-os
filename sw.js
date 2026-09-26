@@ -1,16 +1,14 @@
-const CACHE = 'alexander-os-v15-2-ui-features';
+const CACHE = 'alexander-os-v15-3-performance';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=15.2.0',
-  './styles-v15.css?v=15.2.0',
-  './finance-v151.css?v=15.2.0',
-  './features-v152.css?v=15.2.0',
-  './app.js?v=15.2.0',
-  './motion-v15.js?v=15.2.0',
-  './finance-v151.js?v=15.2.0',
-  './features-v152.js?v=15.2.0',
-  './manifest.webmanifest?v=15.2.0',
+  './styles.css?v=15.3.0',
+  './styles-v15.css?v=15.3.0',
+  './finance-v151.css?v=15.3.0',
+  './features-v152.css?v=15.3.0',
+  './app.js?v=15.3.0',
+  './runtime-v153.js?v=15.3.0',
+  './manifest.webmanifest?v=15.3.0',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -36,24 +34,30 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const request = event.request;
   const url = new URL(request.url);
+
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request, { cache: 'no-store' })
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put('./index.html', copy));
-        return response;
-      })
-      .catch(() => caches.match('./index.html')));
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
     return;
   }
+
   if (url.origin === self.location.origin) {
-    event.respondWith(fetch(request, { cache: 'no-store' })
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(request, copy));
-        return response;
-      })
-      .catch(() => caches.match(request)));
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
   }
 });
 
@@ -61,6 +65,6 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
     for (const client of list) if ('focus' in client) return client.focus();
-    return clients.openWindow('./?build=15.2.0');
+    return clients.openWindow('./?build=15.3.0');
   }));
 });
