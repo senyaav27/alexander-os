@@ -1,15 +1,17 @@
-const CACHE = 'alexander-os-v15-4-static-motion';
+const CACHE = 'alexander-os-v15-5-senyaav-ai';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=15.4.0',
-  './styles-v15.css?v=15.4.0',
-  './finance-v151.css?v=15.4.0',
-  './features-v152.css?v=15.4.0',
-  './motion-v154.css?v=15.4.0',
-  './app.js?v=15.4.0',
-  './runtime-v154.js?v=15.4.0',
-  './manifest.webmanifest?v=15.4.0',
+  './styles.css?v=15.5.0',
+  './styles-v15.css?v=15.5.0',
+  './finance-v151.css?v=15.5.0',
+  './features-v152.css?v=15.5.0',
+  './motion-v155.css?v=15.5.0',
+  './senyaav-ai-v155.css?v=15.5.0',
+  './senyaav-ai-v155.js?v=15.5.0',
+  './app.js?v=15.5.0',
+  './runtime-v155.js?v=15.5.0',
+  './manifest.webmanifest?v=15.5.0',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -66,6 +68,6 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.matchAll({ type:'window', includeUncontrolled:true }).then(list => {
     for (const client of list) if ('focus' in client) return client.focus();
-    return clients.openWindow('./?build=15.4.0');
+    return clients.openWindow('./?build=15.5.0');
   }));
 });

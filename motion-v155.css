@@ -1,0 +1,35 @@
+/* Alexander OS V15.5 - static navigation policy
+   Decorative motion is disabled after launch. The only runtime animation kept is
+   the one-time dashboard progress reveal implemented in runtime-v155.js. */
+
+.aos-runtime-v155 .app-shell *,
+.aos-runtime-v155 #modal *,
+.aos-runtime-v155 #aosFeatureDialog *,
+.aos-runtime-v155 #aosAccountFlow * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Keep state changes immediate and predictable. */
+.aos-runtime-v155 .bottom-nav .nav-item::before,
+.aos-runtime-v155 .global-add,
+.aos-runtime-v155 .floating-add,
+.aos-runtime-v155 .btn,
+.aos-runtime-v155 .tab,
+.aos-runtime-v155 .chip,
+.aos-runtime-v155 .card,
+.aos-runtime-v155 .item,
+.aos-runtime-v155 .mini-btn,
+.aos-runtime-v155 .icon-btn,
+.aos-runtime-v155 .settings-row,
+.aos-runtime-v155 .finance-tool,
+.aos-runtime-v155 .project-card,
+.aos-runtime-v155 .aos-pf-track span {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Web Animations API drives only the horizontal dashboard progress bars once. */
+.aos-runtime-v155 body[data-screen="dashboard"] .premium-progress > i {
+  transform-origin: left center;
+}
