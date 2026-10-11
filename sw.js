@@ -1,17 +1,18 @@
-const CACHE = 'alexander-os-v15-7-senyaav-ai';
+const CACHE = 'alexander-os-v15-8-tasks-weekly';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=15.7.0',
-  './styles-v15.css?v=15.7.0',
-  './finance-v151.css?v=15.7.0',
-  './features-v152.css?v=15.7.0',
-  './senyaav-ai-v157.css?v=15.7.0',
-  './motion-v155.css?v=15.7.0',
-  './senyaav-ai-v157.js?v=15.7.0',
-  './app.js?v=15.7.0',
-  './runtime-v155.js?v=15.7.0',
-  './manifest.webmanifest?v=15.7.0',
+  './styles.css?v=15.8.0',
+  './styles-v15.css?v=15.8.0',
+  './finance-v151.css?v=15.8.0',
+  './features-v152.css?v=15.8.0',
+  './senyaav-ai-v157.css?v=15.8.0',
+  './motion-v155.css?v=15.8.0',
+  './senyaav-ai-v157.js?v=15.8.0',
+  './app.js?v=15.8.0',
+  './tasks-weekly.css?v=15.8.0',
+  './runtime-v155.js?v=15.8.0',
+  './manifest.webmanifest?v=15.8.0',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -27,4 +28,4 @@ self.addEventListener('fetch', event => {
   }
   if (url.origin === self.location.origin) event.respondWith(fetch(request,{cache:'no-store'}).then(response=>{ const copy=response.clone(); caches.open(CACHE).then(cache=>cache.put(request,copy)); return response; }).catch(()=>caches.match(request)));
 });
-self.addEventListener('notificationclick', event => { event.notification.close(); event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{ for(const client of list) if('focus' in client) return client.focus(); return clients.openWindow('./?build=15.7.0'); })); });
+self.addEventListener('notificationclick', event => { event.notification.close(); event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{ for(const client of list) if('focus' in client) return client.focus(); return clients.openWindow('./?build=15.8.0'); })); });

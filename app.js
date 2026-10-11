@@ -156,6 +156,7 @@
         lastDiagnosticsAt: null,
         expenseCategoryAliases: {}
       },
+      weeklyTaskGoals: [],
       tasks: [
         { id: uid(), title: 'Определить 3 главные задачи дня', projectId: '', project: 'Личное управление', priority: 'high', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null },
         { id: uid(), title: 'Проверить финансы и обязательные платежи', projectId: '', project: 'Финансы', priority: 'medium', due: todayISO(), dueTime: '', status: 'todo', notes: '', repeat: 'weekly', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null }
@@ -248,6 +249,7 @@
       version: 14.1,
       profile: { ...base.profile, ...(raw.profile || {}) },
       tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
+      weeklyTaskGoals: Array.isArray(raw.weeklyTaskGoals) ? raw.weeklyTaskGoals : [],
       accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
       transactions: Array.isArray(raw.transactions) ? raw.transactions : [],
       obligations: Array.isArray(raw.obligations) ? raw.obligations : [],
@@ -295,7 +297,7 @@
     }
 
     result.tasks = result.tasks.map(task => ({
-      projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', createdAt: new Date().toISOString(), completedAt: null,
+      projectId: '', project: '', priority: 'medium', due: '', dueTime: '', status: task.done ? 'done' : 'todo', notes: '', repeat: 'none', reminder: 'none', weeklyGoalId: '', isMainForDay: false, postponements: [], createdAt: new Date().toISOString(), completedAt: null,
       ...task,
       status: task.status || (task.done ? 'done' : 'todo')
     }));
@@ -383,6 +385,7 @@
   let currentScreen = 'dashboard';
   let financeTab = 'overview';
   let taskFilter = 'today';
+  let selectedTaskWeekStart = localISO(startOfWeek(new Date()));
   let taskSearch = '';
   let projectFilter = 'active';
   let growthRange = 'month';
@@ -1434,16 +1437,19 @@
     const projectName = project?.name || task.project || 'Без проекта';
     const overdue = task.status !== 'done' && task.due && task.due < todayISO();
     return `
-      <div class="item ${task.status === 'done' ? 'done' : ''} ${overdue ? 'overdue' : ''}">
+      <div class="item ${task.status === 'done' ? 'done' : ''} ${overdue ? 'overdue' : ''} ${currentScreen === 'tasks' && task.isMainForDay ? 'task-weekly-primary-item' : ''}">
         <input class="check task-check" type="checkbox" data-id="${task.id}" ${task.status === 'done' ? 'checked' : ''}>
         <div class="item-main">
-          <div class="item-title">${escapeHtml(task.title)}</div>
+          <div class="item-title">${escapeHtml(task.title)}${currentScreen === 'tasks' && task.isMainForDay && task.status !== 'done' ? ' <span class="task-weekly-main-mark">★ Главная</span>' : ''}</div>
           <div class="item-meta">${escapeHtml(projectName)} · ${dateText(task.due)}${task.dueTime ? `, ${escapeHtml(task.dueTime)}` : ''}</div>
           <div class="pill-row">
             <span class="badge ${task.priority}">${priorityText(task.priority)}</span>
             <span class="badge status-${task.status}">${taskStatusText(task.status)}</span>
             ${task.repeat !== 'none' ? `<span class="badge">↻ ${repeatText(task.repeat)}</span>` : ''}
           </div>
+          ${currentScreen === 'tasks' && task.weeklyGoalId && state.weeklyTaskGoals.some(goal => goal.id === task.weeklyGoalId) ? `<div class="task-weekly-related">Цель недели: ${escapeHtml(state.weeklyTaskGoals.find(goal => goal.id === task.weeklyGoalId).title)}</div>` : ''}
+          ${currentScreen === 'tasks' && task.postponements?.length ? `<div class="task-weekly-related">Переносов: ${task.postponements.length}; причина: ${escapeHtml(task.postponements.at(-1).reason)}</div>` : ''}
+          ${currentScreen === 'tasks' && task.status !== 'done' && task.due ? `<div class="task-weekly-inline-actions"><button type="button" class="task-weekly-smallbtn make-task-main" data-id="${task.id}" ${task.isMainForDay ? 'disabled' : ''}>${task.isMainForDay ? 'Главная дня' : 'Сделать главной'}</button><button class="task-weekly-smallbtn postpone-task" type="button" data-id="${task.id}">Перенести</button></div>` : ''}
         </div>
         <div class="item-actions">
           <button class="mini-btn edit-task" type="button" data-id="${task.id}" aria-label="Редактировать">✎</button>
@@ -1468,6 +1474,136 @@
 
   function bindLifeMapLauncher() {
     $('#openLifeMapFromTasks')?.addEventListener('click', () => switchScreen('life'));
+  }
+
+  // Недельные цели относятся только к задачам, не к финансовым целям из state.goals.
+  const TASK_DELAY_REASONS = [
+    'Не хватило времени', 'Слишком большая задача', 'Неясен следующий шаг',
+    'Ждал другого человека', 'Изменились приоритеты', 'Другое'
+  ];
+  const taskWeekKey = date => localISO(startOfWeek(parseISO(date || todayISO())));
+  const taskWeekGoals = weekStart => state.weeklyTaskGoals.filter(goal => goal.weekStart === weekStart);
+  const taskGoalName = id => state.weeklyTaskGoals.find(goal => goal.id === id)?.title || '';
+
+  function taskWeeklySummaryMarkup() {
+    const weekStart = selectedTaskWeekStart;
+    const weekEnd = localISO(addDays(parseISO(weekStart), 6));
+    const goals = taskWeekGoals(weekStart);
+    const weekTasks = state.tasks.filter(task => task.due >= weekStart && task.due <= weekEnd);
+    const done = weekTasks.filter(task => task.status === 'done').length;
+    const completedGoals = goals.filter(goal => goal.completedAt).length;
+    const isCurrent = weekStart === taskWeekKey(todayISO());
+    return `<section class="section task-weekly-section" aria-label="Недельные цели">
+      <div class="task-weekly-card">
+        <div class="task-weekly-header">
+          <div><div class="task-weekly-title">Цели на неделю</div>
+            <div class="task-weekly-subtitle">${dateText(weekStart)} - ${dateText(weekEnd)}${isCurrent ? ' · текущая неделя' : ''}</div></div>
+          <div class="task-weekly-controls">
+            <button class="task-weekly-arrow" type="button" id="taskPrevWeek" aria-label="Предыдущая неделя">‹</button>
+            <button class="task-weekly-arrow" type="button" id="taskNextWeek" aria-label="Следующая неделя">›</button>
+          </div>
+        </div>
+        <div class="task-weekly-stats"><span>Цели: <strong>${completedGoals}/${goals.length}</strong></span><span>Задачи недели: <strong>${done}/${weekTasks.length}</strong></span></div>
+        <div class="task-weekly-list">
+          ${goals.length ? goals.map(goal => {
+            const related = state.tasks.filter(task => task.weeklyGoalId === goal.id);
+            const relatedDone = related.filter(task => task.status === 'done').length;
+            return `<div class="task-weekly-goal ${goal.completedAt ? 'completed' : ''}">
+              <input class="task-weekly-check task-weekly-complete" aria-label="Цель выполнена: ${escapeHtml(goal.title)}" type="checkbox" data-id="${goal.id}" ${goal.completedAt ? 'checked' : ''}>
+              <div class="task-weekly-goal-main"><div class="task-weekly-goal-title">${escapeHtml(goal.title)}</div>
+                ${goal.result ? `<div class="task-weekly-goal-info">Результат: ${escapeHtml(goal.result)}</div>` : ''}
+                <div class="task-weekly-goal-info">Связанные задачи: ${relatedDone}/${related.length} выполнено</div></div>
+              <button class="task-weekly-smallbtn task-weekly-edit" type="button" aria-label="Изменить цель" data-id="${goal.id}">✎</button>
+              <button class="task-weekly-smallbtn task-weekly-remove" type="button" aria-label="Удалить цель" data-id="${goal.id}">×</button>
+            </div>`;
+          }).join('') : '<div class="task-weekly-subtitle">Запиши до 3 результатов, которых хочешь достичь к концу недели.</div>'}
+        </div>
+        <button class="task-weekly-add" id="addTaskWeekGoal" type="button" ${goals.length >= 3 ? 'disabled' : ''}>
+          ${goals.length >= 3 ? 'Лимит: 3 цели на неделю' : '+ Добавить цель недели'}
+        </button>
+      </div>
+    </section>`;
+  }
+
+  function taskDayFocusMarkup(date) {
+    const tasks = state.tasks.filter(task => task.due === date && task.status !== 'done');
+    const primary = tasks.find(task => task.isMainForDay);
+    const completed = state.tasks.filter(task => task.due === date && task.status === 'done').length;
+    return `<div class="task-day-focus" aria-label="Фокус дня">
+      <div class="task-weekly-title">Фокус дня</div>
+      <div class="task-weekly-subtitle">${tasks.length}/3 активных задач · ${completed} выполнено${tasks.length > 3 ? ' · сократи список до 3' : ''}</div>
+      ${primary ? `<div class="task-focus-meta"><strong>${escapeHtml(primary.title)}</strong><span class="task-focus-badge">ГЛАВНАЯ ЗАДАЧА</span></div>` : `<small>Выбери главную задачу кнопкой «Сделать главной» в её карточке.</small>`}
+    </div>`;
+  }
+
+  function openTaskWeekGoalModal(item = null) {
+    const weekStart = item?.weekStart || selectedTaskWeekStart;
+    if (!item && taskWeekGoals(weekStart).length >= 3) { toast('Можно выбрать только 3 цели на неделю'); return; }
+    openModal(item ? 'Изменить цель недели' : 'Новая цель недели', `
+      <div class="field"><label>Результат недели</label><input name="title" maxlength="130" required placeholder="Например, подготовить сайт к рекламе" value="${escapeHtml(item?.title || '')}"></div>
+      <div class="field"><label>Критерий готовности (необязательно)</label><textarea name="result" placeholder="Что должно быть готово к концу недели">${escapeHtml(item?.result || '')}</textarea></div>
+      <div class="task-weekly-subtitle">Неделя: ${dateText(weekStart)} - ${dateText(localISO(addDays(parseISO(weekStart), 6)))}</div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      const title = String(data.title || '').trim();
+      if (!title) return false;
+      if (item) Object.assign(item, { title, result: data.result || '' });
+      else state.weeklyTaskGoals.push({ id: uid(), weekStart, title, result: data.result || '', createdAt: new Date().toISOString(), completedAt: null });
+      return true;
+    });
+  }
+
+  function taskWeeklyGoalOptions(due, selectedId = '') {
+    const goals = taskWeekGoals(taskWeekKey(due));
+    return `<option value="">Без цели недели</option>${goals.map(goal => `<option value="${goal.id}" ${selectedId === goal.id ? 'selected' : ''}>${escapeHtml(goal.title)}</option>`).join('')}`;
+  }
+
+  function openPostponeTaskModal(task) {
+    if (!task || task.status === 'done') return;
+    const earliest = [localISO(addDays(parseISO(task.due || todayISO()), 1)), localISO(addDays(new Date(), 1))].sort().at(-1);
+    const suggested = earliest;
+    openModal('Перенести задачу', `
+      <div class="field"><label>Новая дата</label><input name="due" type="date" min="${earliest}" value="${suggested}" required></div>
+      <div class="field"><label>Что помешало выполнить?</label><select name="reason" required><option value="">Выбери причину</option>${TASK_DELAY_REASONS.map(reason => `<option value="${reason}">${reason}</option>`).join('')}</select></div>
+      <div class="field"><label>Комментарий (необязательно)</label><textarea name="details" placeholder="Что изменить, чтобы задача была выполнена"></textarea></div>
+    `, form => {
+      const data = Object.fromEntries(new FormData(form));
+      if (data.due <= (task.due || todayISO()) || !data.reason) { alert('Выбери более позднюю дату и причину переноса.'); return false; }
+      if (state.tasks.filter(item => item.id !== task.id && item.status !== 'done' && item.due === data.due).length >= 3) { alert('На выбранный день уже есть 3 активные задачи. Выбери другую дату.'); return false; }
+      task.postponements ||= [];
+      task.postponements.push({ from: task.due || '', to: data.due, reason: data.reason, details: data.details || '', at: new Date().toISOString() });
+      task.isMainForDay = false;
+      task.due = data.due;
+      task.status = 'todo';
+      return true;
+    });
+  }
+
+  function bindTaskWeeklyActions() {
+    $('#taskPrevWeek')?.addEventListener('click', () => { selectedTaskWeekStart = localISO(addDays(parseISO(selectedTaskWeekStart), -7)); renderTasks(); });
+    $('#taskNextWeek')?.addEventListener('click', () => { selectedTaskWeekStart = localISO(addDays(parseISO(selectedTaskWeekStart), 7)); renderTasks(); });
+    $('#addTaskWeekGoal')?.addEventListener('click', () => openTaskWeekGoalModal());
+    $$('.task-weekly-edit').forEach(button => button.addEventListener('click', () => openTaskWeekGoalModal(state.weeklyTaskGoals.find(goal => goal.id === button.dataset.id))));
+    $$('.task-weekly-remove').forEach(button => button.addEventListener('click', () => {
+      const goal = state.weeklyTaskGoals.find(item => item.id === button.dataset.id);
+      if (!goal || !confirm(`Удалить цель «${goal.title}»? Связанные задачи сохранятся.`)) return;
+      state.weeklyTaskGoals = state.weeklyTaskGoals.filter(item => item.id !== goal.id);
+      state.tasks.forEach(task => { if (task.weeklyGoalId === goal.id) task.weeklyGoalId = ''; });
+      saveState({ label: 'Удалена цель недели' }); renderTasks();
+    }));
+    $$('.task-weekly-complete').forEach(input => input.addEventListener('change', () => {
+      const goal = state.weeklyTaskGoals.find(item => item.id === input.dataset.id);
+      if (!goal) return;
+      goal.completedAt = input.checked ? new Date().toISOString() : null;
+      saveState({ label: 'Изменён статус цели недели' }); renderTasks();
+    }));
+    $$('.make-task-main').forEach(button => button.addEventListener('click', () => {
+      const task = state.tasks.find(item => item.id === button.dataset.id);
+      if (!task || task.status === 'done' || !task.due) return;
+      state.tasks.forEach(item => { if (item.due === task.due) item.isMainForDay = item.id === task.id; });
+      saveState({ label: 'Выбрана главная задача дня' }); renderTasks();
+    }));
+    $$('.postpone-task').forEach(button => button.addEventListener('click', () => openPostponeTaskModal(state.tasks.find(item => item.id === button.dataset.id))));
   }
 
   function renderTasks() {
@@ -1497,6 +1633,8 @@
 
     app.innerHTML = `
       ${tabBar}
+      ${taskWeeklySummaryMarkup()}
+      ${taskFilter === 'today' ? taskDayFocusMarkup(today) : ''}
       <section class="task-search-row"><input class="search-input" id="taskSearch" type="search" value="${escapeHtml(taskSearch)}" placeholder="Найти задачу"></section>
       ${taskFilter === 'today' ? `
         <section class="section compact-section">
@@ -1521,6 +1659,7 @@
       ${lifeMapLauncherMarkup()}`;
 
     bindCommon();
+    bindTaskWeeklyActions();
     $$('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderTasks(); }));
     $('[data-task-filter-jump]')?.addEventListener('click', () => { taskFilter = 'notes'; renderTasks(); });
     bindLifeMapLauncher();
@@ -2597,13 +2736,14 @@
     const task = state.tasks.find(item => item.id === id);
     if (!task) return;
     task.status = completed ? 'done' : 'todo';
+    if (completed) task.isMainForDay = false;
     task.completedAt = completed ? new Date().toISOString() : null;
     if (completed && task.repeat !== 'none' && task.due && task.repeatSpawnedFor !== task.due) {
       const nextDate = parseISO(task.due);
       if (task.repeat === 'daily') nextDate.setDate(nextDate.getDate() + 1);
       if (task.repeat === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
       if (task.repeat === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
-      state.tasks.push({ ...clone(task), id: uid(), due: localISO(nextDate), status: 'todo', completedAt: null, reminderSentFor: null, repeatSpawnedFor: null, createdAt: new Date().toISOString() });
+      state.tasks.push({ ...clone(task), id: uid(), due: localISO(nextDate), status: 'todo', isMainForDay: false, postponements: [], weeklyGoalId: '', completedAt: null, reminderSentFor: null, repeatSpawnedFor: null, createdAt: new Date().toISOString() });
       task.repeatSpawnedFor = task.due;
     }
     saveState();
@@ -2846,20 +2986,44 @@
         <div class="field"><label>Напоминание</label><select name="reminder"><option value="none" ${!item || item?.reminder === 'none' ? 'selected' : ''}>Без напоминания</option><option value="at_time" ${item?.reminder === 'at_time' ? 'selected' : ''}>В указанное время</option><option value="1h" ${item?.reminder === '1h' ? 'selected' : ''}>За 1 час</option><option value="day_before" ${item?.reminder === 'day_before' ? 'selected' : ''}>За день</option></select></div>
       </div>
       <div class="field"><label>Повторение</label><select name="repeat"><option value="none" ${!item || item?.repeat === 'none' ? 'selected' : ''}>Не повторять</option><option value="daily" ${item?.repeat === 'daily' ? 'selected' : ''}>Каждый день</option><option value="weekly" ${item?.repeat === 'weekly' ? 'selected' : ''}>Каждую неделю</option><option value="monthly" ${item?.repeat === 'monthly' ? 'selected' : ''}>Каждый месяц</option></select></div>
+      <div class="field"><label>Цель недели</label><select name="weeklyGoalId" id="taskWeeklyGoalSelect">${taskWeeklyGoalOptions(item?.due || todayISO(), item?.weeklyGoalId || '')}</select></div>
+      <div class="field"><label class="task-weekly-checkbox-label"><input type="checkbox" name="isMainForDay" value="yes" ${item?.isMainForDay ? 'checked' : ''}> Главная задача этого дня</label></div>
+      ${item ? `<div class="field"><label>Причина переноса (если переносишь дату вперёд или откладываешь)</label><select name="delayReason"><option value="">Без переноса</option>${TASK_DELAY_REASONS.map(reason => `<option value="${reason}">${reason}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label>Комментарий</label><textarea name="notes" placeholder="Детали, ссылка или критерий выполнения">${escapeHtml(item?.notes || '')}</textarea></div>
     `, form => {
       const data = Object.fromEntries(new FormData(form));
       if (!data.title.trim()) return false;
       const project = state.projects.find(projectItem => projectItem.id === data.projectId);
       data.project = project?.name || item?.project || '';
+      data.isMainForDay = data.isMainForDay === 'yes' && data.status !== 'done';
+      const reason = data.delayReason || '';
+      delete data.delayReason;
+      if (data.weeklyGoalId && !taskWeekGoals(taskWeekKey(data.due)).some(goal => goal.id === data.weeklyGoalId)) data.weeklyGoalId = '';
+      const movedLater = Boolean(item?.due && data.due > item.due);
+      const newlyDeferred = Boolean(item && item.status !== 'deferred' && data.status === 'deferred');
+      if ((movedLater || newlyDeferred) && !reason) { alert('При переносе или откладывании задачи укажи причину.'); return false; }
+      const isNewDate = !item || item.due !== data.due || item.status === 'done';
+      if (data.status !== 'done' && data.due && isNewDate && state.tasks.filter(task => task.id !== item?.id && task.due === data.due && task.status !== 'done').length >= 3) {
+        alert('На этот день уже есть 3 активные задачи. Выбери другую дату или заверши одну из них.'); return false;
+      }
+      if (data.isMainForDay) state.tasks.forEach(task => { if (task.due === data.due) task.isMainForDay = false; });
       if (item) {
+        if (movedLater || newlyDeferred) {
+          item.postponements ||= [];
+          item.postponements.push({ from: item.due || '', to: data.due, reason, details: '', at: new Date().toISOString() });
+        }
         Object.assign(item, data, { completedAt: data.status === 'done' ? (item.completedAt || new Date().toISOString()) : null });
       } else {
-        const task = { id: uid(), ...data, createdAt: new Date().toISOString(), completedAt: data.status === 'done' ? new Date().toISOString() : null, reminderSentFor: null };
+        const task = { id: uid(), ...data, postponements: [], createdAt: new Date().toISOString(), completedAt: data.status === 'done' ? new Date().toISOString() : null, reminderSentFor: null };
         state.tasks.push(task);
         notifyTaskCreated(task);
       }
       return true;
+    });
+    modalBody.querySelector('[name="due"]')?.addEventListener('change', event => {
+      const select = modalBody.querySelector('#taskWeeklyGoalSelect');
+      if (!select) return;
+      select.innerHTML = taskWeeklyGoalOptions(event.target.value, select.value);
     });
   }
 
