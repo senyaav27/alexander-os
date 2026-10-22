@@ -1,217 +1,84 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#020806" />
-  <meta name="alexander-os-build" content="15.8.0" />
-  <meta name="description" content="Alexander OS - личная система финансов, задач, проектов и прогресса" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Alexander OS" />
-  <link rel="manifest" href="manifest.webmanifest?v=15.8.0" />
-  <script>
-    window.ALEXANDER_OS_BUILD = '15.8.0';
-    if ('caches' in window) {
-      caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v15-8')).map(key => caches.delete(key)))).catch(() => {});
-    }
-  </script>
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="icon" href="icon-192.png" />
-
-  <style id="startupSplashStyle">
-    html, body { background:#020806; }
-    #appSplash {
-      position: fixed;
-      inset: 0;
-      z-index: 2147483000;
-      display: grid;
-      place-items: center;
-      min-height: 100dvh;
-      padding: calc(18px + env(safe-area-inset-top)) 24px calc(18px + env(safe-area-inset-bottom));
-      background:
-        radial-gradient(circle at 50% 38%, rgba(88, 238, 130, .11), transparent 24%),
-        #020806;
-      color: #f7faf7;
-      transition: opacity .28s ease, visibility .28s ease;
-      touch-action: none;
-    }
-    #appSplash.splash-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-    #appSplash .splash-inner {
-      display: grid;
-      justify-items: center;
-      gap: 13px;
-      transform: translateY(-3vh);
-      text-align: center;
-    }
-    #appSplash .splash-logo {
-      width: 88px;
-      height: 88px;
-      display: grid;
-      place-items: center;
-      border: 1px solid rgba(153,255,181,.30);
-      border-radius: 25px;
-      background: linear-gradient(145deg, #79f59b, #43df74 55%, #22b95c);
-      color: #031009;
-      font: 900 54px/1 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-      letter-spacing: -.08em;
-      box-shadow: 0 18px 45px rgba(28,184,82,.18), inset 0 1px 0 rgba(255,255,255,.38);
-    }
-    #appSplash .splash-title {
-      margin-top: 6px;
-      font: 820 23px/1.05 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-      letter-spacing: -.04em;
-    }
-    #appSplash .splash-subtitle {
-      color: rgba(247,250,247,.50);
-      font: 620 11px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-      letter-spacing: .10em;
-      text-transform: uppercase;
-    }
-    #appSplash .splash-track {
-      width: 164px;
-      height: 5px;
-      margin-top: 8px;
-      overflow: hidden;
-      border-radius: 99px;
-      background: rgba(255,255,255,.075);
-    }
-    #appSplash .splash-track { position: relative; }
-    #appSplash .splash-track::before { content: none !important; display: none !important; }
-    #appSplash .splash-track > span {
-      position: absolute;
-      inset: 0 auto 0 0;
-      width: 0;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, #37d76c, #82f49f);
-      box-shadow: 0 0 10px rgba(85,235,125,.20);
-      transition: width .11s linear;
-    }
-    #appSplash .splash-percent {
-      min-width: 36px;
-      color: rgba(247,250,247,.58);
-      font: 700 11px/1 system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: .04em;
-    }
-    @media (prefers-reduced-motion: reduce) { #appSplash .splash-track > span { transition: none; } }
-  </style>
-
-  <link rel="stylesheet" href="styles.css?v=15.8.0" />
-  <link rel="stylesheet" href="styles-v15.css?v=15.8.0" />
-  <link rel="stylesheet" href="finance-v151.css?v=15.8.0" />
-  <link rel="stylesheet" href="features-v152.css?v=15.8.0" />
-  <link rel="stylesheet" href="senyaav-ai-v157.css?v=15.8.0" />
-  <link rel="stylesheet" href="motion-v155.css?v=15.8.0" />
-  <link rel="stylesheet" href="tasks-weekly.css?v=15.8.0" />
-  <title>Alexander OS V15.8</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0F0F10" />
+<meta name="alexander-os-build" content="15.8.0-brand1" />
+<meta name="description" content="Alexander OS - личная система финансов, задач, проектов и прогресса" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Alexander OS" />
+<link rel="manifest" href="manifest.webmanifest?v=15.8.0" />
+<script>
+  window.ALEXANDER_OS_BUILD = '15.8.0';
+  if ('caches' in window) {
+    caches.keys().then(keys => Promise.all(keys.filter(key => !key.includes('v15-8')).map(key => caches.delete(key)))).catch(() => {});
+  }
+</script>
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<style id="startupSplashStyle">
+  html,body { background:#0F0F10; }
+  #appSplash {position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;min-height:100dvh;padding:calc(18px + env(safe-area-inset-top)) 24px calc(18px + env(safe-area-inset-bottom));background:#0F0F10;color:#fff;transition:opacity .28s ease,visibility .28s ease;touch-action:none}
+  #appSplash.splash-hidden {opacity:0;visibility:hidden;pointer-events:none}
+  #appSplash .splash-inner{display:grid;justify-items:center;gap:13px;transform:translateY(-3vh);text-align:center}
+  #appSplash .splash-logo{width:88px;height:88px;display:grid;place-items:center;border-radius:25px;background:#B9FD50;color:#0F0F10;font:900 54px/1 system-ui,-apple-system,sans-serif;letter-spacing:-.08em}
+  #appSplash .splash-title{margin-top:6px;font:820 23px/1.05 system-ui,-apple-system,sans-serif;letter-spacing:-.04em}
+  #appSplash .splash-subtitle{color:#9d9d9d;font:620 11px/1.2 system-ui,-apple-system,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+  #appSplash .splash-track{width:164px;height:5px;position:relative;margin-top:8px;overflow:hidden;border-radius:99px;background:#313131}
+  #appSplash .splash-track::before{content:none!important;display:none!important}
+  #appSplash .splash-track>span{position:absolute;inset:0 auto 0 0;width:0;height:100%;border-radius:inherit;background:#B9FD50;transition:width .11s linear}
+  #appSplash .splash-percent{min-width:36px;color:#aaa;font:700 11px/1 system-ui,-apple-system,sans-serif;font-variant-numeric:tabular-nums}
+  @media(prefers-reduced-motion:reduce){#appSplash .splash-track>span{transition:none}}
+</style>
+<link rel="stylesheet" href="styles.css?v=15.8.0" />
+<link rel="stylesheet" href="styles-v15.css?v=15.8.0" />
+<link rel="stylesheet" href="finance-v151.css?v=15.8.0" />
+<link rel="stylesheet" href="features-v152.css?v=15.8.0" />
+<link rel="stylesheet" href="senyaav-ai-v157.css?v=15.8.0" />
+<link rel="stylesheet" href="motion-v155.css?v=15.8.0" />
+<link rel="stylesheet" href="tasks-weekly.css?v=15.8.0" />
+<link rel="stylesheet" href="brand-theme.css?v=15.8.0-brand1" />
+<title>Alexander OS V15.8</title>
 </head>
 <body>
-  <div id="appSplash" role="status" aria-live="polite">
-    <div class="splash-inner">
-      <div class="splash-logo" aria-hidden="true">S</div>
-      <div class="splash-title">Alexander OS</div>
-      <div class="splash-subtitle">Загрузка системы</div>
-      <div class="splash-track" aria-hidden="true"><span id="aosSplashFill"></span></div>
-      <div class="splash-percent" id="aosSplashPercent">0%</div>
-    </div>
-  </div>
-  <script>
-    window.__AOS_SPLASH_STARTED_AT = Date.now();
-    (() => {
-      const started = performance.now();
-      const tick = () => {
-        const fill = document.getElementById('aosSplashFill');
-        const label = document.getElementById('aosSplashPercent');
-        if (!fill || !label) return;
-        const elapsed = performance.now() - started;
-        const ready = Boolean(window.__AOS_APP_READY);
-        const value = ready ? 100 : Math.min(92, Math.round(5 + 87 * (1 - Math.exp(-elapsed / 280))));
-        fill.style.width = value + '%';
-        label.textContent = value + '%';
-        if (!ready) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    })();
-  </script>
-
-  <div class="app-shell">
-    <header class="topbar">
-      <button class="topbar-brand profile-settings-trigger" id="profileSettingsTrigger" type="button" aria-label="Открыть настройки">
-        <div class="brand-mark" aria-hidden="true">S</div>
-        <div class="topbar-copy">
-          <div class="brand-line">Alexander OS <span>V15.8</span></div>
-          <p class="eyebrow" id="todayLabel">Сегодня</p>
-          <h1 id="screenTitle">Главная</h1>
-        </div>
-      </button>
-      <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
-    </header>
-
-    <main id="app" class="content" aria-live="polite"></main>
-
-    <button class="floating-add" id="floatingAdd" type="button" aria-label="Быстро добавить" aria-hidden="true" tabindex="-1">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+<div id="appSplash" role="status" aria-live="polite">
+  <div class="splash-inner"><div class="splash-logo" aria-hidden="true">S</div><div class="splash-title">Alexander OS</div><div class="splash-subtitle">Загрузка системы</div><div class="splash-track" aria-hidden="true"><span id="aosSplashFill"></span></div><div class="splash-percent" id="aosSplashPercent">0%</div></div>
+</div>
+<script>
+  window.__AOS_SPLASH_STARTED_AT = Date.now();
+  (() => {const started=performance.now();const tick=()=>{const fill=document.getElementById('aosSplashFill');const label=document.getElementById('aosSplashPercent');if(!fill||!label)return;const elapsed=performance.now()-started;const ready=Boolean(window.__AOS_APP_READY);const value=ready?100:Math.min(92,Math.round(5+87*(1-Math.exp(-elapsed/280))));fill.style.width=value+'%';label.textContent=value+'%';if(!ready)requestAnimationFrame(tick)};requestAnimationFrame(tick)})();
+</script>
+<div class="app-shell">
+  <header class="topbar">
+    <button class="topbar-brand profile-settings-trigger" id="profileSettingsTrigger" type="button" aria-label="Открыть настройки">
+      <div class="brand-mark" aria-hidden="true">S</div>
+      <div class="topbar-copy"><div class="brand-line">Alexander OS <span>V15.8</span></div><p class="eyebrow" id="todayLabel">Сегодня</p><h1 id="screenTitle">Главная</h1></div>
     </button>
-
-    <nav class="bottom-nav" aria-label="Основная навигация">
-      <button class="nav-item active" type="button" data-screen="dashboard" aria-label="Главная">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="nav-fill" d="M3.6 10.7 12 3.8l8.4 6.9v8.7a1.8 1.8 0 0 1-1.8 1.8h-4.3v-6.3H9.7v6.3H5.4a1.8 1.8 0 0 1-1.8-1.8Z"/></svg><small>Главная</small>
-      </button>
-      <button class="nav-item" type="button" data-screen="finance" aria-label="Финансы">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.8a8.8 8.8 0 1 0 9.2 9.2H11Z"/><path d="M14 3.9a6.1 6.1 0 0 1 6.1 6.1H14Z"/></svg><small>Финансы</small>
-      </button>
-      <button class="nav-item" type="button" data-screen="tasks" aria-label="Задачи">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.8" width="16" height="16.4" rx="3"/><path d="m7.6 12.1 2.6 2.6 6.4-6.5"/></svg><small>Задачи</small>
-      </button>
-      <button class="nav-item" type="button" data-screen="projects" aria-label="Проекты">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="7.2" width="17" height="12.6" rx="2.7"/><path d="M8.2 7.2V5.3c0-.8.7-1.5 1.5-1.5h4.6c.8 0 1.5.7 1.5 1.5v1.9M3.5 12.2h17M9.5 12.2v1.5h5v-1.5"/></svg><small>Проекты</small>
-      </button>
-      <button class="nav-item" type="button" data-screen="growth" aria-label="Прогресс">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V13M12 20V8M19 20V4"/><path d="m4.5 9.5 5-4 4 2.5 6-5"/></svg><small>Прогресс</small>
-      </button>
-    </nav>
-  </div>
-
-  <section id="lockScreen" class="lock-screen" hidden aria-live="polite">
-    <div class="lock-card">
-      <div class="face-orb" aria-hidden="true">
-        <span class="face-corners"><i></i><i></i><i></i><i></i></span>
-        <svg viewBox="0 0 64 64"><path d="M22 28v-4a6 6 0 0 1 6-6h2M42 28v-4a6 6 0 0 0-6-6h-2M22 36v4a6 6 0 0 0 6 6h2M42 36v4a6 6 0 0 1-6 6h-2"/><path d="M26 31h.1M38 31h.1M27 38c3 2.4 7 2.4 10 0"/></svg>
-      </div>
-      <p class="eyebrow">Alexander OS V15.8</p>
-      <h2>Разблокировка Face ID</h2>
-      <p id="lockHint">Подтверди вход, чтобы открыть личные данные.</p>
-      <div class="face-status" id="faceStatus"><span></span> Ожидание подтверждения</div>
-      <button class="btn primary full face-retry" type="button" id="unlockFaceId">Повторить Face ID</button>
-      <div class="lock-divider"><span>резервный вход</span></div>
-      <form id="unlockPinForm" class="lock-pin-form">
-        <input id="unlockPin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="PIN-код" aria-label="PIN-код">
-        <button class="btn secondary" type="submit">Открыть</button>
-      </form>
-      <p class="lock-error" id="lockError" role="alert"></p>
-    </div>
-  </section>
-
-  <dialog id="modal" class="modal">
-    <form class="modal-card" id="modalForm" novalidate>
-      <div class="modal-head">
-        <h2 id="modalTitle">Добавить</h2>
-        <button class="icon-btn" id="modalClose" type="button" aria-label="Закрыть">✕</button>
-      </div>
-      <div id="modalBody"></div>
-      <div class="modal-actions" id="modalActions">
-        <button class="btn secondary" id="modalCancel" type="button">Отмена</button>
-        <button class="btn primary" id="modalSubmit" type="submit">Сохранить</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script src="senyaav-ai-v157.js?v=15.8.0"></script>
-  <script src="app.js?v=15.8.0"></script>
-  <script src="runtime-v155.js?v=15.8.0"></script>
+    <button class="aos-sheet-trigger" id="aosSheetTrigger" type="button" aria-label="Синхронизация с Google Таблицами" title="Google Таблицы">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h7M12 10v9"/></svg>
+    </button>
+    <button class="global-add top-add" id="globalAdd" type="button" aria-label="Быстро добавить"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  </header>
+  <main id="app" class="content" aria-live="polite"></main>
+  <button class="floating-add" id="floatingAdd" type="button" aria-label="Быстро добавить" aria-hidden="true" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  <nav class="bottom-nav" aria-label="Основная навигация">
+    <button class="nav-item active" type="button" data-screen="dashboard" aria-label="Главная"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="nav-fill" d="M3.6 10.7 12 3.8l8.4 6.9v8.7a1.8 1.8 0 0 1-1.8 1.8h-4.3v-6.3H9.7v6.3H5.4a1.8 1.8 0 0 1-1.8-1.8Z"/></svg><small>Главная</small></button>
+    <button class="nav-item" type="button" data-screen="finance" aria-label="Финансы"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.8a8.8 8.8 0 1 0 9.2 9.2H11Z"/><path d="M14 3.9a6.1 6.1 0 0 1 6.1 6.1H14Z"/></svg><small>Финансы</small></button>
+    <button class="nav-item" type="button" data-screen="tasks" aria-label="Задачи"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.8" width="16" height="16.4" rx="3"/><path d="m7.6 12.1 2.6 2.6 6.4-6.5"/></svg><small>Задачи</small></button>
+    <button class="nav-item" type="button" data-screen="projects" aria-label="Проекты"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="7.2" width="17" height="12.6" rx="2.7"/><path d="M8.2 7.2V5.3c0-.8.7-1.5 1.5-1.5h4.6c.8 0 1.5.7 1.5 1.5v1.9M3.5 12.2h17M9.5 12.2v1.5h5v-1.5"/></svg><small>Проекты</small></button>
+    <button class="nav-item" type="button" data-screen="growth" aria-label="Прогресс"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V13M12 20V8M19 20V4"/><path d="m4.5 9.5 5-4 4 2.5 6-5"/></svg><small>Прогресс</small></button>
+  </nav>
+</div>
+<section id="lockScreen" class="lock-screen" hidden aria-live="polite">
+  <div class="lock-card"><div class="face-orb" aria-hidden="true"><span class="face-corners"><i></i><i></i><i></i><i></i></span><svg viewBox="0 0 64 64"><path d="M22 28v-4a6 6 0 0 1 6-6h2M42 28v-4a6 6 0 0 0-6-6h-2M22 36v4a6 6 0 0 1 6 6h2M42 36v4a6 6 0 0 0 6 6h-2"/><path d="M26 31h.1M38 31h.1M27 38c3 2.4 7 2.4 10 0"/></svg></div>
+  <p class="eyebrow">Alexander OS V15.8</p><h2>Разблокировка Face ID</h2><p id="lockHint">Подтверди вход, чтобы открыть личные данные.</p><div class="face-status" id="faceStatus"><span></span> Ожидание подтверждения</div><button class="btn primary full face-retry" type="button" id="unlockFaceId">Повторить Face ID</button><div class="lock-divider"><span>резервный вход</span></div><form id="unlockPinForm" class="lock-pin-form"><input id="unlockPin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="PIN-код" aria-label="PIN-код"><button class="btn secondary" type="submit">Открыть</button></form><p class="lock-error" id="lockError"></p></div>
+</section>
+<dialog id="modal" class="modal"><form class="modal-card" id="modalForm" novalidate><div class="modal-head"><h2 id="modalTitle">Добавить</h2><button class="icon-btn" id="modalClose" type="button">✕</button></div><div id="modalBody"></div><div class="modal-actions" id="modalActions"><button class="btn secondary" id="modalCancel" type="button">Отмена</button><button class="btn primary" id="modalSubmit" type="submit">Сохранить</button></div></form></dialog>
+<script src="brand-sheets.js?v=15.8.0-brand1" defer></script>
+<script src="senyaav-ai-v157.js?v=15.8.0"></script>
+<script src="app.js?v=15.8.0"></script>
+<script src="runtime-v155.js?v=15.8.0"></script>
 </body>
 </html>
