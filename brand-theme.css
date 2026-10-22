@@ -1,81 +1,483 @@
-/* Alexander OS | SenyaMarketing brand refresh, additive layer for V15.8.
-   Source files untouched. All five sections and their dialogs inherit this palette. */
-:root, :root[data-theme], :root[data-theme="black"], :root[data-theme="light"], :root[data-theme="emerald"], :root[data-theme="neonlime"], :root[data-theme="graphite"] {
- --brand-lime:#B9FD50;--brand-ink:#0F0F10;--brand-panel:#17181A;--brand-graphite:#313131;
- --bg:#0F0F10;--bg-soft:#141516;--surface:#17181A;--surface-2:#202123;--surface-3:#313131;--surface-soft:#17181A;
- --text:#F8F9F6;--muted:#A5A7A2;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.15);
- --accent:#B9FD50;--accent-soft:rgba(185,253,80,.12);--accent-2:#B9FD50;--success:#B9FD50;
- --app-bg:#0F0F10;--app-bg-2:#141516;--app-sheet:#17181A;--app-card:#17181A;--app-card-2:#202123;--app-control:#313131;
- --app-text:#F8F9F6;--app-muted:#A5A7A2;--app-line:rgba(255,255,255,.085);--app-line-strong:rgba(185,253,80,.28);
- --app-accent:#B9FD50;--app-accent-2:#A8ED36;--app-accent-contrast:#0F0F10;--app-track:#313131;
- --aos-green:#B9FD50;--aos-green-2:#D6FF9D;--aos-green-soft:rgba(185,253,80,.12);
- color-scheme:dark;
+/* Alexander OS | approved light concept
+   Goal: make the app visually match the approved mockups:
+   light canvas, white cards, black hero cards, lime accents.
+   Additive override layer for the existing V15.8 app. */
+:root,
+:root[data-theme],
+:root[data-theme="black"],
+:root[data-theme="light"],
+:root[data-theme="emerald"],
+:root[data-theme="graphite"],
+:root[data-theme="neonlime"] {
+  --brand-lime:#B9FD50;
+  --brand-ink:#0F0F10;
+  --brand-panel:#17181A;
+  --brand-graphite:#313131;
+
+  --bg:#F3F2EE;
+  --bg-soft:#ECEBE6;
+  --surface:#FFFFFF;
+  --surface-2:#F8F8F5;
+  --surface-3:#ECECE7;
+  --surface-soft:rgba(255,255,255,.95);
+  --text:#0F0F10;
+  --muted:#6E7177;
+  --line:rgba(15,15,16,.08);
+  --line-strong:rgba(15,15,16,.12);
+  --accent:#B9FD50;
+  --accent-soft:rgba(185,253,80,.16);
+  --accent-2:#B9FD50;
+  --success:#2B9E4B;
+  --danger:#D65C66;
+  --warning:#B77913;
+
+  --app-bg:#F3F2EE;
+  --app-bg-2:#ECEBE6;
+  --app-sheet:#FFFFFF;
+  --app-card:#FFFFFF;
+  --app-card-2:#F8F8F5;
+  --app-control:#F0F0EB;
+  --app-text:#0F0F10;
+  --app-muted:#6E7177;
+  --app-line:rgba(15,15,16,.08);
+  --app-line-strong:rgba(15,15,16,.12);
+  --app-accent:#B9FD50;
+  --app-accent-2:#B9FD50;
+  --app-accent-contrast:#0F0F10;
+  --app-track:#E8E8E2;
+  --aos-green:#B9FD50;
+  --aos-green-2:#D5FF93;
+  --aos-green-soft:rgba(185,253,80,.16);
+
+  color-scheme:light;
 }
-html,body {background:#0F0F10!important;color:#F8F9F6!important}
-body {background-image:radial-gradient(ellipse at 75% -14%, rgba(185,253,80,.07), transparent 30%),linear-gradient(#0F0F10,#0F0F10)!important;background-attachment:fixed!important}
-.app-shell {background:transparent!important}
-.topbar {background:linear-gradient(180deg,rgba(15,15,16,.99),rgba(15,15,16,.98) 76%,rgba(15,15,16,.86))!important;border-bottom-color:rgba(255,255,255,.045)!important}
-.brand-mark,#appSplash .splash-logo {background:#B9FD50!important;color:#0F0F10!important;border-color:rgba(185,253,80,.6)!important;box-shadow:0 9px 23px rgba(185,253,80,.13)!important}
-.brand-line,.topbar h1,.section-head h2,.premium-home-welcome h2 {color:#F8F9F6!important}
-.brand-line span {background:rgba(185,253,80,.12)!important;color:#B9FD50!important;border-color:rgba(185,253,80,.2)!important}
-.topbar .eyebrow {color:#A5A7A2!important}
-.global-add,.top-add,.floating-add,.btn.primary {background:#B9FD50!important;color:#0F0F10!important;border-color:#B9FD50!important;box-shadow:0 9px 23px rgba(185,253,80,.12)!important}
-.btn.primary:hover,.global-add:hover {filter:brightness(1.08)}
-.aos-sheet-trigger {width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border:1px solid rgba(185,253,80,.3);border-radius:12px;background:#313131;color:#B9FD50;cursor:pointer}
-.aos-sheet-trigger svg {width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.card,.stat-card,.toolbar-card,.item,.action-tile,.home-metric-card,.goal-card,.habit-card,.project-card,.settings-profile-card,.settings-list-card,.settings-form,.privacy-card,.empty-state,.insight,.home-goal-card,.strategy-mini,.home-habit-preview,.finance-tool,.progress-kpi-card,.chart-card,.settings-list {
- background:#17181A!important;border:1px solid rgba(255,255,255,.085)!important;color:#F8F9F6!important;box-shadow:0 10px 28px rgba(0,0,0,.18)!important;border-radius:19px!important;
+
+html, body {
+  background:#F3F2EE !important;
+  color:#0F0F10 !important;
 }
-.home-premium-capital,.finance-master-card,.finance-hero,.hero,.progress-hero {
- background:radial-gradient(circle at 96% 88%,rgba(185,253,80,.12),transparent 36%),linear-gradient(145deg,#1B1D1C,#121314)!important;
- border:1px solid rgba(185,253,80,.15)!important;border-radius:22px!important;color:#F8F9F6!important;
+
+body {
+  background-image:linear-gradient(#F3F2EE,#F3F2EE) !important;
+  background-attachment:fixed !important;
 }
-.home-capital-head strong,.finance-hero .kpi,.home-premium-capital strong,.home-goal-card>b,.strategy-mini strong,.item-title {color:#F8F9F6!important}
-.home-premium-capital .compare {background:rgba(185,253,80,.12)!important;border-color:rgba(185,253,80,.23)!important;color:#B9FD50!important}
-.home-goal-title>span,.settings-icon,.finance-tool>span {background:rgba(185,253,80,.1)!important;color:#B9FD50!important;border-color:rgba(185,253,80,.2)!important}
-.home-goal-title strong {color:#D8FFA1!important}
-.home-week-bar span {background:#B9FD50!important}
-.hero-progress span,.progress>span,.home-week-expense-card .progress>span,.premium-progress>b,.bar-fill,.goal-progress-fill {background:#B9FD50!important}
-.section-head h2 {font-size:17px!important;line-height:1.2!important}
-.section {margin-top:19px!important}
-.tabs,.finance-tabs,.task-view-tabs,.project-tabs,.progress-tabs,.progress-period-tabs,.filter-row,.segmented,.pill-tabs {background:#202123!important;border-color:rgba(255,255,255,.08)!important}
-.tab,.tabs .tab {color:#A5A7A2!important}
-.tab.active,.finance-tabs .tab.active,.progress-tabs .tab.active,.progress-period-tabs .tab.active,.project-tabs .tab.active,.task-view-tabs .tab.active {background:#B9FD50!important;color:#0F0F10!important;box-shadow:0 4px 14px rgba(185,253,80,.14)!important}
-.finance-master-grid>div,.hero-month-picker {background:#202123!important;border-color:rgba(255,255,255,.085)!important}
-.finance-master-grid>div:first-child strong,.finance-source-row b,.link-btn {color:#B9FD50!important}
-.hero-month-picker select {color:#F8F9F6!important}
-.search-input,input:not([type=checkbox]):not([type=radio]),textarea,select {background-color:#202123;color:#F8F9F6;border-color:rgba(255,255,255,.12)}
-input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible {outline:2px solid #B9FD50;outline-offset:2px}
-input[type=checkbox],input[type=radio] {accent-color:#B9FD50}
-.check {border-color:#999!important}
-.category-row {border-color:rgba(255,255,255,.09)!important}
-.badge {background:#313131!important;border-color:rgba(255,255,255,.085)!important}
-.bottom-nav {background:rgba(15,15,16,.97)!important;border-top:1px solid rgba(255,255,255,.085)!important;box-shadow:0 -9px 28px rgba(0,0,0,.32)!important}
-.bottom-nav .nav-item {color:#989B99!important}
-.bottom-nav .nav-item.active {color:#B9FD50!important}
-.bottom-nav .nav-item.active::before {background:rgba(185,253,80,.14)!important}
-.bottom-nav .nav-item.active svg {color:#B9FD50!important}
-dialog.modal,.modal-card,.modal-head,.modal-actions,.aos-account-dialog,.aos-account-sheet {background:#17181A!important;color:#F8F9F6!important}
-#appSplash {background:#0F0F10!important}
-#appSplash .splash-track>span {background:#B9FD50!important}
-/* Financial sync panel. Does not alter the existing AOS state. */
-.aos-sync-dialog {max-width:min(94vw,440px);width:100%;max-height:min(85dvh,740px);padding:0;border:1px solid rgba(185,253,80,.23);border-radius:22px;background:#17181A;color:#fff;box-shadow:0 24px 80px #000a}
-.aos-sync-dialog::backdrop {background:rgba(0,0,0,.76);backdrop-filter:blur(4px)}
-.aos-sync-panel {padding:20px;display:grid;gap:14px;font-size:14px}
-.aos-sync-head {display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.aos-sync-head h2 {font-size:21px;margin:0 0 5px;color:#fff}
-.aos-sync-panel p {line-height:1.45;color:#B8BAB5;margin:0}
-.aos-sync-head button {min-width:32px;min-height:32px;border:1px solid #444;border-radius:10px;background:#313131;color:#fff;cursor:pointer}
-.aos-sync-panel label {display:grid;gap:7px;color:#DBDDD9;font-weight:650}
-.aos-sync-panel input {width:100%;border:1px solid #444;border-radius:11px;padding:12px;color:#fff;background:#313131;font-size:13px}
-.aos-sync-panel .aos-sync-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.aos-sync-panel button.action {padding:12px;border:1px solid #B9FD50;border-radius:11px;background:#B9FD50;color:#111;font-weight:780;cursor:pointer}
-.aos-sync-panel button.secondary {border-color:#444;background:#313131;color:#fff}
-.aos-sync-panel .aos-sync-note {font-size:12px;color:#A5A7A2}
-.aos-sync-state {padding:12px;border-radius:11px;background:#202123;color:#DDE1D7;line-height:1.5;overflow-wrap:anywhere;font-size:12px}
-.aos-sync-state[data-kind="error"] {color:#FF999E}
-.aos-sync-state[data-kind="success"] {color:#B9FD50}
-.aos-sync-panel a {color:#B9FD50}
-@media(min-width:640px) {.app-shell {box-shadow:0 0 90px rgba(0,0,0,.33)!important}}
-@media(max-width:360px){.content{padding-left:11px!important;padding-right:11px!important}.section-head h2{font-size:15px!important}.aos-sheet-trigger{width:34px;flex-basis:34px}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
+
+.app-shell {
+  background:transparent !important;
+}
+
+.content {
+  padding-top:12px !important;
+}
+
+.topbar {
+  background:linear-gradient(180deg, rgba(243,242,238,.98), rgba(243,242,238,.96) 78%, rgba(243,242,238,0)) !important;
+  border-bottom:none !important;
+  box-shadow:none !important;
+}
+
+.topbar-brand {
+  background:transparent !important;
+}
+
+.brand-mark,
+#appSplash .splash-logo {
+  background:#B9FD50 !important;
+  color:#0F0F10 !important;
+  border-color:rgba(15,15,16,.06) !important;
+  box-shadow:0 10px 24px rgba(15,15,16,.10) !important;
+}
+
+.brand-line,
+.topbar h1,
+.section-head h2,
+.premium-home-welcome h2,
+.item-title,
+.home-capital-head strong,
+.finance-hero .kpi,
+.home-premium-capital strong,
+.home-goal-card > b,
+.strategy-mini strong,
+.project-card strong,
+.progress-kpi-card strong {
+  color:#0F0F10 !important;
+}
+
+.brand-line span {
+  background:#EDF8D5 !important;
+  color:#5C7E1D !important;
+  border-color:transparent !important;
+}
+
+.topbar .eyebrow,
+.muted,
+.stat-card small,
+.premium-home-welcome small,
+.home-capital-goal,
+.hero p,
+.progress-hero p,
+.item-meta,
+.aos-sync-panel p,
+.aos-sync-note,
+.modal-card p {
+  color:#6E7177 !important;
+}
+
+.global-add,
+.top-add,
+.floating-add,
+.btn.primary {
+  background:#B9FD50 !important;
+  color:#0F0F10 !important;
+  border-color:#B9FD50 !important;
+  box-shadow:0 10px 22px rgba(185,253,80,.18) !important;
+}
+
+.global-add:hover,
+.top-add:hover,
+.floating-add:hover,
+.btn.primary:hover {
+  filter:brightness(1.03);
+}
+
+.aos-sheet-trigger {
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(15,15,16,.07);
+  border-radius:12px;
+  background:#FFFFFF;
+  color:#313131;
+  box-shadow:0 6px 16px rgba(15,15,16,.06);
+  cursor:pointer;
+}
+.aos-sheet-trigger svg {
+  width:20px;
+  height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+/* Core card system */
+.card,
+.stat-card,
+.toolbar-card,
+.item,
+.action-tile,
+.home-metric-card,
+.goal-card,
+.habit-card,
+.project-card,
+.settings-profile-card,
+.settings-list-card,
+.settings-form,
+.privacy-card,
+.empty-state,
+.insight,
+.home-goal-card,
+.strategy-mini,
+.home-habit-preview,
+.finance-tool,
+.progress-kpi-card,
+.chart-card,
+.settings-list,
+.finance-master-grid > div,
+.hero-month-picker,
+.search-input,
+.category-list,
+.category-row,
+.badge,
+.modal-card,
+dialog.modal,
+.modal-head,
+.modal-actions,
+.aos-account-dialog,
+.aos-account-sheet {
+  background:#FFFFFF !important;
+  color:#0F0F10 !important;
+  border:1px solid rgba(15,15,16,.07) !important;
+  box-shadow:0 10px 30px rgba(15,15,16,.06) !important;
+}
+
+.card,
+.stat-card,
+.toolbar-card,
+.item,
+.home-goal-card,
+.strategy-mini,
+.home-habit-preview,
+.finance-tool,
+.project-card,
+.chart-card,
+.progress-kpi-card,
+.empty-state,
+.insight,
+.settings-list,
+.settings-profile-card,
+.settings-list-card,
+.settings-form,
+.privacy-card {
+  border-radius:22px !important;
+}
+
+/* Hero blocks */
+.home-premium-capital,
+.finance-master-card,
+.finance-hero,
+.hero,
+.progress-hero,
+.task-focus-card,
+.focus-card,
+.ai-card {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(185,253,80,.12), transparent 28%),
+    linear-gradient(145deg, #17181A, #0F0F10) !important;
+  color:#FFFFFF !important;
+  border:1px solid rgba(15,15,16,.05) !important;
+  box-shadow:0 18px 34px rgba(15,15,16,.14) !important;
+  border-radius:28px !important;
+}
+
+.home-premium-capital *,
+.finance-master-card *,
+.finance-hero *,
+.hero *,
+.progress-hero *,
+.task-focus-card *,
+.focus-card *,
+.ai-card * {
+  color:inherit;
+}
+
+.home-premium-capital .home-capital-head small,
+.finance-hero .eyebrow,
+.home-premium-capital .compare,
+.hero p,
+.progress-hero p {
+  color:rgba(255,255,255,.82) !important;
+}
+
+.home-premium-capital .compare {
+  background:rgba(185,253,80,.14) !important;
+  border-color:transparent !important;
+  color:#D8FFA1 !important;
+}
+
+.hero-progress,
+.progress,
+.premium-progress,
+.home-week-progress,
+.goal-progress,
+.progress-track,
+.home-premium-capital .progress,
+.home-goal-card .progress,
+.strategy-mini .progress,
+.category-row .progress {
+  background:#ECECE7 !important;
+  border-radius:999px !important;
+}
+
+.hero-progress > span,
+.progress > span,
+.premium-progress > b,
+.bar-fill,
+.goal-progress-fill,
+.home-week-expense-card .progress > span,
+.home-week-bar span,
+.progress-fill,
+.hero-progress span {
+  background:#B9FD50 !important;
+  border-radius:999px !important;
+}
+
+.home-goal-title > span,
+.settings-icon,
+.finance-tool > span,
+.category-icon,
+.action-icon,
+.quick-btn .icon,
+.home-action-icon {
+  background:#F1F9DF !important;
+  color:#5E7F22 !important;
+  border-color:transparent !important;
+}
+
+.section-head h2 {
+  font-size:18px !important;
+  line-height:1.2 !important;
+}
+.section { margin-top:20px !important; }
+
+/* Tabs / segmented controls */
+.tabs,
+.finance-tabs,
+.task-view-tabs,
+.project-tabs,
+.progress-tabs,
+.progress-period-tabs,
+.filter-row,
+.segmented,
+.pill-tabs {
+  background:#F0F0EB !important;
+  border:1px solid rgba(15,15,16,.06) !important;
+  box-shadow:none !important;
+}
+
+.tab,
+.tabs .tab {
+  color:#70737A !important;
+}
+
+.tab.active,
+.finance-tabs .tab.active,
+.progress-tabs .tab.active,
+.progress-period-tabs .tab.active,
+.project-tabs .tab.active,
+.task-view-tabs .tab.active {
+  background:#B9FD50 !important;
+  color:#0F0F10 !important;
+  box-shadow:none !important;
+}
+
+.link-btn,
+.finance-master-grid > div:first-child strong,
+.finance-source-row b,
+.bottom-nav .nav-item.active,
+.bottom-nav .nav-item.active svg,
+.aos-sync-panel a {
+  color:#0F0F10 !important;
+}
+
+.hero-month-picker select,
+.search-input,
+input:not([type=checkbox]):not([type=radio]),
+textarea,
+select {
+  background:#F8F8F5 !important;
+  color:#0F0F10 !important;
+  border-color:rgba(15,15,16,.08) !important;
+}
+
+.check,
+input[type=checkbox],
+input[type=radio] {
+  accent-color:#B9FD50 !important;
+}
+.check { border-color:#B5B9BE !important; background:#fff !important; }
+
+.badge {
+  background:#F6F7F1 !important;
+  border-color:rgba(15,15,16,.06) !important;
+  color:#666A71 !important;
+}
+
+/* Lists / rows */
+.category-row {
+  border-color:rgba(15,15,16,.06) !important;
+}
+
+.item.overdue {
+  border-color:rgba(214,92,102,.22) !important;
+}
+
+/* Bottom navigation */
+.bottom-nav {
+  background:rgba(255,255,255,.94) !important;
+  border-top:1px solid rgba(15,15,16,.07) !important;
+  box-shadow:0 -10px 28px rgba(15,15,16,.08) !important;
+}
+.bottom-nav .nav-item {
+  color:#7A7E86 !important;
+}
+.bottom-nav .nav-item.active::before {
+  background:rgba(185,253,80,.28) !important;
+}
+.bottom-nav .nav-item small {
+  color:currentColor !important;
+}
+
+/* Modals */
+#appSplash { background:#F3F2EE !important; }
+#appSplash .splash-title { color:#0F0F10 !important; }
+#appSplash .splash-subtitle { color:#6E7177 !important; }
+#appSplash .splash-track { background:#E3E6DA !important; }
+#appSplash .splash-track > span { background:#B9FD50 !important; }
+
+.aos-sync-dialog {
+  max-width:min(94vw,440px);
+  width:100%;
+  max-height:min(85dvh,740px);
+  padding:0;
+  border:1px solid rgba(15,15,16,.08);
+  border-radius:28px;
+  background:#FFFFFF;
+  color:#0F0F10;
+  box-shadow:0 28px 80px rgba(15,15,16,.18);
+}
+.aos-sync-dialog::backdrop { background:rgba(0,0,0,.45); backdrop-filter:blur(6px); }
+.aos-sync-panel { padding:20px; display:grid; gap:14px; font-size:14px; }
+.aos-sync-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.aos-sync-head h2 { font-size:21px; margin:0 0 5px; color:#0F0F10; }
+.aos-sync-head button {
+  min-width:38px; min-height:38px;
+  border:1px solid rgba(15,15,16,.08);
+  border-radius:14px; background:#F0F0EB; color:#313131; cursor:pointer;
+}
+.aos-sync-panel label { display:grid; gap:7px; color:#0F0F10; font-weight:650; }
+.aos-sync-panel input {
+  width:100%; border:1px solid rgba(15,15,16,.08); border-radius:14px; padding:12px;
+  color:#0F0F10; background:#F8F8F5; font-size:13px;
+}
+.aos-sync-panel .aos-sync-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.aos-sync-panel button.action {
+  padding:13px; border:1px solid #B9FD50; border-radius:16px; background:#B9FD50;
+  color:#0F0F10; font-weight:780; cursor:pointer;
+}
+.aos-sync-panel button.secondary {
+  border-color:rgba(15,15,16,.08); background:#F0F0EB; color:#0F0F10;
+}
+.aos-sync-panel .aos-sync-note { font-size:12px; color:#7A7E86; }
+.aos-sync-state {
+  padding:12px; border-radius:14px; background:#F5F6F1; color:#61656C;
+  line-height:1.5; overflow-wrap:anywhere; font-size:12px;
+}
+.aos-sync-state[data-kind="error"] { color:#C65C68; background:#FFF0F2; }
+.aos-sync-state[data-kind="success"] { color:#3A7A2A; background:#F2F9E2; }
+
+/* Extra polish for list cards and focus card */
+.task-view-tabs + .card,
+.task-view-tabs + .focus-card,
+.task-view-tabs + .task-focus-card,
+.focus-card,
+.task-focus-card,
+.item.highlight,
+.item.primary {
+  border-radius:24px !important;
+}
+
+/* Desktop frame */
+@media (min-width:640px) {
+  .app-shell {
+    box-shadow:0 24px 90px rgba(15,15,16,.12) !important;
+    border-radius:34px !important;
+    overflow:hidden;
+    margin-top:20px !important;
+    margin-bottom:20px !important;
+    background:#F3F2EE !important;
+  }
+}
+
+@media (max-width:360px) {
+  .content { padding-left:11px !important; padding-right:11px !important; }
+  .section-head h2 { font-size:16px !important; }
+  .aos-sheet-trigger { width:34px; flex-basis:34px; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after { scroll-behavior:auto !important; }
+}
