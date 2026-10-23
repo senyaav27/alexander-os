@@ -1,13 +1,14 @@
-/* Alexander OS | Sheets Sync Rescue 15.8.3 (2026-10-23)
+/* Alexander OS | Sheets Sync Rescue 15.8.5 (2026-10-24)
  * Drop-in replacement for repository-root brand-sheets.js.
  * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
  * This module never deletes local transactions, accounts, notes or passwords.
  */
 (() => {
   'use strict';
-  const VERSION = '15.8.3-auto-sync-accounts';
+  const VERSION = '15.8.5-auto-sync-hourly-safe-delete';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
+  const DELETION_KEY = 'aos_sheets_pending_deletions_v1';
   const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
   const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
   const TABS = [
@@ -28,7 +29,43 @@
   let cfg = read(SETTINGS_KEY);
   let accessToken = '', expiresAt = 0, tokenClient = null, busy = false;
   let liveEnabled = false, lastSynced = '', debounceTimer = 0, dialog, statusNode;
-  let inMemoryFinance = null, localPersisted = true, dataStorageWarning = '';
+  let inMemoryFinance = null, inMemoryTrash = null, localPersisted = true, dataStorageWarning = '';
+  let syncAgain = false;
+  // Explicit, durable deletions are journaled by record ID. A stale/empty local
+  // backup is never sufficient evidence for an automatic deletion in Sheets.
+  const fields = ['transactions','accountTransfers','obligations','accounts'];
+  const restored = read(DELETION_KEY);
+  const pendingRemovals = TABS.map(t => new Set(
+    restored.sheetId === cfg.spreadsheetId && Array.isArray(restored[t.title])
+      ? restored[t.title].filter(id => typeof id === 'string' && id)
+      : []
+  ));
+  function savePendingRemovals() {
+    const saved = { sheetId: cfg.spreadsheetId };
+    TABS.forEach((t, i) => { saved[t.title] = [...pendingRemovals[i]]; });
+    try { localStorage.setItem(DELETION_KEY, JSON.stringify(saved)); }
+    catch (error) { console.warn('[Alexander OS Sheets] Deletion journal could not be persisted',error); }
+  }
+  function trackRemovals(before, after, incoming) {
+    const trash = Array.isArray(incoming.trash) ? incoming.trash : [];
+    const collectionFor = ['transactions','accountTransfers','obligations','accounts'];
+    let changed = false;
+    fields.forEach((key, i) => {
+      const beforeIds = new Set((before[key] || []).map(item => safe(item?.id)).filter(Boolean));
+      const afterIds = new Set((after[key] || []).map(item => safe(item?.id)).filter(Boolean));
+      // A restoration/import that removes many records must not be auto-trusted.
+      const removed = [...beforeIds].filter(id => !afterIds.has(id));
+      if (removed.length > 0) {
+        for (const id of removed) {
+          if (trash.some(entry => entry?.collection === collectionFor[i] && safe(entry.item?.id) === id)) {
+            pendingRemovals[i].add(id); changed = true;
+          }
+        }
+      }
+      for (const id of afterIds) if (pendingRemovals[i].delete(id)) changed = true;
+    });
+    if (changed) savePendingRemovals();
+  }
 
   // When app.js saves financial data, verify durable storage. On QuotaExceeded,
   // retry without old undo snapshots (history ONLY). Never delete live records.
@@ -41,6 +78,7 @@
       if (key !== STATE_KEY) return nativeSet.call(this, key, value);
       let incoming;
       try { incoming = JSON.parse(String(value)); } catch (_) { return nativeSet.call(this, key, value); }
+      const previousFinance = makeFinance(read(STATE_KEY));
       try {
         nativeSet.call(this, key, value);
         localPersisted = true;
@@ -66,6 +104,8 @@
         }
       }
       inMemoryFinance = makeFinance(incoming);
+      inMemoryTrash = Array.isArray(incoming.trash) ? incoming.trash : [];
+      if (localPersisted) trackRemovals(previousFinance, inMemoryFinance, incoming);
       window.__AOS_SHEETS_MEMORY_FINANCE = inMemoryFinance;
       window.__AOS_SHEETS_LOCAL_PERSISTED = localPersisted;
       window.dispatchEvent(new Event('aos-finance-changed'));
@@ -123,10 +163,12 @@
     if (!/^[a-zA-Z0-9_-]{15,200}$/.test(spreadsheetId)) throw new Error('Вставь ссылку на Google Таблицу или её ID.');
     if (clientId !== cfg.clientId || spreadsheetId !== cfg.spreadsheetId) {
       accessToken = ''; expiresAt = 0; liveEnabled = false; lastSynced = '';
+      pendingRemovals.forEach(set => set.clear());
     }
     const changed = clientId !== cfg.clientId || spreadsheetId !== cfg.spreadsheetId;
     cfg = { clientId, spreadsheetId };
     if (changed) {
+      savePendingRemovals();
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg)); }
       catch (error) { dataStorageWarning = 'Настройки Google не сохранились на устройстве: хранилище переполнено.'; console.warn(dataStorageWarning,error); }
     }
@@ -193,8 +235,8 @@
     const last = rows[0].at(-1);
     return rows[0].length+' операций, '+rows[1].length+' переводов, '+rows[2].length+' обязательств, '+rows[3].length+' счетов'+(last?' · последняя в выгрузке: '+safe(last[1]):'');
   }
-  async function sync(force = false) {
-    if (busy) { status('Синхронизация уже выполняется.'); return; }
+  async function sync(force = false, audit = false) {
+    if (busy) { syncAgain = true; return; }
     if (!liveEnabled || !cfg.spreadsheetId || !accessToken) { status('Нужен вход в Google. Данные остаются в Alexander OS.', 'error');return; }
     if (Date.now() >= expiresAt) {
       liveEnabled=false;
@@ -203,7 +245,7 @@
     }
     const data = financePayload();
     const fingerprint = JSON.stringify(data);
-    if (!force && fingerprint === lastSynced) return;
+    if (!force && !audit && fingerprint === lastSynced) return;
     busy=true;
     status('Проверяем актуальные расходы и состояние Google Таблицы…');
     try {
@@ -212,14 +254,37 @@
       const query = requestRanges.map(r=>'ranges='+encodeURIComponent(r)).join('&');
       const current = await googleApi('/values:batchGet?'+query);
       const currentTables = (current.valueRanges||[]).map(entry => entry.values||[]);
-      const previousCounts = TABS.map((_,i)=>Math.max(0, (currentTables[i]?.length||0)-1));
-      // Never silently erase an entire Google backup because browser storage is stale.
-      for (let i=0;i<TABS.length;i++) {
-        if (previousCounts[i] > data[i].length) {
-          if (!force) throw new Error('В таблице больше данных, чем на iPhone ('+previousCounts[i]+' > '+data[i].length+'). Автоматическая перезапись остановлена, чтобы не потерять записи.');
-          const yes=confirm('В Google Таблице '+previousCounts[i]+' записей «'+TABS[i].title+'», а на iPhone '+data[i].length+'. Перезаписать таблицу и удалить лишние строки? Отмена безопаснее, если в приложении пропали записи.');
-          if (!yes) throw new Error('Операция отменена. Данные Google не изменены.');
+      // Alexander OS moves explicitly deleted transactions into its local trash.
+      // This persisted evidence survives reopening the PWA and is safer than a
+      // raw row-count comparison or a transient in-memory deletion journal.
+      const trash = inMemoryTrash || read(STATE_KEY).trash || [];
+      const collectionFor = ['transactions','accountTransfers','obligations','accounts'];
+      const deletedByUser = TABS.map((_,i) => new Set((Array.isArray(trash) ? trash : [])
+        .filter(entry => entry?.collection === collectionFor[i] && entry.item?.id)
+        .map(entry => safe(entry.item.id))));
+      const acceptedRemovals = TABS.map(() => []);
+      for (let i=0; i<TABS.length; i++) {
+        const oldRows = (currentTables[i] || []).slice(1).filter(row => row.some(value => safe(value).trim()));
+        const remoteIds = oldRows.map(row => safe(row[0]).trim()).filter(Boolean);
+        const localIds = new Set(data[i].map(row => safe(row[0]).trim()).filter(Boolean));
+        const missing = remoteIds.filter(id => !localIds.has(id));
+        const invalidIds = oldRows.length !== remoteIds.length || new Set(remoteIds).size !== remoteIds.length;
+        if (invalidIds) throw new Error('В «'+TABS[i].title+'» обнаружены пустые или повторяющиеся ID. Автоочистка остановлена.');
+        if (!missing.length) continue;
+        const allProven = missing.every(id => deletedByUser[i].has(id));
+        // A small, explicitly evidenced deletion is safe. A large disappearance
+        // may mean browser storage corruption or an accidental import.
+        const small = missing.length <= 10 && missing.length <= Math.max(2, Math.ceil(remoteIds.length * 0.10));
+        const autoDelete = allProven && small && localPersisted && data[i].length > 0;
+        if (!autoDelete) {
+          if (!force) throw new Error('В «'+TABS[i].title+'» есть '+missing.length+
+            ' записей, которых нет в приложении. Нет достаточного подтверждения их удаления. '+
+            'Автоочистка остановлена для защиты истории.');
+          const yes = confirm('В Google Таблице '+missing.length+' записей отсутствуют в Alexander OS. '+
+            'Они будут удалены из таблицы. Ты уверен, что эти операции действительно удалены в приложении?');
+          if (!yes) throw new Error('Удаление отменено. Данные Google не изменены.');
         }
+        acceptedRemovals[i] = missing;
       }
       status('Отправляем: '+sourceSummary(data));
       const syncedAt = new Date().toISOString();
@@ -249,16 +314,24 @@
         }
       }
       lastSynced = fingerprint;
+      acceptedRemovals.forEach((ids,i)=>ids.forEach(id=>pendingRemovals[i].delete(id)));
+      if (acceptedRemovals.some(ids=>ids.length)) savePendingRemovals();
+      const removedCount = acceptedRemovals.reduce((sum,ids)=>sum+ids.length,0);
+      const removedLabel = removedCount ? ' Удалено из таблицы: '+removedCount+'.' : '';
       const storageLabel = localPersisted ? '' : ' ВНИМАНИЕ: данные не записаны в память iPhone, срочно экспортируй резервную копию JSON.';
-      status('Проверено в Google: '+sourceSummary(data)+'. '+new Date().toLocaleTimeString('ru-RU')+'.'+storageLabel+(dataStorageWarning?' '+dataStorageWarning:''),localPersisted?'success':'error');
+      status('Проверено в Google: '+sourceSummary(data)+'. '+new Date().toLocaleTimeString('ru-RU')+'.'+removedLabel+storageLabel+(dataStorageWarning?' '+dataStorageWarning:''),localPersisted?'success':'error');
     } catch(error) {
       if(/401|403|истёк/.test(error.message))liveEnabled=false;
       status('Синхронизация НЕ завершена: '+error.message,'error');
       console.error('[Alexander OS Sheets sync rescue]',error);
-    } finally {busy=false;}
+    } finally {
+      busy=false;
+      if(syncAgain) { syncAgain=false; queueSync(); }
+    }
   }
   function queueSync(){
-    if(!liveEnabled||document.hidden||busy)return;
+    if(!liveEnabled||document.hidden)return;
+    if(busy){syncAgain=true;return;}
     if(Date.now() >= expiresAt) {
       liveEnabled=false;
       status('Google просит обновить доступ. Один раз нажми «Войти через Google». Новые записи останутся в Alexander OS.', 'error');
@@ -285,7 +358,7 @@
   function setup() {
     if (!$('aosSheetTrigger'))return;
     dialog=document.createElement('dialog'); dialog.className='aos-sync-dialog';dialog.id='aosSyncDialog';
-    dialog.innerHTML=`<div class="aos-sync-panel"><header class="aos-sync-head"><div><h2>Google Таблицы</h2><small>Sync Rescue ${VERSION}</small><p>Доходы, расходы, переводы, обязательства и балансы всех счетов. Автоотправка при сохранении.</p></div><button id="aosSyncClose" type="button" aria-label="Закрыть">✕</button></header><label class="aos-sync-label">OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label class="aos-sync-label">Ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" id="aosSyncLogin">Войти через Google</button><button type="button" id="aosSyncNow">Обновить сейчас</button><button type="button" id="aosSyncCSV">Скачать CSV</button><button type="button" id="aosSyncDisconnect">Отключить</button></div><div class="aos-sync-state" id="aosSyncStatus" role="status" aria-live="polite"></div><p class="aos-sync-note">После входа в Google всё синхронизируется автоматически при изменениях и возвращении в открытое приложение. Веб-версия Google требует повторного нажатия «Войти» после завершения сессии или истечения доступа. Закрывать приложение можно: записи остаются в локальном хранилище. Сохранение не заменяет резервную копию. При закрытом iPhone фоновая отправка не работает.</p></div>`;
+    dialog.innerHTML=`<div class="aos-sync-panel"><header class="aos-sync-head"><div><h2>Google Таблицы</h2><small>Sync Rescue ${VERSION}</small><p>Доходы, расходы, переводы, обязательства и балансы всех счетов. Автоотправка при сохранении.</p></div><button id="aosSyncClose" type="button" aria-label="Закрыть">✕</button></header><label class="aos-sync-label">OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label class="aos-sync-label">Ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" id="aosSyncLogin">Войти через Google</button><button type="button" id="aosSyncNow">Обновить сейчас</button><button type="button" id="aosSyncCSV">Скачать CSV</button><button type="button" id="aosSyncDisconnect">Отключить</button></div><div class="aos-sync-state" id="aosSyncStatus" role="status" aria-live="polite"></div><p class="aos-sync-note">После входа в Google изменения передаются автоматически. Каждый час при открытом приложении проверяем Google Таблицу, а при возвращении в приложение проверяем пропущенные изменения. Веб-версия Google требует повторного нажатия «Войти» после завершения сессии или истечения доступа. Закрывать приложение можно: записи остаются в локальном хранилище. Сохранение не заменяет резервную копию. При закрытом iPhone фоновая отправка не работает.</p></div>`;
     document.body.append(dialog);statusNode=$('aosSyncStatus');
     const style=document.createElement('style');style.id='aosSyncRescueStyle';style.textContent=`
       .aos-sync-dialog{box-sizing:border-box;width:min(92vw,540px);max-width:540px;max-height:min(85dvh,790px);overflow-y:auto;overscroll-behavior:contain;border:1px solid #333;border-radius:24px;background:#111414;color:#f5f7f5;padding:0;box-shadow:0 24px 90px #0009;}
@@ -321,6 +394,11 @@
     window.addEventListener('aos-finance-updated',queueSync);
     window.addEventListener('storage',e=>{if(e.key===STATE_KEY){inMemoryFinance=null;queueSync();}});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueSync();});
+    window.addEventListener('pageshow',queueSync);
+    window.addEventListener('online',queueSync);
+    // Every hour, verify the Google copy even when local data has not changed.
+    // iOS suspends timers when the PWA is closed or backgrounded.
+    setInterval(()=>{if(liveEnabled&&!document.hidden)sync(false,true);},60*60*1000);
     setInterval(queueSync,7000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});else setup();
