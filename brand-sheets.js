@@ -1,11 +1,11 @@
-/* Alexander OS | Sheets Sync Rescue 15.8.2 (2026-10-23)
+/* Alexander OS | Sheets Sync Rescue 15.8.3 (2026-10-23)
  * Drop-in replacement for repository-root brand-sheets.js.
  * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
  * This module never deletes local transactions, accounts, notes or passwords.
  */
 (() => {
   'use strict';
-  const VERSION = '15.8.2-sync-rescue';
+  const VERSION = '15.8.3-auto-sync-accounts';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
   const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -13,7 +13,8 @@
   const TABS = [
     { title: 'AOS_Операции', headers: ['ID','Дата','Тип','Название','Сумма ₽','Категория','Счёт','Обязательность','Контекст','Создано'] },
     { title: 'AOS_Переводы', headers: ['ID','Дата','Откуда','Куда','Сумма ₽','Создано'] },
-    { title: 'AOS_Обязательства', headers: ['ID','Тип','Название','Сумма ₽','Срок','Статус'] }
+    { title: 'AOS_Обязательства', headers: ['ID','Тип','Название','Сумма ₽','Срок','Статус'] },
+    { title: 'AOS_Счета', headers: ['ID','Название счёта','Тип','Назначение','Текущий баланс ₽','Базовый баланс ₽','Основной','Обновлено'] }
   ];
   const $ = id => document.getElementById(id);
   const safe = v => String(v == null ? '' : v);
@@ -94,7 +95,19 @@
     const obligations = (source.obligations || [])
       .filter(t => t && Number.isFinite(Number(t.amount)))
       .map(t => [safe(t.id),safe(t.type),safe(t.title),Number(t.amount),safe(t.dueDate||t.due),safe(t.status)]);
-    return [transactions, transfers, obligations];
+    const accounts = (source.accounts || [])
+      .filter(a => a && a.id && typeof a.name === 'string')
+      .map(a => {
+        const balance = Number(a.balance);
+        const base = Number(a.baseBalance);
+        return [safe(a.id), safe(a.name), safe(a.type), safe(a.purpose),
+          Number.isFinite(balance) ? balance : 0,
+          Number.isFinite(base) ? base : 0,
+          a.isDefault ? 'Да' : 'Нет', ''];
+      });
+    // The timestamp column is intentionally blank here: it is populated at
+    // write time, not in the fingerprint, so idle syncs cannot churn forever.
+    return [transactions, transfers, obligations, accounts];
   }
   function status(message, kind = '') {
     if (!statusNode) return;
@@ -133,7 +146,7 @@
   async function login() {
     fromInputs();
     await ensureGIS();
-    status('Ожидается разрешение Google…');
+    status('Подключение к Google… После входа обновление данных будет автоматическим.');
     await new Promise((resolve,reject) => {
       try {
         tokenClient = google.accounts.oauth2.initTokenClient({
@@ -146,10 +159,11 @@
             resolve();
           }
         });
-        tokenClient.requestAccessToken({ prompt: 'consent' });
+        tokenClient.requestAccessToken({ prompt: '' });
       } catch (err) {reject(err);}
     });
     liveEnabled = true;
+    status('Google подключён. Дальше доходы, расходы, переводы и балансы отправляются автоматически.');
     await sync(true);
   }
   async function googleApi(path, options = {}) {
@@ -177,11 +191,16 @@
   }
   function sourceSummary(rows) {
     const last = rows[0].at(-1);
-    return rows[0].length+' операций, '+rows[1].length+' переводов, '+rows[2].length+' обязательств'+(last?' · последняя в выгрузке: '+safe(last[1]):'');
+    return rows[0].length+' операций, '+rows[1].length+' переводов, '+rows[2].length+' обязательств, '+rows[3].length+' счетов'+(last?' · последняя в выгрузке: '+safe(last[1]):'');
   }
   async function sync(force = false) {
     if (busy) { status('Синхронизация уже выполняется.'); return; }
-    if (!liveEnabled || !cfg.spreadsheetId || !accessToken) { status('Сначала нажми «Войти через Google».', 'error');return; }
+    if (!liveEnabled || !cfg.spreadsheetId || !accessToken) { status('Нужен вход в Google. Данные остаются в Alexander OS.', 'error');return; }
+    if (Date.now() >= expiresAt) {
+      liveEnabled=false;
+      status('Срок доступа Google истёк. Нажми «Войти через Google» один раз. Несинхронизированные данные сохранены на устройстве.', 'error');
+      return;
+    }
     const data = financePayload();
     const fingerprint = JSON.stringify(data);
     if (!force && fingerprint === lastSynced) return;
@@ -203,7 +222,14 @@
         }
       }
       status('Отправляем: '+sourceSummary(data));
-      const updates = TABS.map((tab,i)=>({range:quote(tab.title)+'!A1',majorDimension:'ROWS',values:[tab.headers,...data[i]]}));
+      const syncedAt = new Date().toISOString();
+      const updates = TABS.map((tab,i)=>({
+        range:quote(tab.title)+'!A1',
+        majorDimension:'ROWS',
+        values:[tab.headers,...(tab.title==='AOS_Счета'
+          ? data[i].map(row=>[...row.slice(0,7),syncedAt])
+          : data[i])]
+      }));
       await googleApi('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:updates})});
       const stale=[];
       TABS.forEach((tab,i)=>{const old=currentTables[i]?.length||0;const keep=1+data[i].length;if(old>keep)stale.push(quote(tab.title)+'!A'+(keep+1)+':J'+old);});
@@ -224,16 +250,23 @@
       }
       lastSynced = fingerprint;
       const storageLabel = localPersisted ? '' : ' ВНИМАНИЕ: данные не записаны в память iPhone, срочно экспортируй резервную копию JSON.';
-      const sameCount = data.every((items,i)=>items.length===previousCounts[i]);
-      const note = sameCount ? ' Количество строк не изменилось. Если ты добавил новый расход, проверь сохранение в Alexander OS и резервной копии.' : '';
-      status('Проверено в Google: '+sourceSummary(data)+'. '+new Date().toLocaleTimeString('ru-RU')+'.'+note+storageLabel+(dataStorageWarning?' '+dataStorageWarning:''),localPersisted?'success':'error');
+      status('Проверено в Google: '+sourceSummary(data)+'. '+new Date().toLocaleTimeString('ru-RU')+'.'+storageLabel+(dataStorageWarning?' '+dataStorageWarning:''),localPersisted?'success':'error');
     } catch(error) {
       if(/401|403|истёк/.test(error.message))liveEnabled=false;
       status('Синхронизация НЕ завершена: '+error.message,'error');
       console.error('[Alexander OS Sheets sync rescue]',error);
     } finally {busy=false;}
   }
-  function queueSync(){if(!liveEnabled||document.hidden||busy)return;clearTimeout(debounceTimer);debounceTimer=setTimeout(()=>sync(false),1250);}
+  function queueSync(){
+    if(!liveEnabled||document.hidden||busy)return;
+    if(Date.now() >= expiresAt) {
+      liveEnabled=false;
+      status('Google просит обновить доступ. Один раз нажми «Войти через Google». Новые записи останутся в Alexander OS.', 'error');
+      return;
+    }
+    clearTimeout(debounceTimer);
+    debounceTimer=setTimeout(()=>sync(false),800);
+  }
   function csv() {
     const rows=financePayload()[0];
     const quoteCsv=v=>'"'+safe(v).replace(/"/g,'""')+'"';
@@ -247,12 +280,12 @@
     $('aosGoogleSheet').value=cfg.spreadsheetId||'';
     dialog.showModal();
     const local=financePayload()[0].length;
-    status('Версия '+VERSION+' · На устройстве: '+local+' операций. '+(liveEnabled?'Google подключён.':'Для отправки войди через Google.')+(dataStorageWarning?' '+dataStorageWarning:''),liveEnabled?'success':'');
+    status('Версия '+VERSION+' · На устройстве: '+local+' операций. '+(liveEnabled?'Google подключён. Изменения отправляются автоматически.':'Для отправки один раз войди через Google.')+(dataStorageWarning?' '+dataStorageWarning:''),liveEnabled?'success':'');
   }
   function setup() {
     if (!$('aosSheetTrigger'))return;
     dialog=document.createElement('dialog'); dialog.className='aos-sync-dialog';dialog.id='aosSyncDialog';
-    dialog.innerHTML=`<div class="aos-sync-panel"><header class="aos-sync-head"><div><h2>Google Таблицы</h2><small>Sync Rescue ${VERSION}</small><p>Только доходы, расходы, переводы, обязательства.</p></div><button id="aosSyncClose" type="button" aria-label="Закрыть">✕</button></header><label class="aos-sync-label">OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label class="aos-sync-label">Ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" id="aosSyncLogin">Войти через Google</button><button type="button" id="aosSyncNow">Обновить сейчас</button><button type="button" id="aosSyncCSV">Скачать CSV</button><button type="button" id="aosSyncDisconnect">Отключить</button></div><div class="aos-sync-state" id="aosSyncStatus" role="status" aria-live="polite"></div><p class="aos-sync-note">Синхронизация работает только при открытом приложении и действующей Google-авторизации. Не удаляй приложение до резервного копирования.</p></div>`;
+    dialog.innerHTML=`<div class="aos-sync-panel"><header class="aos-sync-head"><div><h2>Google Таблицы</h2><small>Sync Rescue ${VERSION}</small><p>Доходы, расходы, переводы, обязательства и балансы всех счетов. Автоотправка при сохранении.</p></div><button id="aosSyncClose" type="button" aria-label="Закрыть">✕</button></header><label class="aos-sync-label">OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label class="aos-sync-label">Ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" id="aosSyncLogin">Войти через Google</button><button type="button" id="aosSyncNow">Обновить сейчас</button><button type="button" id="aosSyncCSV">Скачать CSV</button><button type="button" id="aosSyncDisconnect">Отключить</button></div><div class="aos-sync-state" id="aosSyncStatus" role="status" aria-live="polite"></div><p class="aos-sync-note">После входа в Google всё синхронизируется автоматически при изменениях и возвращении в открытое приложение. Веб-версия Google требует повторного нажатия «Войти» после завершения сессии или истечения доступа. Закрывать приложение можно: записи остаются в локальном хранилище. Сохранение не заменяет резервную копию. При закрытом iPhone фоновая отправка не работает.</p></div>`;
     document.body.append(dialog);statusNode=$('aosSyncStatus');
     const style=document.createElement('style');style.id='aosSyncRescueStyle';style.textContent=`
       .aos-sync-dialog{box-sizing:border-box;width:min(92vw,540px);max-width:540px;max-height:min(85dvh,790px);overflow-y:auto;overscroll-behavior:contain;border:1px solid #333;border-radius:24px;background:#111414;color:#f5f7f5;padding:0;box-shadow:0 24px 90px #0009;}
@@ -282,6 +315,9 @@
     $('aosSyncCSV').addEventListener('click',csv);
     $('aosSyncDisconnect').addEventListener('click',()=>{if(accessToken&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(accessToken,()=>{});accessToken='';expiresAt=0;lastSynced='';liveEnabled=false;status('Google отключён. Локальные данные не удалены.','success');});
     window.addEventListener('aos-finance-changed',queueSync);
+    // A finance change is emitted by the installed Storage.setItem safeguard,
+    // so the update is scheduled automatically without the Refresh button.
+
     window.addEventListener('aos-finance-updated',queueSync);
     window.addEventListener('storage',e=>{if(e.key===STATE_KEY){inMemoryFinance=null;queueSync();}});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueSync();});
