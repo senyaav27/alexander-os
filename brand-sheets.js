@@ -1,190 +1,291 @@
-/* Alexander OS -> Google Sheets (financial fields only).
-   Works in GitHub Pages via Google Identity Services OAuth token flow.
-   No API secrets, banking details, notes, tasks, passwords or full state exported.
-   Sync only while page is open AND a Google OAuth access token is valid.
-*/
+/* Alexander OS | Sheets Sync Rescue 15.8.2 (2026-10-23)
+ * Drop-in replacement for repository-root brand-sheets.js.
+ * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
+ * This module never deletes local transactions, accounts, notes or passwords.
+ */
 (() => {
   'use strict';
+  const VERSION = '15.8.2-sync-rescue';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
   const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
   const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
   const TABS = [
-    {title:'AOS_Операции', headers:['ID','Дата','Тип','Название','Сумма ₽','Категория','Счёт','Обязательность','Контекст','Создано']},
-    {title:'AOS_Переводы', headers:['ID','Дата','Откуда','Куда','Сумма ₽','Создано']},
-    {title:'AOS_Обязательства',headers:['ID','Тип','Название','Сумма ₽','Срок','Статус']}
+    { title: 'AOS_Операции', headers: ['ID','Дата','Тип','Название','Сумма ₽','Категория','Счёт','Обязательность','Контекст','Создано'] },
+    { title: 'AOS_Переводы', headers: ['ID','Дата','Откуда','Куда','Сумма ₽','Создано'] },
+    { title: 'AOS_Обязательства', headers: ['ID','Тип','Название','Сумма ₽','Срок','Статус'] }
   ];
   const $ = id => document.getElementById(id);
-  const safe = value => String(value == null ? '' : value);
-  const load = key => {try{return JSON.parse(localStorage.getItem(key) || '{}') || {}}catch{return {}}};
-  let cfg = load(SETTINGS_KEY);
-  let accessToken = '';
-  let expiry = 0;
-  let tokenClient = null;
-  let busy = false;
-  let lastSynced = '';
-  let debounceTimer = 0;
-  let liveEnabled = false;
-  let dialog, statusNode;
+  const safe = v => String(v == null ? '' : v);
+  const read = key => { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; } };
+  const makeFinance = s => ({
+    accounts: Array.isArray(s?.accounts) ? s.accounts : [],
+    transactions: Array.isArray(s?.transactions) ? s.transactions : [],
+    accountTransfers: Array.isArray(s?.accountTransfers) ? s.accountTransfers : [],
+    obligations: Array.isArray(s?.obligations) ? s.obligations : []
+  });
+  let cfg = read(SETTINGS_KEY);
+  let accessToken = '', expiresAt = 0, tokenClient = null, busy = false;
+  let liveEnabled = false, lastSynced = '', debounceTimer = 0, dialog, statusNode;
+  let inMemoryFinance = null, localPersisted = true, dataStorageWarning = '';
+
+  // When app.js saves financial data, verify durable storage. On QuotaExceeded,
+  // retry without old undo snapshots (history ONLY). Never delete live records.
+  // The original app.js silently catches storage errors and keeps a temporary copy.
+  // Capture the latest finance fields before that catch so Sheets can sync accurately.
+  (function safeguardStorage() {
+    const nativeSet = Storage.prototype.setItem;
+    if (nativeSet.__aosSyncRescue) return;
+    const wrapped = function(key, value) {
+      if (key !== STATE_KEY) return nativeSet.call(this, key, value);
+      let incoming;
+      try { incoming = JSON.parse(String(value)); } catch (_) { return nativeSet.call(this, key, value); }
+      try {
+        nativeSet.call(this, key, value);
+        localPersisted = true;
+        dataStorageWarning = '';
+      } catch (originalError) {
+        let saved = false;
+        const history = Array.isArray(incoming.history) ? incoming.history : [];
+        // Undo history is expendable; transactions, accounts and obligations are not.
+        const keepOptions = [...new Set([6, 3, 1, 0].filter(n => history.length > n))];
+        for (const keep of keepOptions) {
+          try {
+            const compact = { ...incoming, history: history.slice(0, keep) };
+            nativeSet.call(this, key, JSON.stringify(compact));
+            saved = true;
+            dataStorageWarning = 'Память была переполнена: сокращена история отмены. Финансовые записи сохранены.';
+            break;
+          } catch (_) { /* Try a smaller undo history only. */ }
+        }
+        localPersisted = saved;
+        if (!saved) {
+          dataStorageWarning = 'ВНИМАНИЕ: iPhone не сохранил изменения! Создай полную резервную копию JSON до закрытия приложения.';
+          console.error('[Alexander OS] Cannot persist finance state:', originalError);
+        }
+      }
+      inMemoryFinance = makeFinance(incoming);
+      window.__AOS_SHEETS_MEMORY_FINANCE = inMemoryFinance;
+      window.__AOS_SHEETS_LOCAL_PERSISTED = localPersisted;
+      window.dispatchEvent(new Event('aos-finance-changed'));
+      // Preserve app.js behavior: it treats a successful return as saved,
+      // and previously caught failures silently. We explicitly warn now.
+      if (!localPersisted) {
+        if (!window.__AOS_SHEETS_WARNED) {
+          window.__AOS_SHEETS_WARNED = true;
+          setTimeout(() => alert(dataStorageWarning), 150);
+        }
+        throw new DOMException('Alexander OS: local data not persisted', 'QuotaExceededError');
+      }
+    };
+    wrapped.__aosSyncRescue = true;
+    Storage.prototype.setItem = wrapped;
+  })();
 
   function financePayload() {
-    const source = load(STATE_KEY);
-    const accounts = new Map((Array.isArray(source.accounts) ? source.accounts : []).map(a => [safe(a.id), safe(a.name)]));
-    const tx = (Array.isArray(source.transactions) ? source.transactions : [])
+    const source = inMemoryFinance || read(STATE_KEY);
+    const accountNames = new Map((source.accounts || []).map(a => [safe(a.id), safe(a.name)]));
+    const transactions = (source.transactions || [])
       .filter(t => t && (t.type === 'income' || t.type === 'expense') && Number.isFinite(Number(t.amount)))
-      .map(t => [safe(t.id),safe(t.date),t.type==='income'?'Доход':'Расход',safe(t.title),Number(t.amount),safe(t.category),accounts.get(safe(t.accountId))||'',safe(t.necessity),safe(t.scope),safe(t.createdAt)]);
-    const transfers = (Array.isArray(source.accountTransfers) ? source.accountTransfers : [])
+      .map(t => [safe(t.id),safe(t.date),t.type === 'income'?'Доход':'Расход',safe(t.title),Number(t.amount),safe(t.category),accountNames.get(safe(t.accountId))||'',safe(t.necessity),safe(t.scope),safe(t.createdAt)]);
+    const transfers = (source.accountTransfers || [])
       .filter(t => t && Number.isFinite(Number(t.amount)))
-      .map(t => [safe(t.id),safe(t.date),accounts.get(safe(t.fromAccountId))||safe(t.fromName),accounts.get(safe(t.toAccountId))||safe(t.toName),Number(t.amount),safe(t.createdAt)]);
-    const obligations = (Array.isArray(source.obligations) ? source.obligations : [])
+      .map(t => [safe(t.id),safe(t.date),accountNames.get(safe(t.fromAccountId))||safe(t.fromName),accountNames.get(safe(t.toAccountId))||safe(t.toName),Number(t.amount),safe(t.createdAt)]);
+    const obligations = (source.obligations || [])
       .filter(t => t && Number.isFinite(Number(t.amount)))
       .map(t => [safe(t.id),safe(t.type),safe(t.title),Number(t.amount),safe(t.dueDate||t.due),safe(t.status)]);
-    return [tx, transfers, obligations];
+    return [transactions, transfers, obligations];
   }
-  function setStatus(msg, kind = '') {
+  function status(message, kind = '') {
     if (!statusNode) return;
-    statusNode.textContent = msg;
+    statusNode.textContent = message;
     statusNode.dataset.kind = kind;
   }
-  function saveCfg() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg)); }
-  function normalizeSheetId(s) {
-    const v = s.trim();
-    const match = v.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : v;
-  }
-  function validSheetId(s) { return /^[a-zA-Z0-9_-]{15,200}$/.test(s); }
-  function validClientId(s) {return /^[\w-]+\.apps\.googleusercontent\.com$/.test(s);}
   function fromInputs() {
-    const next = {clientId:$('aosGoogleClient').value.trim(),spreadsheetId:normalizeSheetId($('aosGoogleSheet').value)};
-    if (!validClientId(next.clientId)) throw new Error('Укажи корректный OAuth Client ID Google (заканчивается на .apps.googleusercontent.com).');
-    if (!validSheetId(next.spreadsheetId)) throw new Error('Укажи ID или ссылку на Google Таблицу.');
-    if (next.clientId!==cfg.clientId || next.spreadsheetId!==cfg.spreadsheetId) {
-      accessToken = '';expiry = 0;lastSynced = '';liveEnabled = false;
+    const clientId = $('aosGoogleClient').value.trim();
+    const rawId = $('aosGoogleSheet').value.trim();
+    const match = rawId.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    const spreadsheetId = match ? match[1] : rawId;
+    if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) throw new Error('Введи полный OAuth Client ID (оканчивается на .apps.googleusercontent.com).');
+    if (!/^[a-zA-Z0-9_-]{15,200}$/.test(spreadsheetId)) throw new Error('Вставь ссылку на Google Таблицу или её ID.');
+    if (clientId !== cfg.clientId || spreadsheetId !== cfg.spreadsheetId) {
+      accessToken = ''; expiresAt = 0; liveEnabled = false; lastSynced = '';
     }
-    cfg = next;
-    saveCfg();
+    const changed = clientId !== cfg.clientId || spreadsheetId !== cfg.spreadsheetId;
+    cfg = { clientId, spreadsheetId };
+    if (changed) {
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(cfg)); }
+      catch (error) { dataStorageWarning = 'Настройки Google не сохранились на устройстве: хранилище переполнено.'; console.warn(dataStorageWarning,error); }
+    }
   }
   async function ensureGIS() {
     if (window.google?.accounts?.oauth2) return;
-    await new Promise((resolve,reject) => {
+    await new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src='https://accounts.google.com/gsi/client';
-      script.async=true;
-      script.onload=resolve;
-      script.onerror=()=>reject(new Error('Не удалось загрузить Google Identity Services. Проверь подключение к интернету.'));
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Google Identity Services не загружен. Проверь интернет.'));
       document.head.appendChild(script);
     });
-    if (!window.google?.accounts?.oauth2) throw new Error('Google Identity Services не инициализирован.');
+    if (!window.google?.accounts?.oauth2) throw new Error('Google Identity Services недоступен.');
   }
   async function login() {
     fromInputs();
     await ensureGIS();
-    setStatus('Ожидается разрешение Google…');
+    status('Ожидается разрешение Google…');
     await new Promise((resolve,reject) => {
       try {
-        tokenClient=google.accounts.oauth2.initTokenClient({
-          client_id:cfg.clientId,scope:SCOPE,callback:response=>{
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id:cfg.clientId,scope:SCOPE,callback:response => {
             if (response.error || !response.access_token) {
-              reject(new Error(response.error_description || response.error || 'Авторизация отменена.'));
-              return;
+              reject(new Error(response.error_description || response.error || 'Вход отменён.'));return;
             }
             accessToken=response.access_token;
-            expiry=Date.now()+(Math.max(60,Number(response.expires_in)||3600)-30)*1000;
+            expiresAt=Date.now()+(Math.max(60,Number(response.expires_in)||3600)-30)*1000;
             resolve();
           }
         });
-        tokenClient.requestAccessToken({prompt:'consent'});
-      } catch(error){reject(error)}
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+      } catch (err) {reject(err);}
     });
-    liveEnabled=true;
-    setStatus('Google подключён. Синхронизация доступна, пока приложение открыто и действует разрешение.', 'success');
+    liveEnabled = true;
     await sync(true);
   }
-  async function callGoogle(path, options = {}) {
-    if (!accessToken || Date.now() >= expiry) throw new Error('Срок авторизации истёк. Открой подключение и нажми «Войти через Google» повторно.');
+  async function googleApi(path, options = {}) {
+    if (!accessToken || Date.now() >= expiresAt) throw new Error('Срок входа истёк. Нажми «Войти через Google» ещё раз.');
     const response = await fetch(API+encodeURIComponent(cfg.spreadsheetId)+path, {
       ...options,
       headers:{Authorization:'Bearer '+accessToken,...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}
     });
-    if(!response.ok){
-      let details='';try {details=(await response.json())?.error?.message||''}catch{}
+    if (!response.ok) {
+      let details='';try { details=(await response.json())?.error?.message||''; } catch (_) {}
       throw new Error('Google Sheets HTTP '+response.status+(details?': '+details:''));
     }
-    if(response.status===204)return {};
-    return response.json();
+    return response.status===204?{}:response.json();
   }
-  const range = tab => "'"+tab.replace(/'/g,"''")+"'";
+  const quote = tab => "'"+tab.replace(/'/g,"''")+"'";
   async function ensureTabs() {
-    const meta=await callGoogle('?fields=sheets.properties.title');
-    const existing=new Set((meta.sheets||[]).map(s=>s.properties?.title));
-    const missing=TABS.filter(t=>!existing.has(t.title));
-    if(!missing.length)return;
-    await callGoogle(':batchUpdate',{method:'POST',body:JSON.stringify({requests:missing.map(t=>({addSheet:{properties:{title:t.title}}}))})});
+    const result=await googleApi('?fields=sheets.properties.title');
+    const known = new Set((result.sheets||[]).map(item => item.properties?.title));
+    const missing = TABS.filter(t=>!known.has(t.title));
+    if (!missing.length)return;
+    await googleApi(':batchUpdate',{method:'POST',body:JSON.stringify({requests:missing.map(t=>({addSheet:{properties:{title:t.title}}}))})});
+  }
+  function rangeParams(tabs, tail) {
+    return tabs.map(t=>'ranges='+encodeURIComponent(quote(t.title)+'!'+tail)).join('&');
+  }
+  function sourceSummary(rows) {
+    const last = rows[0].at(-1);
+    return rows[0].length+' операций, '+rows[1].length+' переводов, '+rows[2].length+' обязательств'+(last?' · последняя в выгрузке: '+safe(last[1]):'');
   }
   async function sync(force = false) {
-    if (busy || !liveEnabled || !cfg.spreadsheetId || !accessToken) return;
-    const rows=financePayload();
-    const fingerprint=JSON.stringify(rows);
-    if(!force && fingerprint===lastSynced)return;
+    if (busy) { status('Синхронизация уже выполняется.'); return; }
+    if (!liveEnabled || !cfg.spreadsheetId || !accessToken) { status('Сначала нажми «Войти через Google».', 'error');return; }
+    const data = financePayload();
+    const fingerprint = JSON.stringify(data);
+    if (!force && fingerprint === lastSynced) return;
     busy=true;
-    setStatus('Передача финансовых операций в Google Таблицу…');
+    status('Проверяем актуальные расходы и состояние Google Таблицы…');
     try {
       await ensureTabs();
-      const ranges=TABS.map(t=>range(t.title)+'!A1:J');
-      const current=await callGoogle('/values:batchGet?'+ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&'));
-      const oldCounts=(current.valueRanges||[]).map(v=>(v.values||[]).length);
-      const updates=TABS.map((tab,i)=>({
-        range:range(tab.title)+'!A1',majorDimension:'ROWS',values:[tab.headers,...rows[i]]
-      }));
-      await callGoogle('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:updates})});
+      const requestRanges = TABS.map(t => quote(t.title)+'!A1:J');
+      const query = requestRanges.map(r=>'ranges='+encodeURIComponent(r)).join('&');
+      const current = await googleApi('/values:batchGet?'+query);
+      const currentTables = (current.valueRanges||[]).map(entry => entry.values||[]);
+      const previousCounts = TABS.map((_,i)=>Math.max(0, (currentTables[i]?.length||0)-1));
+      // Never silently erase an entire Google backup because browser storage is stale.
+      for (let i=0;i<TABS.length;i++) {
+        if (previousCounts[i] > data[i].length) {
+          if (!force) throw new Error('В таблице больше данных, чем на iPhone ('+previousCounts[i]+' > '+data[i].length+'). Автоматическая перезапись остановлена, чтобы не потерять записи.');
+          const yes=confirm('В Google Таблице '+previousCounts[i]+' записей «'+TABS[i].title+'», а на iPhone '+data[i].length+'. Перезаписать таблицу и удалить лишние строки? Отмена безопаснее, если в приложении пропали записи.');
+          if (!yes) throw new Error('Операция отменена. Данные Google не изменены.');
+        }
+      }
+      status('Отправляем: '+sourceSummary(data));
+      const updates = TABS.map((tab,i)=>({range:quote(tab.title)+'!A1',majorDimension:'ROWS',values:[tab.headers,...data[i]]}));
+      await googleApi('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:updates})});
       const stale=[];
-      TABS.forEach((tab,i)=>{const keep=1+rows[i].length;const old=oldCounts[i]||0;if(old>keep)stale.push(range(tab.title)+'!A'+(keep+1)+':J'+old)});
-      if(stale.length)await callGoogle('/values:batchClear',{method:'POST',body:JSON.stringify({ranges:stale})});
-      lastSynced=fingerprint;
-      setStatus('Синхронизировано: '+rows[0].length+' операций, '+rows[1].length+' переводов, '+rows[2].length+' обязательств. '+new Date().toLocaleTimeString('ru-RU'), 'success');
-      const indicator=$('aosSheetTrigger');if(indicator)indicator.title='Google Таблицы: синхронизировано';
-    } catch(error){
+      TABS.forEach((tab,i)=>{const old=currentTables[i]?.length||0;const keep=1+data[i].length;if(old>keep)stale.push(quote(tab.title)+'!A'+(keep+1)+':J'+old);});
+      if (stale.length) await googleApi('/values:batchClear',{method:'POST',body:JSON.stringify({ranges:stale})});
+      // Server-side readback: don't claim success merely because the write was accepted.
+      const verificationRanges=TABS.map((t,i)=>quote(t.title)+'!A1:A'+Math.max(2, data[i].length+1));
+      const verified=await googleApi('/values:batchGet?'+verificationRanges.map(r=>'ranges='+encodeURIComponent(r)).join('&'));
+      const results=verified.valueRanges||[];
+      for(let i=0;i<TABS.length;i++) {
+        const values=results[i]?.values||[];
+        const actual=values.slice(1).filter(row=>safe(row[0]).trim());
+        const expected=data[i];
+        if (actual.length!==expected.length) throw new Error('Google вернул '+actual.length+' строк для «'+TABS[i].title+'» вместо '+expected.length+'.');
+        for (let j=0;j<expected.length;j++) {
+          if (safe(actual[j]?.[0])!==safe(expected[j]?.[0]))
+            throw new Error('ID записи '+(j+1)+' не совпал после записи в «'+TABS[i].title+'».');
+        }
+      }
+      lastSynced = fingerprint;
+      const storageLabel = localPersisted ? '' : ' ВНИМАНИЕ: данные не записаны в память iPhone, срочно экспортируй резервную копию JSON.';
+      const sameCount = data.every((items,i)=>items.length===previousCounts[i]);
+      const note = sameCount ? ' Количество строк не изменилось. Если ты добавил новый расход, проверь сохранение в Alexander OS и резервной копии.' : '';
+      status('Проверено в Google: '+sourceSummary(data)+'. '+new Date().toLocaleTimeString('ru-RU')+'.'+note+storageLabel+(dataStorageWarning?' '+dataStorageWarning:''),localPersisted?'success':'error');
+    } catch(error) {
       if(/401|403|истёк/.test(error.message))liveEnabled=false;
-      setStatus('Не удалось синхронизировать: '+error.message,'error');
-      console.error('[AOS Google Sheets]',error);
-    } finally {busy=false}
+      status('Синхронизация НЕ завершена: '+error.message,'error');
+      console.error('[Alexander OS Sheets sync rescue]',error);
+    } finally {busy=false;}
   }
-  function queueSync() {
-    if(!liveEnabled || document.hidden || busy)return;
-    clearTimeout(debounceTimer);
-    debounceTimer=setTimeout(()=>sync(false),1100);
+  function queueSync(){if(!liveEnabled||document.hidden||busy)return;clearTimeout(debounceTimer);debounceTimer=setTimeout(()=>sync(false),1250);}
+  function csv() {
+    const rows=financePayload()[0];
+    const quoteCsv=v=>'"'+safe(v).replace(/"/g,'""')+'"';
+    const text='\ufeff'+[TABS[0].headers,...rows].map(r=>r.map(quoteCsv).join(';')).join('\r\n');
+    const url=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download='alexander-os-finance-'+new Date().toISOString().slice(0,10)+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    status('CSV выгружен из актуального состояния: '+rows.length+' операций.','success');
   }
-  function exportCSV() {
-    const data=financePayload();
-    const tab=TABS[0];
-    const serialize=v=>'"'+safe(v).replace(/"/g,'""')+'"';
-    const output='\uFEFF'+[tab.headers,...data[0]].map(r=>r.map(serialize).join(';')).join('\r\n');
-    const url=URL.createObjectURL(new Blob([output],{type:'text/csv;charset=utf-8'}));
-    const link=document.createElement('a');link.href=url;link.download='alexander-os-finance-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
-    setStatus('CSV финансовых операций сохранён. Никакие данные не отправлялись в сеть.','success');
-  }
-  function openDialog() {
-    if(!dialog)return;
+  function openDialog(){
     $('aosGoogleClient').value=cfg.clientId||'';
     $('aosGoogleSheet').value=cfg.spreadsheetId||'';
     dialog.showModal();
-    if(liveEnabled)setStatus('Подключено к Google. Отправка выполняется при изменении операций, пока приложение открыто.','success');
-    else setStatus('Подключение выключено. Для автоматической передачи откройте доступ Google.');
+    const local=financePayload()[0].length;
+    status('Версия '+VERSION+' · На устройстве: '+local+' операций. '+(liveEnabled?'Google подключён.':'Для отправки войди через Google.')+(dataStorageWarning?' '+dataStorageWarning:''),liveEnabled?'success':'');
   }
-  function init() {
-    dialog=document.createElement('dialog');dialog.className='aos-sync-dialog';dialog.id='aosSyncDialog';
-    dialog.innerHTML=`<div class="aos-sync-panel"><div class="aos-sync-head"><div><h2>Google Таблицы</h2><p>Передача только доходов, расходов, переводов и обязательств.</p></div><button type="button" id="aosSyncClose" aria-label="Закрыть">✕</button></div><label>OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label>ID или ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" class="action" id="aosSyncLogin">Войти через Google</button><button type="button" class="action secondary" id="aosSyncNow">Обновить сейчас</button><button type="button" class="action secondary" id="aosSyncCSV">Скачать CSV</button><button type="button" class="action secondary" id="aosSyncDisconnect">Отключить</button></div><div id="aosSyncStatus" class="aos-sync-state" role="status" aria-live="polite"></div><p class="aos-sync-note">Нужен Google OAuth Client ID для вашего адреса GitHub Pages. Токен хранится только в памяти вкладки. После закрытия приложения повторный вход может понадобиться. Фоновая синхронизация с закрытого iPhone недоступна. <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Console</a></p></div>`;
-    document.body.appendChild(dialog);statusNode=$('aosSyncStatus');
-    $('aosSheetTrigger')?.addEventListener('click',openDialog);
+  function setup() {
+    if (!$('aosSheetTrigger'))return;
+    dialog=document.createElement('dialog'); dialog.className='aos-sync-dialog';dialog.id='aosSyncDialog';
+    dialog.innerHTML=`<div class="aos-sync-panel"><header class="aos-sync-head"><div><h2>Google Таблицы</h2><small>Sync Rescue ${VERSION}</small><p>Только доходы, расходы, переводы, обязательства.</p></div><button id="aosSyncClose" type="button" aria-label="Закрыть">✕</button></header><label class="aos-sync-label">OAuth Client ID<input id="aosGoogleClient" type="text" inputmode="url" autocomplete="off" placeholder="…apps.googleusercontent.com"></label><label class="aos-sync-label">Ссылка на Google Таблицу<input id="aosGoogleSheet" type="text" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label><div class="aos-sync-actions"><button type="button" id="aosSyncLogin">Войти через Google</button><button type="button" id="aosSyncNow">Обновить сейчас</button><button type="button" id="aosSyncCSV">Скачать CSV</button><button type="button" id="aosSyncDisconnect">Отключить</button></div><div class="aos-sync-state" id="aosSyncStatus" role="status" aria-live="polite"></div><p class="aos-sync-note">Синхронизация работает только при открытом приложении и действующей Google-авторизации. Не удаляй приложение до резервного копирования.</p></div>`;
+    document.body.append(dialog);statusNode=$('aosSyncStatus');
+    const style=document.createElement('style');style.id='aosSyncRescueStyle';style.textContent=`
+      .aos-sync-dialog{box-sizing:border-box;width:min(92vw,540px);max-width:540px;max-height:min(85dvh,790px);overflow-y:auto;overscroll-behavior:contain;border:1px solid #333;border-radius:24px;background:#111414;color:#f5f7f5;padding:0;box-shadow:0 24px 90px #0009;}
+      .aos-sync-dialog::backdrop{background:#000b;}
+      .aos-sync-dialog *, .aos-sync-dialog *::before{box-sizing:border-box;}
+      .aos-sync-dialog .aos-sync-panel{padding:22px;display:grid;gap:16px;min-width:0;}
+      .aos-sync-dialog .aos-sync-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+      .aos-sync-dialog h2{font-size:23px;margin:0;color:#fff;}
+      .aos-sync-dialog .aos-sync-head p{color:#abb2ae;font-size:13px;line-height:1.45;margin:6px 0 0;}
+      .aos-sync-dialog .aos-sync-head small{font-size:11px;color:#B9FD50;}
+      .aos-sync-dialog #aosSyncClose{flex-shrink:0;width:42px;height:42px;border-radius:12px;background:#222;color:#fff;border:1px solid #444;}
+      .aos-sync-dialog .aos-sync-label{display:grid;gap:7px;font-size:13px;color:#c9d0cc;min-width:0;}
+      .aos-sync-dialog input{display:block;width:100%;min-width:0;max-width:100%;padding:14px;border:1px solid #404747;border-radius:12px;background:#1b2220;color:#fff;font:400 16px/1.3 system-ui;}
+      .aos-sync-dialog .aos-sync-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0;}
+      .aos-sync-dialog .aos-sync-actions button{min-width:0;min-height:44px;padding:10px 8px;white-space:normal;word-break:normal;border:0;border-radius:10px;font:700 13px/1.25 system-ui;background:#B9FD50;color:#111;}
+      .aos-sync-dialog .aos-sync-actions button:nth-child(n+3){background:#26312b;color:#d8eddf;border:1px solid #45564b;}
+      .aos-sync-dialog .aos-sync-state{padding:12px;border-radius:12px;font-size:13px;line-height:1.5;background:#1b2820;color:#e2f1e6;overflow-wrap:anywhere;}
+      .aos-sync-dialog .aos-sync-state[data-kind="error"]{background:#361c1c;color:#ffb2b2;}
+      .aos-sync-dialog .aos-sync-note{font-size:11px;line-height:1.6;color:#9ca9a2;margin:0;}
+      @media(max-width:380px){.aos-sync-dialog .aos-sync-panel{padding:16px;}.aos-sync-dialog .aos-sync-actions{grid-template-columns:1fr 1fr;}}
+    `;document.head.append(style);
+    $('aosSheetTrigger').addEventListener('click',openDialog);
     $('aosSyncClose').addEventListener('click',()=>dialog.close());
-    dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close()});
-    $('aosSyncLogin').addEventListener('click',async()=>{try{await login()}catch(e){setStatus(e.message,'error')}});
-    $('aosSyncNow').addEventListener('click',async()=>{try {fromInputs();if(!liveEnabled)throw new Error('Сначала войди через Google.');await sync(true)}catch(e){setStatus(e.message,'error')}});
-    $('aosSyncCSV').addEventListener('click',exportCSV);
-    $('aosSyncDisconnect').addEventListener('click',()=>{if(accessToken&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(accessToken,()=>{});accessToken='';expiry=0;lastSynced='';liveEnabled=false;setStatus('Отключено. Токен удалён из памяти.','success')});
+    dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
+    $('aosSyncLogin').addEventListener('click',async()=>{try{await login();}catch(e){status(e.message,'error');}});
+    $('aosSyncNow').addEventListener('click',async()=>{try{fromInputs();if(!liveEnabled)throw new Error('Сначала войди через Google.');await sync(true);}catch(e){status(e.message,'error');}});
+    $('aosSyncCSV').addEventListener('click',csv);
+    $('aosSyncDisconnect').addEventListener('click',()=>{if(accessToken&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(accessToken,()=>{});accessToken='';expiresAt=0;lastSynced='';liveEnabled=false;status('Google отключён. Локальные данные не удалены.','success');});
+    window.addEventListener('aos-finance-changed',queueSync);
+    window.addEventListener('aos-finance-updated',queueSync);
+    window.addEventListener('storage',e=>{if(e.key===STATE_KEY){inMemoryFinance=null;queueSync();}});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueSync();});
     setInterval(queueSync,7000);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueSync()});
-    window.addEventListener('storage',e=>{if(e.key===STATE_KEY)queueSync()});
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});else setup();
 })();
