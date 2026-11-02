@@ -488,6 +488,46 @@
     return safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  function aiSnapshot() {
+    const safeText = value => String(value || '').replace(/sk-[A-Za-z0-9_-]{16,}|\b\d{12,19}\b|\b\d{6,12}:[A-Za-z0-9_-]{20,}|Bearer\s+\S+/gi, '[REDACTED]').slice(0, 4000);
+    const aiNotes = state.notes.filter(note => { const tags=String(note.tags||'').split(',').map(tag=>tag.trim().toLowerCase()); return tags.includes('ai') && !tags.some(tag=>['private','health','security'].includes(tag)); });
+    return {
+      schemaVersion: 'alexander-ai-snapshot/v1', sourceVersion: '15.8.6-gate1', capturedAt: new Date().toISOString(),
+      goals: state.goals.map(goal => ({ id:String(goal.id), title:safeText(goal.title), current:Number(goal.current||0), target:Number(goal.target||0), deadline:String(goal.deadline||''), unit:safeText(goal.unit), nextAction:safeText(goal.nextAction) })),
+      projects: state.projects.map(project => ({ id:String(project.id), name:safeText(project.name), status:String(project.status||''), expectedValue:Number(project.value||0), nextAction:safeText(project.next), adMetrics:Object.fromEntries(Object.entries({ spend:project.adSpend, budget:project.adBudget, impressions:project.impressions, clicks:project.clicks, cpm:project.cpm, cpc:project.cpc, leads:project.leads, registrations:project.registrations, trials:project.trials, purchases:project.purchases, cpa:project.cpa, cac:project.cac, revenue:project.adRevenue, roas:project.roas }).filter(([,value]) => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value))).map(([key,value])=>[key,Number(value)])) })),
+      tasks: state.tasks.map(task => ({ id:String(task.id), title:safeText(task.title), projectId:String(task.projectId||''), priority:String(task.priority||''), due:String(task.due||''), status:String(task.status||'') })),
+      finances: {
+        accounts: state.accounts.map(account => ({ id:String(account.id), purpose:isCushionAccount(account)?'cushion':account.type==='investment'?'investment':'general', balance:Number(account.balance||0) })),
+        transactions: state.transactions.filter(tx => ! /health|security|private/i.test(String(tx.category||''))).map(tx => ({ id:String(tx.id), title:safeText(tx.title), amount:(tx.type === 'expense' ? -1 : 1) * Math.abs(Number(tx.amount||0)), date:String(tx.date||''), category:String(tx.category||''), necessity:String(tx.necessity||''), projectId:String(tx.projectId||'') })),
+        obligations: state.obligations.map(item => ({ id:String(item.id), title:safeText(item.title), amount:Number(item.amount||0), dueDate:String(item.dueDate||''), status:String(item.status||'open'), type:String(item.type||'payment') })),
+        targetMonth:monthKey(new Date()), monthlyIncomeTarget:getIncomeTargetForMonth(monthKey(new Date())), monthlyExpenseLimit:Number(state.profile.monthlyExpenseLimit||0), cushionTarget:Number(state.profile.cushionTarget||0)
+      },
+      aiNotes: aiNotes.map(note => ({ id:String(note.id), title:safeText(note.title), body:safeText(note.body), updatedAt:String(note.updatedAt||note.createdAt||'') }))
+    };
+  }
+  // Manual, disabled-by-default bridge. Tokens live only in this tab's closure.
+  let aiSession = null;
+  function configureAlexanderAi(endpoint, token) {
+    const url = new URL(endpoint);
+    if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) ||
+        url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Invalid AI backend origin');
+    if (typeof token !== 'string' || token.length < 24) throw new Error('Invalid sync token');
+    aiSession = {endpoint: url.origin, token};
+  }
+  async function syncAlexanderAi() {
+    if (!aiSession) return false;
+    if (window.__AOS_STORAGE_UNSAFE || storageBlocked || memoryStorage.has(STORAGE_KEY)) throw new Error('Local persistence is not verified');
+    const response = await fetch(aiSession.endpoint + '/v1/snapshots', {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+      headers: {'content-type': 'application/json', authorization: 'Bearer ' + aiSession.token},
+      body: JSON.stringify(aiSnapshot())
+    });
+    if (!response.ok) throw new Error('AI snapshot HTTP ' + response.status);
+    return true;
+  }
+  window.AlexanderAI = Object.freeze({snapshot: aiSnapshot, connect: configureAlexanderAi,
+    sync: syncAlexanderAi, disconnect: () => { aiSession = null; }});
+
   function applyTheme() {
     if (state.profile.theme === 'future') state.profile.theme = 'emerald';
     document.documentElement.dataset.theme = state.profile.theme || 'emerald';
@@ -4467,7 +4507,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.6-gate0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.6-gate1');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }
