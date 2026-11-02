@@ -55,7 +55,7 @@ GATE 3–4: Calendar — read-only OAuth scope и только выбранны�
 | P2 | Принимались некорректные account balances и будущий формат wrapper | Отказ до изменения состояния; тесты повреждённых backup |
 | P2 | Исключение наблюдателя после durable commit считалось отказом записи | Проверка фактически сохранённых байтов перед сообщением об ошибке |
 
-CI `.github/workflows/gate0-ci.yml`: pull_request/push/manual, Node 22/24 (syntax + synthetic protocol tests), Chromium (JSON/crypto/quota/stale tabs/offline cache). Actions закреплены по проверенным SHA, permissions только contents:read, checkout без сохранения credentials. Secrets, реальные Google/API вызовы, merge и deploy не используются. Workflow проверен actionlint 1.7.7; установка инструмента проверена официальным SHA256. Локально: 25 Node tests PASS и 9 групп Chromium PASS. Результат самого GitHub Actions нужно отличать от локального прогона.
+CI `.github/workflows/gate0-ci.yml`: pull_request/push/manual, Node 22/24 (syntax + synthetic protocol tests), Chromium (JSON/crypto/quota/stale tabs/offline cache). Actions v6 (Node 24 runtime) закреплены по проверенным SHA, permissions только contents:read, checkout без сохранения credentials. Secrets, реальные Google/API вызовы, merge и deploy не используются. Workflow проверен actionlint 1.7.7; установка инструмента проверена официальным SHA256. Локально: 25 Node tests PASS и 9 групп Chromium PASS. Результат самого GitHub Actions нужно отличать от локального прогона.
 
 ### Ручная приёмка: iPhone и отдельная тестовая Google Таблица
 
