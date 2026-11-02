@@ -17,3 +17,9 @@ credentials*.json
 *.sql.gz
 *.sqlite
 *.sqlite3
+
+# Personal exports must remain outside public Git history.
+*.aos
+/backups/
+alexander-os-full-backup-*.json
+alexander-os-pre-import-*.json

@@ -10,10 +10,10 @@ export async function storeSnapshot(snapshot:AiSnapshot){
     const inserted=await client.query('INSERT INTO ai_snapshots(schema_version,source_version,captured_at,checksum,payload) VALUES($1,$2,$3,$4,$5) ON CONFLICT(checksum) DO NOTHING RETURNING id',[snapshot.schemaVersion,snapshot.sourceVersion,snapshot.capturedAt,checksum,snapshot]);
     if(!inserted.rowCount) return {created:false,id:null,alerts:[]};
     const rules=(await client.query<Rule>('SELECT id,project_name,metric,operator,threshold FROM monitoring_rules WHERE enabled=true AND (last_triggered_at IS NULL OR last_triggered_at < now() - cooldown_minutes * interval \'1 minute\') FOR UPDATE')).rows;
-    const alerts=rules.flatMap(rule=>evaluateRuleAlerts(snapshot,rule));
+    const fresh=Date.now()-Date.parse(snapshot.capturedAt)<=86400000 && Date.parse(snapshot.capturedAt)<=Date.now()+60000;
+    const alerts=fresh?rules.flatMap(rule=>evaluateRuleAlerts(snapshot,rule)):[];
     for(const alert of alerts){await client.query('INSERT INTO jobs(kind,payload) VALUES($1,$2)',['telegram_alert',alert]);await client.query('UPDATE monitoring_rules SET last_triggered_at=now() WHERE id=$1',[alert!.ruleId]);}
     await client.query('INSERT INTO jobs(kind,payload) VALUES($1,$2)',['snapshot_review',{snapshotId:inserted.rows[0].id}]);
     return {created:true,id:inserted.rows[0].id,alerts};
   });
 }
-

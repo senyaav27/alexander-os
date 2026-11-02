@@ -9,7 +9,7 @@ const sqlTest=(name:string,fn:()=>Promise<void>)=>test(name,{timeout:20000},fn);
 let db:any,pool:any,storeSnapshot:any,latestSnapshot:any,app:any,scheduleDaily:any,claim:any,runJob:any,tick:any,telegramReply:any,memoryContext:any,reserveAiRun:any,saveRecommendation:any,handleMemory:any,answerQuestion:any,questionInput:any,researchRequested:any,config:any,server:any,base:string,PGlite:any;
 const schema=readFileSync(new URL('../src/schema.sql',import.meta.url),'utf8');
 before(async()=>{
-  Object.assign(process.env,{NODE_ENV:'test',DATABASE_URL:'postgresql://unused',DATABASE_SSL:'false',AI_SYNC_TOKEN:'synthetic-sync-token-1234567890',TELEGRAM_BOT_TOKEN:'synthetic-bot-token',TELEGRAM_ALLOWED_USER_ID:'123456',TELEGRAM_WEBHOOK_SECRET:'synthetic-webhook-secret-12345',OPENAI_API_KEY:'synthetic-openai-key',OPENAI_DAILY_REQUEST_LIMIT:'2',DAILY_BRIEF_HOUR:'8',TIMEZONE:'Europe/Moscow'});
+  Object.assign(process.env,{NODE_ENV:'test',ENABLE_DAILY_BRIEF:'true',OWNER_API_TOKEN:'synthetic-owner-token-for-testing-1234567890',DATABASE_URL:'postgresql://unused',DATABASE_SSL:'false',AI_SYNC_TOKEN:'synthetic-sync-token-1234567890',TELEGRAM_BOT_TOKEN:'synthetic-bot-token',TELEGRAM_ALLOWED_USER_ID:'123456',TELEGRAM_WEBHOOK_SECRET:'synthetic-webhook-secret-12345',OPENAI_API_KEY:'synthetic-openai-key',OPENAI_DAILY_REQUEST_LIMIT:'2',DAILY_BRIEF_HOUR:'8',TIMEZONE:'Europe/Moscow'});
   ({PGlite}=await import('@electric-sql/pglite'));db=new PGlite();await db.exec(schema);
   ({pool}=await import('../src/db.js'));
   // Single-connection adapter; SQL is real PostgreSQL, but this does NOT test multi-process locks/TLS.
@@ -23,7 +23,7 @@ before(async()=>{
   ({answerQuestion,questionInput,researchRequested}=await import('../src/chief.js'));({config}=await import('../src/config.js'));
   server=app.listen(0,'127.0.0.1');await new Promise<void>((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});base=`http://127.0.0.1:${server.address().port}`;
 });
-beforeEach(async()=>{await db.exec('TRUNCATE ai_snapshots,monitoring_rules,decisions,recommendations,user_feedback,important_facts,agent_runs,jobs,app_state,telegram_updates CASCADE');});
+beforeEach(async()=>{await db.exec('TRUNCATE cos_requests,cos_sources,cos_memory,cos_memory_revisions,cos_decisions,cos_actions,cos_audit,ai_snapshots,monitoring_rules,decisions,recommendations,user_feedback,important_facts,agent_runs,jobs,app_state,telegram_updates CASCADE');});
 after(async()=>{await new Promise<void>(r=>server.close(()=>r()));await pool.end();await db.close();});
 const update=(id=1,text='/brief')=>({update_id:id,message:{from:{id:123456,is_bot:false},chat:{id:123456,type:'private'},text}});
 async function post(path:string,body:any,headers:Record<string,string>={}){return fetch(base+path,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});}
@@ -52,11 +52,12 @@ sqlTest('duplicate Telegram updates enqueue once; database failure is not acknow
 });
 sqlTest('SQL snapshot ingest creates alerts, enforces cooldown and deduplicates exact retries',async()=>{
   await telegramReply('Следи за CPA RIFT, если выше 700','1');
-  const first=await storeSnapshot(fixture);assert.equal(first.alerts.length,1);assert.equal((await storeSnapshot(fixture)).created,false);
-  const changed=structuredClone(fixture);changed.projects[0]!.adMetrics!.cpa=850;changed.capturedAt='2026-09-11T08:00:00.000Z';assert.equal((await storeSnapshot(changed)).alerts.length,0);
+  const fresh={...structuredClone(fixture),capturedAt:new Date().toISOString()};
+  const first=await storeSnapshot(fresh);assert.equal(first.alerts.length,1);assert.equal((await storeSnapshot(fresh)).created,false);
+  const changed=structuredClone(fixture);changed.projects[0]!.adMetrics!.cpa=850;changed.capturedAt=new Date(Date.now()+1000).toISOString();assert.equal((await storeSnapshot(changed)).alerts.length,0);
   assert.equal((await db.query("SELECT * FROM jobs WHERE kind='telegram_alert'")).rows.length,1);
   assert.equal((await latestSnapshot()).projects[0].adMetrics.cpa,850);
-  await db.exec("UPDATE monitoring_rules SET last_triggered_at=now()-interval '2 days'");changed.capturedAt='2026-09-12T08:00:00.000Z';assert.equal((await storeSnapshot(changed)).alerts.length,1);
+  await db.exec("UPDATE monitoring_rules SET last_triggered_at=now()-interval '2 days'");changed.capturedAt=new Date(Date.now()+2000).toISOString();assert.equal((await storeSnapshot(changed)).alerts.length,1);
 });
 sqlTest('atomic daily AI budget includes failures and rejects excess reservations',async()=>{
   const ids=await Promise.all(Array.from({length:5},(_,i)=>reserveAiRun(String(i))));assert.equal(ids.filter(Boolean).length,2);
@@ -125,4 +126,96 @@ sqlTest('database TLS verifies external hosts and permits only explicit Render p
   assert.deepEqual(databaseSslOptions('postgresql://user:dummy@db.example.test/db','true'),{rejectUnauthorized:true});
   assert.throws(()=>databaseSslOptions('postgresql://user:dummy@db.example.test/db','render-internal'));
   assert.deepEqual(databaseSslOptions('postgresql://user:dummy@dpg-synthetic-a/db','render-internal'),{rejectUnauthorized:true});
+});
+
+const owner={'authorization':'Bearer synthetic-owner-token-for-testing-1234567890'};
+const sourceBody=(id='synthetic-personal',extra:any={})=>({id,provider:'pwa',scope:'personal',reference:'synthetic://snapshot/1',capturedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+86400000).toISOString(),approvedForAi:true,...extra});
+async function ownerPost(path:string,body:any,key:string){return post('/v1/owner'+path,body,{...owner,'idempotency-key':key});}
+async function addSource(id='synthetic-personal',extra:any={}){const r=await ownerPost('/sources',sourceBody(id,extra),'source_key_'+id);assert.equal(r.status,200);return id;}
+sqlTest('owner API is separate from snapshot token and rejects disallowed browser origins',async()=>{
+ const r=await post('/v1/owner/sources',sourceBody(),{'authorization':'Bearer synthetic-sync-token-1234567890','idempotency-key':'test_key_123'});assert.equal(r.status,401);
+ assert.equal((await post('/v1/snapshots',fixture,{authorization:owner.authorization,origin:'https://evil.test'})).status,403);
+ const token=config.OWNER_API_TOKEN;config.OWNER_API_TOKEN=undefined;
+ try{assert.equal((await ownerPost('/sources',sourceBody(),'test_disabled')).status,503);}finally{config.OWNER_API_TOKEN=token;}
+});
+sqlTest('source registry rejects unapproved provider and unknown secret fields',async()=>{
+ assert.equal((await ownerPost('/sources',sourceBody('bad',{provider:'shell'}),'source_bad_provider')).status,400);
+ assert.equal((await ownerPost('/sources',sourceBody('bad',{apiKey:'synthetic'}),'source_bad_secret')).status,400);
+ await addSource();assert.equal((await ownerPost('/sources',sourceBody(),'source_new_key')).status,409);
+});
+sqlTest('memory corrections replace retrieval, deduplicate requests and reject stale versions',async()=>{
+ await addSource();
+ const initial={expectedVersion:0,sourceId:'synthetic-personal',scope:'personal',kind:'fact',body:'old synthetic fact',confirmed:true};
+ const first=await (await ownerPost('/memory',initial,'memory_initial_1')).json();assert.equal(first.version,1);
+ assert.deepEqual(await (await ownerPost('/memory',initial,'memory_initial_1')).json(),first);
+ const correction={...initial,id:first.id,expectedVersion:1,body:'corrected synthetic fact'};
+ assert.equal((await ownerPost('/memory',correction,'memory_correct_2')).status,200);
+ const memory=await memoryContext();assert.equal(memory.facts[0].fact,'corrected synthetic fact');assert.doesNotMatch(JSON.stringify(memory),/old synthetic fact/);
+ assert.equal((await ownerPost('/memory',correction,'memory_stale_3')).status,409);
+ assert.equal((await ownerPost('/memory',{...initial,body:'collision'},'memory_initial_1')).status,409);
+ assert.equal((await db.query('SELECT count(*)::int n FROM cos_memory_revisions')).rows[0].n,2);
+ assert.equal((await db.query('SELECT count(*)::int n FROM cos_audit')).rows[0].n,3);
+});
+sqlTest('source scope and freshness constrain memory and retraction removes retrieval',async()=>{
+ await addSource();await addSource('synthetic-work',{scope:'work'});
+ const body={expectedVersion:0,sourceId:'synthetic-work',scope:'personal',kind:'fact',body:'work sentinel',confirmed:true};
+ assert.equal((await ownerPost('/memory',body,'memory_wrong_scope')).status,403);
+ const work=await ownerPost('/memory',{...body,scope:'work'},'memory_work_1');assert.equal(work.status,200);
+ const personal={...body,sourceId:'synthetic-personal',body:'personal sentinel'};
+ const record=await (await ownerPost('/memory',personal,'memory_personal_1')).json();
+ assert.doesNotMatch(JSON.stringify(await memoryContext()),/work sentinel/);
+ await ownerPost('/memory',{...personal,id:record.id,expectedVersion:1,status:'retracted'},'memory_retract_2');
+ assert.equal((await memoryContext()).facts.length,0);
+ const pending={...personal,body:'unconfirmed sentinel',confirmed:false};
+ await ownerPost('/memory',pending,'memory_unconfirmed_1');assert.equal((await memoryContext()).facts.length,0);
+});
+sqlTest('expired sources never become current AI facts',async()=>{
+ await addSource('expired-source',{capturedAt:'2020-01-01T00:00:00Z',expiresAt:'2020-01-02T00:00:00Z'});
+ await ownerPost('/memory',{expectedVersion:0,sourceId:'expired-source',scope:'personal',kind:'fact',body:'stale sentinel',confirmed:true},'memory_expired_1');
+ assert.equal((await memoryContext()).facts.length,0);
+});
+sqlTest('decisions preserve expectation and allow one explicit outcome review',async()=>{
+ await addSource();const body={sourceId:'synthetic-personal',summary:'Synthetic choice',expectation:'Measurable result',choice:'Option A',reviewAt:new Date(Date.now()+86400000).toISOString()};
+ const d=await (await ownerPost('/decisions',body,'decision_initial_1')).json();
+ assert.deepEqual(await (await ownerPost('/decisions',body,'decision_initial_1')).json(),d);
+ assert.equal((await ownerPost(`/decisions/${d.id}/review`,{expectedVersion:1,outcome:'Verified synthetic result'},'decision_review_2')).status,200);
+ const row=(await db.query('SELECT * FROM cos_decisions')).rows[0];assert.equal(row.expectation,'Measurable result');assert.equal(row.status,'reviewed');
+ assert.equal((await ownerPost(`/decisions/${d.id}/review`,{expectedVersion:1,outcome:'stale'},'decision_review_3')).status,409);
+});
+sqlTest('action queue cannot execute or confirm without approval and evidence',async()=>{
+ await addSource();const a=await (await ownerPost('/actions',{sourceId:'synthetic-personal',kind:'calendar_write',proposal:'Synthetic proposed event'},'action_initial_1')).json();assert.equal(a.status,'waiting_approval');
+ assert.equal((await ownerPost(`/actions/${a.id}/transition`,{expectedVersion:1,transition:'confirm',evidence:'synthetic receipt'},'action_early_confirm')).status,409);
+ const approved=await (await ownerPost(`/actions/${a.id}/transition`,{expectedVersion:1,transition:'approve'},'action_approve_2')).json();assert.equal(approved.status,'approved');
+ assert.equal((await ownerPost(`/actions/${a.id}/transition`,{expectedVersion:2,transition:'confirm'},'action_no_evidence')).status,400);
+ const confirmed=await (await ownerPost(`/actions/${a.id}/transition`,{expectedVersion:2,transition:'confirm',evidence:'User verified externally'},'action_confirm_3')).json();assert.equal(confirmed.status,'user_confirmed');
+ assert.equal((await db.query('SELECT count(*)::int n FROM jobs')).rows[0].n,0);
+});
+sqlTest('audit is append-only and export includes revisions without credentials',async()=>{
+ await addSource();await assert.rejects(db.query("UPDATE cos_audit SET event='tampered'"));await assert.rejects(db.query('DELETE FROM cos_audit'));
+ const response=await fetch(base+'/v1/owner/export',{headers:owner});assert.equal(response.status,200);const data=await response.json();assert.equal(data.cos_sources.length,1);assert.equal(data.cos_audit.length,1);assert.doesNotMatch(JSON.stringify(data),/synthetic-owner-token|synthetic-sync-token/);
+});
+sqlTest('Telegram fact retries are idempotent and remain correctable in canonical memory',async()=>{
+ await handleMemory('запомни: synthetic fact','event-123');await handleMemory('запомни: synthetic fact','event-123');
+ const fact=(await memoryContext()).facts[0];assert.ok(fact.id);assert.equal((await db.query('SELECT count(*)::int n FROM cos_memory')).rows[0].n,1);
+});
+
+sqlTest('canonical memory, source and audit survive disk reopen and backup restore',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'aos-records-'));let disk:any;
+ try{
+  disk=new PGlite(dir);await disk.exec(schema);
+  await disk.exec("INSERT INTO cos_sources VALUES('synthetic','pwa','personal','synthetic-ref',now(),'2099-01-01',true)");
+  const id=(await disk.query("INSERT INTO cos_memory(source_id,scope,kind,version) VALUES('synthetic','personal','fact',1) RETURNING id")).rows[0].id;
+  await disk.query("INSERT INTO cos_memory_revisions(memory_id,version,body,confirmed,status) VALUES($1,1,'synthetic durable fact',true,'active')",[id]);
+  await disk.query("INSERT INTO cos_audit(request_key,event,entity_id,version) VALUES('synthetic-key','memory_revised',$1,1)",[id]);
+  await disk.close();disk=new PGlite(dir);
+  assert.equal((await disk.query('SELECT body FROM cos_memory_revisions')).rows[0].body,'synthetic durable fact');
+  const backup=await disk.dumpDataDir('gzip');await disk.close();disk=new PGlite({loadDataDir:backup});
+  assert.equal((await disk.query('SELECT count(*)::int n FROM cos_audit')).rows[0].n,1);
+  assert.equal((await disk.query('SELECT body FROM cos_memory_revisions')).rows[0].body,'synthetic durable fact');
+ }finally{if(disk)await disk.close();rmSync(dir,{recursive:true,force:true});}
+});
+sqlTest('stale snapshots are stored but never trigger monitoring alerts',async()=>{
+ await telegramReply('Следи за CPA RIFT, если выше 700','stale-rule');
+ const result=await storeSnapshot({...structuredClone(fixture),capturedAt:'2020-01-01T00:00:00Z'});
+ assert.equal(result.created,true);assert.equal(result.alerts.length,0);
 });

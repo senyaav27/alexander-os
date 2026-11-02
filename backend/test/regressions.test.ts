@@ -76,3 +76,19 @@ test('current project form escapes imported project names',()=>{
  const rendered=vm.runInNewContext(escapeSource+'\n`'+line+'`',{item:{name:'"><svg onload="alert(1)">'}});
  assert.doesNotMatch(rendered,/<svg/);assert.match(rendered,/&quot;&gt;&lt;svg/);
 });
+
+test('duplicate snapshot IDs and future timestamps are rejected',()=>{
+ const duplicate=structuredClone(fixture);duplicate.tasks.push({...duplicate.tasks[0]!});assert.equal(snapshotSchema.safeParse(duplicate).success,false);
+ const future=structuredClone(fixture);future.capturedAt='2099-01-01T00:00:00Z';assert.equal(snapshotSchema.safeParse(future).success,false);
+});
+test('missing or stale finances are labelled unknown instead of zero expenses',()=>{
+ const s=structuredClone(fixture);s.finances.transactions=[];
+ const brief=dailyBrief(s,new Date('2026-09-12T12:00:00Z'));
+ assert.match(brief,/Расход: нет подтверждения/);assert.doesNotMatch(brief,/Расход: 0/);
+});
+
+test('work and explicitly excluded records never enter the PWA snapshot',()=>{
+ const state=osState();state.projects=[{id:'work',scope:'work',name:'EMPLOYER_SENTINEL'},{id:'private',aiExcluded:true,name:'PRIVATE_SENTINEL'}];
+ state.transactions.push({id:'work',scope:'work',type:'expense',category:'business',title:'EMPLOYER_SENTINEL',amount:10,date:'2026-09-01'});
+ const dto=frontend(state).api.aiSnapshot();assert.doesNotMatch(JSON.stringify(dto),/EMPLOYER_SENTINEL|PRIVATE_SENTINEL/);
+});

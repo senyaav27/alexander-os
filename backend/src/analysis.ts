@@ -29,15 +29,15 @@ export function projectAnalysis(snapshot: AiSnapshot) {
 
 export function dailyBrief(snapshot: AiSnapshot, now = new Date(), timeZone='Europe/Moscow') {
   const f = financeAnalysis(snapshot, now, timeZone); const projects = projectAnalysis(snapshot);
+  const verifiedFinance = snapshot.finances.transactions.length>0 && now.getTime()-Date.parse(snapshot.capturedAt)<=86400000;
   const blocked = projects.filter(p=>p.bottleneck); const top = projects.find(p=>p.status==='active');
   return [
     'Alexander AI — Daily Brief', '', 'Главное:',
-    f.incomeGap===null ? '1. Цель текущего месяца неизвестна: нужен свежий sync.' : `1. До цели дохода месяца не хватает ${Math.round(f.incomeGap).toLocaleString('ru-RU')} ₽.`,
+    !verifiedFinance ? '1. Нет подтверждения актуальных финансов: нужен свежий источник.' : f.incomeGap===null ? '1. Цель текущего месяца неизвестна: нужен свежий sync.' : `1. До цели дохода месяца не хватает ${Math.round(f.incomeGap).toLocaleString('ru-RU')} ₽.`,
     `2. ${blocked.length ? `${blocked.length} активн. проект(а) без next action.` : 'У активных проектов указаны следующие действия.'}`,
-    `3. ${f.overBudget ? `Бюджет превышен на ${Math.round(-f.budgetVariance).toLocaleString('ru-RU')} ₽.` : `До лимита расходов остаётся ${Math.round(f.budgetVariance).toLocaleString('ru-RU')} ₽.`}`,
+    !verifiedFinance ? '3. Не принимай финансовые решения по отсутствующим или устаревшим данным.' : `3. ${f.overBudget ? `Бюджет превышен на ${Math.round(-f.budgetVariance).toLocaleString('ru-RU')} ₽.` : `До лимита расходов остаётся ${Math.round(f.budgetVariance).toLocaleString('ru-RU')} ₽.`}`,
     '', 'Рекомендация:', top ? `• Сфокусироваться на «${top.name}»: ${top.nextAction || 'сформулировать одно измеримое следующее действие'}.` : '• Добавить хотя бы один активный проект и его следующее действие.',
-    '', 'Финансы:', `• Доход: ${Math.round(f.income).toLocaleString('ru-RU')} ₽`, `• Расход: ${Math.round(f.expenses).toLocaleString('ru-RU')} ₽`, `• Свободный cash после обязательств: ${Math.round(f.availableCash).toLocaleString('ru-RU')} ₽`,
+    '', 'Финансы (локальные записи, не банковская сверка):', !verifiedFinance ? '• Доход: нет подтверждения' : `• Доход: ${Math.round(f.income).toLocaleString('ru-RU')} ₽`, !verifiedFinance ? '• Расход: нет подтверждения' : `• Расход: ${Math.round(f.expenses).toLocaleString('ru-RU')} ₽`, !verifiedFinance ? '• Свободные деньги: нет подтверждения' : `• Свободный cash после обязательств: ${Math.round(f.availableCash).toLocaleString('ru-RU')} ₽`,
     '', 'Неопределённость:', `Snapshot: ${snapshot.capturedAt}. Это последнее известное состояние, не live-данные. ` + (now.getTime()-Date.parse(snapshot.capturedAt)>86400000 ? 'Snapshot старше суток. ' : '') + 'Расходы исключают закрытые категории и могут быть неполными; свободный cash консервативно исключает резерв, инвестиции и все открытые платежи/долги. ' + (snapshot.finances.targetMonth && snapshot.finances.targetMonth!==localDate(now,timeZone).slice(0,7) ? 'Цель дохода относится к другому месяцу: нужен свежий sync. ' : '') + (!snapshot.finances.transactions.length ? 'Нет операций: финансовые выводы ограничены.' : '')
   ].join('\n');
 }
-
