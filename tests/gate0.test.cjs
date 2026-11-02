@@ -139,3 +139,17 @@ test('backup rejects invalid account balances and unsupported future wrapper sch
  data.accounts=[{id:'a',balance:null}];assert.equal(context.api.validateBackupData(data),false);
  data.accounts=[{id:'a',balance:100,baseBalance:'not a number'}];assert.equal(context.api.validateBackupData(data),false);
 });
+
+test('restore with the same IDs cannot roll back newer remote amounts via an old checkpoint',async()=>{
+ const s=sheets();await s.api.sync(true);
+ s.state.transactions[0].amount=6;await s.api.sync(true);assert.equal(s.writes(),2);
+ s.state.transactions[0].amount=5;s.state.persistenceEpoch='synthetic-restored-epoch';
+ await s.api.sync(true);assert.equal(s.api.status().kind,'error');assert.match(s.api.status().message,/Конфликт/);
+ assert.equal(s.writes(),2);assert.equal(s.tables()[0][1][4],6);assert.equal(s.state.transactions[0].amount,5);
+});
+test('restored identical content can establish a checkpoint without discarding records',async()=>{
+ const s=sheets();await s.api.sync(true);s.state.persistenceEpoch='synthetic-new-epoch';
+ await s.api.sync(true);assert.equal(s.api.status().kind,'success');
+ assert.equal(JSON.parse(s.store.get('aos_sheets_checkpoint_v1:synthetic')).epoch,'synthetic-new-epoch');
+ s.state.transactions[0].amount=7;await s.api.sync(true);assert.equal(s.api.status().kind,'success');assert.equal(s.tables()[0][1][4],7);
+});

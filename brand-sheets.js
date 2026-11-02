@@ -1,11 +1,11 @@
-/* Alexander OS | GATE 0 integrity review 15.8.7
+/* Alexander OS | GATE 0 integrity review 15.8.8
  * Drop-in replacement for repository-root brand-sheets.js.
  * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
  * This module never deletes local transactions, accounts, notes or passwords.
  */
 (() => {
   'use strict';
-  const VERSION = '15.8.7-gate0-review';
+  const VERSION = '15.8.8-gate0-review';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
   const DELETION_KEY = 'aos_sheets_pending_deletions_v1';
@@ -21,6 +21,7 @@
   const safe = v => String(v == null ? '' : v);
   const read = key => { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; } };
   const makeFinance = s => ({
+    persistenceEpoch: s?.persistenceEpoch || '',
     accounts: Array.isArray(s?.accounts) ? s.accounts : [],
     transactions: Array.isArray(s?.transactions) ? s.transactions : [],
     accountTransfers: Array.isArray(s?.accountTransfers) ? s.accountTransfers : [],
@@ -328,10 +329,12 @@
       }
       const journalKey = 'aos_sheets_checkpoint_v1:' + cfg.spreadsheetId;
       const checkpoint = read(journalKey);
+      const epoch = (inMemoryFinance || read(STATE_KEY)).persistenceEpoch || '';
+      const sameEpoch = (checkpoint.epoch || '') === epoch;
       const remoteText = JSON.stringify(remote);
       const empty = !checkpoint.verified && !checkpoint.pending && remote.every(rows => !rows.length);
-      const unchanged = remoteText === JSON.stringify(checkpoint.verified);
-      const recovered = remoteText === JSON.stringify(checkpoint.pending) && JSON.stringify(expected) === JSON.stringify(checkpoint.pending);
+      const unchanged = sameEpoch && remoteText === JSON.stringify(checkpoint.verified);
+      const recovered = sameEpoch && remoteText === JSON.stringify(checkpoint.pending) && JSON.stringify(expected) === JSON.stringify(checkpoint.pending);
       if (!empty && !unchanged && !recovered && remoteText !== JSON.stringify(expected)) {
         throw new Error('Конфликт Google и локальной копии. Автоперезапись запрещена. Сохрани обе копии для сверки.');
       }
@@ -343,7 +346,7 @@
         if (removed.length) throw new Error('Удаление строк Google приостановлено. Требуется отдельная сверка и резервная копия.');
       }
       // Durable write-ahead checkpoint makes an ambiguous response safely retryable.
-      localStorage.setItem(journalKey, JSON.stringify({verified: checkpoint.verified || remote, pending: expected}));
+      localStorage.setItem(journalKey, JSON.stringify({verified: checkpoint.verified || remote, pending: expected, epoch}));
       status('Отправляем: '+sourceSummary(data));
       const syncedAt = new Date().toISOString();
       const requests = TABS.map((tab, i) => {
@@ -367,7 +370,7 @@
         throw new Error('Содержимое Google не совпало после записи. Успех не подтверждён.');
       }
       writeVerified = true;
-      localStorage.setItem(journalKey, JSON.stringify({verified: expected}));
+      localStorage.setItem(journalKey, JSON.stringify({verified: expected, epoch}));
       await releaseSyncLock(lock);
       lock = null;
       lastSynced = fingerprint;

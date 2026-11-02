@@ -4077,7 +4077,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '15.8.7-gate0-review',
+      appVersion: '15.8.8-gate0-review',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -4124,7 +4124,7 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '15.8.7-gate0-review',
+      appVersion: '15.8.8-gate0-review',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
@@ -4347,6 +4347,7 @@ ${JSON.stringify(state, null, 2)}
       }
       const restored = normalizeState(clone(backupData));
       restored.version = 14.3;
+      restored.persistenceEpoch = uid();
       window.__AOS_RESTORE_IN_PROGRESS = true;
       try {
         if (!safeStorage.setItem(STORAGE_KEY, JSON.stringify(restored))) throw new Error('Restore persistence failed');
@@ -4490,7 +4491,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.7-gate0-review');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.8-gate0-review');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

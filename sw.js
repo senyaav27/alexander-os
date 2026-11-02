@@ -1,4 +1,4 @@
-const CACHE = 'alexander-os-v15-8-7-gate0-review';
+const CACHE = 'alexander-os-v15-8-8-gate0-review';
 const ASSETS = [
   './',
   './index.html',
@@ -9,8 +9,8 @@ const ASSETS = [
   './senyaav-ai-v157.css?v=15.8.0',
   './motion-v155.css?v=15.8.0',
   './senyaav-ai-v157.js?v=15.8.0',
-  './app.js?v=15.8.7-gate0-review',
-  './brand-sheets.js?v=15.8.7-gate0-review',
+  './app.js?v=15.8.8-gate0-review',
+  './brand-sheets.js?v=15.8.8-gate0-review',
   './brand-theme.css?v=15.8.0-brand1',
   './tasks-weekly.css?v=15.8.0',
   './runtime-v155.js?v=15.8.0',
