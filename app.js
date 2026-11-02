@@ -18,6 +18,7 @@
     }
     warning.textContent = message;
   }
+  window.addEventListener('aos-storage-error', () => persistenceWarning(window.__AOS_STORAGE_ERROR || 'Изменения не сохранены. Экспортируй сессию перед перезагрузкой.'));
   const safeStorage = {
     getItem(key) {
       if (memoryStorage.has(key)) return memoryStorage.get(key);
@@ -43,6 +44,14 @@
         memoryStorage.delete(key);
         return true;
       } catch (error) {
+        // A non-critical interceptor can throw after the actual disk commit.
+        try {
+          if (!storageBlocked && window.localStorage.getItem(key) === String(value)) {
+            if (key === STORAGE_KEY) observedStateRaw = String(value);
+            memoryStorage.delete(key);
+            return true;
+          }
+        } catch (_) { /* Storage itself is unavailable. */ }
         memoryStorage.set(key, String(value));
         persistenceWarning('Изменения НЕ сохранены на устройстве. Не закрывай приложение. Экспортируй JSON. ' + error.message);
         return false;
@@ -415,6 +424,7 @@
       if (!saved) return freshState();
       const parsed = JSON.parse(saved);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid saved state');
+      if (Number(parsed.version || 1) < 2 && (!Array.isArray(parsed.tasks) || !Array.isArray(parsed.transactions))) throw new Error('Invalid legacy state structure');
       if (Number(parsed.version) >= 2 && !validateBackupData(parsed)) throw new Error('Invalid saved state structure');
       return migrateState(parsed);
     } catch (error) {
@@ -4067,7 +4077,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '15.8.7-gate0-review',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -4114,13 +4124,14 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '15.8.7-gate0-review',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
   }
 
   function extractBackupData(parsed) {
+    if (parsed?.format === 'AlexanderOSBackup' && parsed.schemaVersion !== 1) throw new Error('Unsupported backup schema');
     if (parsed?.format === 'AlexanderOSBackup' && parsed?.data && typeof parsed.data === 'object') return parsed.data;
     if (parsed && typeof parsed === 'object' && (parsed.profile || parsed.tasks || parsed.transactions)) return parsed;
     throw new Error('Unsupported backup format');
@@ -4136,11 +4147,13 @@
       if (!Array.isArray(data[key])) return false;
       if (['snapshots', 'workoutFavorites', 'customExpenseCategories'].includes(key)) continue;
       const ids = data[key].map(item => item?.id);
-      if (ids.some(id => typeof id !== 'string' || !id.trim()) || new Set(ids).size !== ids.length) return false;
+      if (ids.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim()) || new Set(ids).size !== ids.length) return false;
     }
     for (const key of ['transactions', 'accountTransfers', 'obligations']) {
       if ((data[key] || []).some(item => typeof item.amount !== 'number' || !Number.isFinite(item.amount))) return false;
     }
+    if ((data.accounts || []).some(account => typeof account.balance !== 'number' || !Number.isFinite(account.balance) ||
+        (account.baseBalance !== undefined && (typeof account.baseBalance !== 'number' || !Number.isFinite(account.baseBalance))))) return false;
     return requiredArrays.every(key => Array.isArray(data[key])) && optionalArrays.every(key => data[key] === undefined || Array.isArray(data[key]));
   }
 
@@ -4304,6 +4317,9 @@ ${JSON.stringify(state, null, 2)}
     const input = event.target;
     const file = input.files?.[0];
     if (!file) return;
+    const previousMemory = new Map(memoryStorage);
+    const previouslyBlocked = storageBlocked;
+    let committed = false;
     try {
       let parsed = JSON.parse(await file.text());
       if (parsed?.format === 'AlexanderOSEncryptedBackup') {
@@ -4336,6 +4352,7 @@ ${JSON.stringify(state, null, 2)}
         if (!safeStorage.setItem(STORAGE_KEY, JSON.stringify(restored))) throw new Error('Restore persistence failed');
       } finally { window.__AOS_RESTORE_IN_PROGRESS = false; }
       state = restored;
+      committed = true;
       window.__AOS_STORAGE_UNSAFE = false;
       document.getElementById('aosPersistenceWarning')?.remove();
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
@@ -4346,6 +4363,12 @@ ${JSON.stringify(state, null, 2)}
       console.error(error);
       alert(error?.message?.includes('Wrong password') ? 'Неверный пароль или файл повреждён.' : 'Не удалось импортировать файл. Выбери JSON или .aos, скачанный через «Экспорт данных» в Alexander OS.');
     } finally {
+      if (!committed) {
+        // A failed restore must never become the session's next read/export.
+        memoryStorage.clear();
+        previousMemory.forEach((value, key) => memoryStorage.set(key, value));
+        storageBlocked = previouslyBlocked;
+      }
       input.value = '';
     }
   }
@@ -4467,7 +4490,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.6-gate0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.7-gate0-review');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

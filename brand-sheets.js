@@ -1,11 +1,11 @@
-/* Alexander OS | Sheets Sync Rescue 15.8.5 (2026-10-24)
+/* Alexander OS | GATE 0 integrity review 15.8.7
  * Drop-in replacement for repository-root brand-sheets.js.
  * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
  * This module never deletes local transactions, accounts, notes or passwords.
  */
 (() => {
   'use strict';
-  const VERSION = '15.8.6-gate0';
+  const VERSION = '15.8.7-gate0-review';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
   const DELETION_KEY = 'aos_sheets_pending_deletions_v1';
@@ -74,13 +74,22 @@
   (function safeguardStorage() {
     const nativeSet = Storage.prototype.setItem;
     if (nativeSet.__aosSyncRescue) return;
+    let observedRaw;
+    try { observedRaw = localStorage.getItem(STATE_KEY); } catch (_) { /* app.js reports unavailable storage. */ }
     const wrapped = function(key, value) {
       if (key !== STATE_KEY || this !== localStorage) return nativeSet.call(this, key, value);
       if (window.__AOS_STORAGE_UNSAFE && !window.__AOS_RESTORE_IN_PROGRESS) {
         throw new Error('Хранилище заблокировано: экспортируй текущую сессию до восстановления.');
       }
       let incoming;
-      try { incoming = JSON.parse(String(value)); } catch (_) { return nativeSet.call(this, key, value); }
+      try { incoming = JSON.parse(String(value)); } catch (_) { throw new Error('Некорректный JSON состояния. Запись остановлена.'); }
+      if (!window.__AOS_RESTORE_IN_PROGRESS && localStorage.getItem(key) !== observedRaw) {
+        localPersisted = false;
+        window.__AOS_STORAGE_UNSAFE = true;
+        window.__AOS_STORAGE_ERROR = 'Данные изменены в другой вкладке. Не закрывай форму; экспортируй сессию перед перезагрузкой.';
+        window.dispatchEvent(new Event('aos-storage-error'));
+        throw new Error(window.__AOS_STORAGE_ERROR);
+      }
       const previousFinance = makeFinance(read(STATE_KEY));
       try {
         nativeSet.call(this, key, value);
@@ -106,6 +115,7 @@
           console.error('[Alexander OS] Cannot persist finance state:', originalError);
         }
       }
+      if (localPersisted) observedRaw = localStorage.getItem(key);
       inMemoryFinance = makeFinance(incoming);
       inMemoryTrash = Array.isArray(incoming.trash) ? incoming.trash : [];
       if (localPersisted) trackRemovals(previousFinance, inMemoryFinance, incoming);
@@ -238,11 +248,38 @@
     });
     if (!response.ok) {
       let details='';try { details=(await response.json())?.error?.message||''; } catch (_) {}
-      throw new Error('Google Sheets HTTP '+response.status+(details?': '+details:''));
+      const error = new Error('Google Sheets HTTP '+response.status+(details?': '+details:''));
+      error.httpStatus = response.status;
+      throw error;
     }
     return response.status===204?{}:response.json();
   }
   const quote = tab => "'"+tab.replace(/'/g,"''")+"'";
+  const LOCK_TITLE = '_AOS_SYNC_LOCK_V1';
+  // Sheet titles are unique: addSheet is the server-side exclusive claim. No TTL
+  // or lock stealing: a crashed/ambiguous writer requires a reviewed recovery.
+  async function acquireSyncLock() {
+    const sheetId = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1;
+    const key = 'aos_sheets_lock_attempt_v1:' + cfg.spreadsheetId;
+    localStorage.setItem(key, JSON.stringify({sheetId, startedAt: new Date().toISOString()}));
+    try {
+      await googleApi(':batchUpdate', {method:'POST', body:JSON.stringify({requests:[
+        {addSheet:{properties:{sheetId, title:LOCK_TITLE, hidden:true, gridProperties:{rowCount:1,columnCount:1}}}}
+      ]})});
+      return {sheetId, key};
+    } catch (error) {
+      if (error.httpStatus === 400) throw new Error('Не удалось получить блокировку синхронизации. Другое устройство или незавершённая отправка; проверь служебный лист '+LOCK_TITLE+'.');
+      throw error;
+    }
+  }
+  async function releaseSyncLock(lock) {
+    // Never delete by title or another writer's ID. Only this successful claim.
+    await googleApi(':batchUpdate', {method:'POST', body:JSON.stringify({requests:[{deleteSheet:{sheetId:lock.sheetId}}]})});
+    try {
+      const journal = read(lock.key);
+      if (journal.sheetId === lock.sheetId) localStorage.removeItem(lock.key);
+    } catch (_) { /* The server lock is released; local diagnostic cleanup is optional. */ }
+  }
   async function ensureTabs() {
     const result=await googleApi('?fields=sheets.properties(sheetId,title)');
     const known = new Set((result.sheets||[]).map(item => item.properties?.title));
@@ -267,11 +304,13 @@
       return;
     }
     busy=true;
-    let data, fingerprint;
+    let data, fingerprint, lock;
+    let writeStarted = false, writeVerified = false;
     try {
       data = financePayload();
       fingerprint = JSON.stringify(data);
       if (!force && !audit && fingerprint === lastSynced) return;
+      lock = await acquireSyncLock();
       const properties = await ensureTabs();
       const query = rangeParams(TABS, 'A1:J') + '&valueRenderOption=UNFORMATTED_VALUE';
       const current = await googleApi('/values:batchGet?'+query);
@@ -319,13 +358,18 @@
         }};
       });
       // spreadsheets.batchUpdate validates and applies the complete request atomically.
+      writeStarted = true;
       await googleApi(':batchUpdate', {method:'POST', body: JSON.stringify({requests})});
       const verified = await googleApi('/values:batchGet?' + query);
       if (verified.valueRanges?.length !== TABS.length ||
+          verified.valueRanges.some((entry,i) => JSON.stringify(entry.values?.[0]) !== JSON.stringify(TABS[i].headers)) ||
           JSON.stringify(canonical(verified.valueRanges.map(entry => entry.values || []))) !== JSON.stringify(expected)) {
         throw new Error('Содержимое Google не совпало после записи. Успех не подтверждён.');
       }
+      writeVerified = true;
       localStorage.setItem(journalKey, JSON.stringify({verified: expected}));
+      await releaseSyncLock(lock);
+      lock = null;
       lastSynced = fingerprint;
       acceptedRemovals.forEach((ids,i)=>ids.forEach(id=>pendingRemovals[i].delete(id)));
       if (acceptedRemovals.some(ids=>ids.length)) savePendingRemovals();
@@ -338,6 +382,15 @@
       status('Синхронизация НЕ завершена: '+error.message,'error');
       console.error('[Alexander OS Sheets sync rescue]',error);
     } finally {
+      if (lock && (!writeStarted || writeVerified)) {
+        try { await releaseSyncLock(lock); }
+        catch (_) { status('Снятие блокировки не подтверждено. Повторную запись останови до сверки служебного листа '+LOCK_TITLE+'.', 'error'); }
+      }
+      // An unverified write may still be in flight. Retain its exclusive lock;
+      // releasing it here would let another device overwrite an ambiguous result.
+      if (lock && writeStarted && !writeVerified) {
+        status('Результат записи не подтверждён. Блокировка '+LOCK_TITLE+' сохранена. Сначала экспортируй JSON и сверяй Google; автоматический повтор запрещён.', 'error');
+      }
       busy=false;
       if(syncAgain) { syncAgain=false; queueSync(); }
     }
