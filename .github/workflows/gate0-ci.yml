@@ -34,6 +34,8 @@ jobs:
           for file in *.js *.mjs; do node --check "$file"; done
       - name: Synthetic storage and Google Sheets protocol tests
         run: node tests/gate0.test.cjs
+      - name: Local-only isolated package tests (no deploy)
+        run: node tests/gate0-test-build.test.cjs
       - name: Whitespace errors in this change
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -61,4 +63,6 @@ jobs:
       - name: Synthetic PWA browser checks
         env:
           PYTHONUNBUFFERED: '1'
-        run: python tests/gate0-browser.py
+        run: |
+          python tests/gate0-browser.py
+          python tests/gate0-isolation-browser.py
