@@ -41,3 +41,11 @@ GATE 1: перенос backend PR #1 отдельно от фронтенда; �
 GATE 2: версионируемая память с provenance, correction и отменой; журнал решений, каталог источников со scope/freshness; очередь действий и append-only audit. Read-only по умолчанию. Никаких внешних writes только на основании текста модели.
 
 GATE 3–4: Calendar — read-only OAuth scope и только выбранный календарь; финансовые источники — свежесть/полнота и reconciliation; SenyaMarketing, TVOЁ, RIFT — отдельные scopes, явные списки разрешённых проектов, без переноса контекста работодателя. Рекомендация должна иметь источник, дату, один следующий шаг и критерий проверки. Не создавать scheduler/уведомления, дублирующие существующие автоматизации.
+
+### Подготовленное ядро GATE 1
+
+Backend и его 34 теста перенесены из PR #1 без старого frontend, Docker/Render deployment не выполняется. `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`. `pnpm dev` / `pnpm worker` требуют отдельную PostgreSQL и миграцию `pnpm db:migrate`. Рабочую БД пользователя тесты не используют. SQL-тесты используют PGlite: это PostgreSQL WASM, не доказательство TCP/TLS или многопроцессных блокировок.
+
+`window.AlexanderAI.snapshot()` формирует allowlist DTO текущего приложения; `connect(origin, token)` держит credential только в памяти вкладки, `sync()` отправляет его явно, `disconnect()` забывает credential. По умолчанию запросов нет, автоматической отправки нет, пользовательский UI не заменён. Настройка end-user интерфейса подключения ещё предстоит. Для браузера backend требует точный HTTPS `PWA_ORIGIN`; owner token не должен совпадать с sync token. Токены и реальные данные не помещать в консольные логи или GitHub.
+
+Проверено на синтетике: 34 backend теста (в том числе миграции, HTTP authorization, snapshot dedup, SQL persistence/reopen, quota, worker retry, Telegram authorization), build, 15 GATE 0 тестов и браузерный сценарий. Telegram/OpenAI transport замокан, не live. Для Google нужен отдельный single-writer протокол; для live backend — приватные секреты, PostgreSQL с доверенным TLS, защищённый backup/restore и отдельное разрешение deployment.
