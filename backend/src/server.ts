@@ -7,6 +7,7 @@ import { setWebhook } from './telegram.js';
 import { safeError } from './redact.js';
 import { authorizedMessage, secretMatches } from './authorization.js';
 import { pathToFileURL } from 'node:url';
+import { recordsApi } from './records-api.js';
 export const app=express(); app.disable('x-powered-by'); app.use(express.json({limit:'512kb'}));
 app.use((req,res,next)=>{
   const origin=req.header('origin');
@@ -17,6 +18,7 @@ app.use((req,res,next)=>{
   if(req.method==='OPTIONS')return res.sendStatus(204);
   next();
 });
+app.use('/v1/owner',recordsApi);
 const syncAuth:express.RequestHandler=(req,res,next)=>{if(!secretMatches(req.headers.authorization,`Bearer ${config.AI_SYNC_TOKEN}`))return res.status(401).json({error:'unauthorized'});next();};
 app.get('/health',async(_req,res)=>{try{await pool.query('SELECT 1');res.json({ok:true,service:'alexander-ai'});}catch{res.status(503).json({ok:false});}});
 app.post('/v1/snapshots',syncAuth,async(req,res)=>{const parsed=snapshotSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'invalid_snapshot'});const result=await storeSnapshot(parsed.data);res.status(result.created?201:200).json({ok:true,created:result.created,receivedAt:new Date().toISOString()});});

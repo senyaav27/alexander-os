@@ -10,6 +10,7 @@ import { handleMemory, saveRecommendation } from './memory.js';
 import { pathToFileURL } from 'node:url';
 type Job={id:string;kind:string;payload:any;attempts:number};
 export async function scheduleDaily(now=new Date()) {
+  if(config.ENABLE_DAILY_BRIEF!=='true')return;
   const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:config.TIMEZONE,hour:'2-digit',hourCycle:'h23'}).format(now));
   if(hour<config.DAILY_BRIEF_HOUR)return;
   const day=localDate(now,config.TIMEZONE);

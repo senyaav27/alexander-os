@@ -1,14 +1,16 @@
+import { rememberTelegram, currentMemory } from './records.js';
 import { pool, withTransaction } from './db.js';
 import { config } from './config.js';
 import { redact } from './redact.js';
 export async function memoryContext() {
-  const [recommendations,decisions,feedback,facts]=await Promise.all([
+  const [recommendations,decisions,feedback,facts,recordedDecisions]=await Promise.all([
     pool.query("SELECT id,body,status FROM recommendations ORDER BY created_at DESC LIMIT 5"),
     pool.query("SELECT summary,status FROM decisions ORDER BY created_at DESC LIMIT 5"),
     pool.query("SELECT recommendation_id,value FROM user_feedback ORDER BY created_at DESC LIMIT 5"),
-    pool.query("SELECT fact,provenance_type,provenance_id FROM important_facts ORDER BY created_at DESC LIMIT 5")
+    currentMemory(),
+    pool.query("SELECT d.id,d.summary,d.expectation,d.choice,d.outcome,d.status,d.review_at,d.source_id FROM cos_decisions d JOIN cos_sources s ON s.id=d.source_id WHERE s.scope='personal' AND s.approved_for_ai=true AND s.expires_at>now() ORDER BY d.review_at DESC LIMIT 5")
   ]);
-  return {recommendations:recommendations.rows,decisions:decisions.rows,feedback:feedback.rows,facts:facts.rows};
+  return {recommendations:recommendations.rows,decisions:[...recordedDecisions.rows,...decisions.rows].slice(0,10),feedback:feedback.rows,facts:facts.filter(row=>row.kind==='fact').map(row=>({...row,fact:row.body})),records:facts};
 }
 export async function saveRecommendation(body:string,kind:string) {
   await pool.query('INSERT INTO recommendations(body,context) VALUES($1,$2)',[String(redact(body)).slice(0,4000),{kind}]);
@@ -29,7 +31,7 @@ export async function handleMemory(text:string,provenance:string):Promise<string
     });
   }
   const fact=text.match(/^запомни[:\s]+(.+)$/isu);
-  if(fact){await pool.query('INSERT INTO important_facts(fact,provenance_type,provenance_id) VALUES($1,$2,$3)',[String(redact(fact[1])).slice(0,2000),'telegram_user',provenance]);return 'Факт сохранён с источником Telegram. Он не меняет правила безопасности.';}
+  if(fact){await rememberTelegram(provenance,String(redact(fact[1])).slice(0,2000),provenance);return 'Факт сохранён с источником Telegram. Он не меняет правила безопасности.';}
   return null;
 }
 // Atomic database budget: survives restarts and concurrent workers. Failed calls also consume a slot.

@@ -8,4 +8,3 @@ const sql = await readFile(join(here, 'schema.sql'), 'utf8').catch(() => readFil
 await withTransaction(async client=>{await client.query('SELECT pg_advisory_xact_lock(41000)');await client.query(sql);});
 await pool.end();
 console.log('Alexander AI database is ready.');
-

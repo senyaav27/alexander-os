@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { safeError } from './redact.js';
 import { config } from './config.js';
 
 export function databaseSslOptions(url:string,mode:string) {
@@ -14,6 +15,8 @@ export const pool = new pg.Pool({
   max: 8, connectionTimeoutMillis: 5000, statement_timeout: 15000
 });
 
+pool.on('error',error=>console.error('database idle connection failed',safeError(error)));
+
 export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
@@ -26,4 +29,3 @@ export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<
     throw error;
   } finally { client.release(); }
 }
-
