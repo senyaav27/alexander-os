@@ -35,7 +35,7 @@ node scripts/prepare-gate0-test.mjs
 
 Команда только читает текущие reviewed assets и пишет новый каталог `/tmp/aos-gate0-test-<buildId>/site`. Никаких network/upload/login команд нет. В checkout ничего не перезаписывает. Отчёт выводит `published: false` (команда не публиковала; это не проверка существования сайта у провайдера), `googleEnabled: false`, origin, version, buildId и путь. `_aos-build.json` фиксирует исходный commit, SHA256 исходных/выходных файлов. Повтор идентичной сборки даёт те же байты; неизвестные/отличающиеся файлы в output не перезаписываются.
 
-Пакет включает только используемые HTML/CSS/JS, manifest, иконки, service worker, guard, `B0.json`, `_headers`, `404.html` и build manifest. В него не входят `.git`, `.github`, backend, `.env`, node_modules, старые installers и рабочие exports. Никакой ZIP/артефакт в GitHub не публикуется. CI собирает только временные локальные каталоги и тестирует их, без upload/deploy job.
+Пакет включает только используемые HTML/CSS/JS, manifest, иконки, service worker, guard, `B0.json`, `_headers`, `404.html` и build manifest. В него не входят `.git`, `.github`, backend, `.env`, node_modules, старые installers и рабочие exports. По запросу владельца получить скачиваемый ZIP добавлена выдача пакета через GitHub Actions artifact: только после успешных тестов при push в ветку GATE 0, срок хранения 7 дней. Это передача файла в существующем репозитории, не публикация сайта; Google выключен, deploy job отсутствует. Для скачивания artifact нужен вход в GitHub.
 
 Отличия **только тестовой копии**, бизнес-код рабочей PWA не изменён:
 
