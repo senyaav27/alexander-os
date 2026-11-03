@@ -1,11 +1,11 @@
-/* Alexander OS | Sheets Sync Rescue 15.8.5 (2026-10-24)
+/* Alexander OS | GATE 0 integrity review 15.8.8
  * Drop-in replacement for repository-root brand-sheets.js.
  * OAuth runs in the browser. Only financial fields are sent to Google Sheets.
  * This module never deletes local transactions, accounts, notes or passwords.
  */
 (() => {
   'use strict';
-  const VERSION = '15.8.5-auto-sync-hourly-safe-delete';
+  const VERSION = '15.8.8-gate0-review';
   const STATE_KEY = 'alexander_os_v1';
   const SETTINGS_KEY = 'aos_gsheets_sync_v1';
   const DELETION_KEY = 'aos_sheets_pending_deletions_v1';
@@ -21,6 +21,7 @@
   const safe = v => String(v == null ? '' : v);
   const read = key => { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; } };
   const makeFinance = s => ({
+    persistenceEpoch: s?.persistenceEpoch || '',
     accounts: Array.isArray(s?.accounts) ? s.accounts : [],
     transactions: Array.isArray(s?.transactions) ? s.transactions : [],
     accountTransfers: Array.isArray(s?.accountTransfers) ? s.accountTransfers : [],
@@ -74,10 +75,22 @@
   (function safeguardStorage() {
     const nativeSet = Storage.prototype.setItem;
     if (nativeSet.__aosSyncRescue) return;
+    let observedRaw;
+    try { observedRaw = localStorage.getItem(STATE_KEY); } catch (_) { /* app.js reports unavailable storage. */ }
     const wrapped = function(key, value) {
-      if (key !== STATE_KEY) return nativeSet.call(this, key, value);
+      if (key !== STATE_KEY || this !== localStorage) return nativeSet.call(this, key, value);
+      if (window.__AOS_STORAGE_UNSAFE && !window.__AOS_RESTORE_IN_PROGRESS) {
+        throw new Error('Хранилище заблокировано: экспортируй текущую сессию до восстановления.');
+      }
       let incoming;
-      try { incoming = JSON.parse(String(value)); } catch (_) { return nativeSet.call(this, key, value); }
+      try { incoming = JSON.parse(String(value)); } catch (_) { throw new Error('Некорректный JSON состояния. Запись остановлена.'); }
+      if (!window.__AOS_RESTORE_IN_PROGRESS && localStorage.getItem(key) !== observedRaw) {
+        localPersisted = false;
+        window.__AOS_STORAGE_UNSAFE = true;
+        window.__AOS_STORAGE_ERROR = 'Данные изменены в другой вкладке. Не закрывай форму; экспортируй сессию перед перезагрузкой.';
+        window.dispatchEvent(new Event('aos-storage-error'));
+        throw new Error(window.__AOS_STORAGE_ERROR);
+      }
       const previousFinance = makeFinance(read(STATE_KEY));
       try {
         nativeSet.call(this, key, value);
@@ -103,12 +116,13 @@
           console.error('[Alexander OS] Cannot persist finance state:', originalError);
         }
       }
+      if (localPersisted) observedRaw = localStorage.getItem(key);
       inMemoryFinance = makeFinance(incoming);
       inMemoryTrash = Array.isArray(incoming.trash) ? incoming.trash : [];
       if (localPersisted) trackRemovals(previousFinance, inMemoryFinance, incoming);
       window.__AOS_SHEETS_MEMORY_FINANCE = inMemoryFinance;
       window.__AOS_SHEETS_LOCAL_PERSISTED = localPersisted;
-      window.dispatchEvent(new Event('aos-finance-changed'));
+      if (localPersisted) window.dispatchEvent(new Event('aos-finance-changed'));
       // Preserve app.js behavior: it treats a successful return as saved,
       // and previously caught failures silently. We explicitly warn now.
       if (!localPersisted) {
@@ -124,6 +138,18 @@
   })();
 
   function financePayload() {
+    if (window.__AOS_STORAGE_UNSAFE || !localPersisted) throw new Error('Локальное сохранение не подтверждено. Сначала экспортируй JSON.');
+    const raw = inMemoryFinance || read(STATE_KEY);
+    for (const field of fields) {
+      const rows = raw[field] || [];
+      if (!Array.isArray(rows)) throw new Error('Повреждена коллекция ' + field);
+      const ids = rows.map(row => safe(row?.id).trim());
+      if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Пустые или повторяющиеся локальные ID: ' + field);
+      if (rows.some(row => field === 'accounts'
+        ? !Number.isFinite(Number(row.balance)) || !Number.isFinite(Number(row.baseBalance))
+        : !Number.isFinite(Number(row.amount)))) throw new Error('Некорректная сумма: ' + field);
+    }
+
     const source = inMemoryFinance || read(STATE_KEY);
     const accountNames = new Map((source.accounts || []).map(a => [safe(a.id), safe(a.name)]));
     const transactions = (source.transactions || [])
@@ -150,6 +176,13 @@
     return [transactions, transfers, obligations, accounts];
   }
   function status(message, kind = '') {
+    window.__AOS_SHEETS_STATUS = { message, kind };
+    if (kind === 'success' || kind === 'error') {
+      const previous = read('aos_sheets_audit_v1');
+      const log = Array.isArray(previous) ? previous : [];
+      log.unshift({at: new Date().toISOString(), outcome: kind, message});
+      try { localStorage.setItem('aos_sheets_audit_v1', JSON.stringify(log.slice(0, 50))); } catch (_) { /* Do not conceal the original sync outcome. */ }
+    }
     if (!statusNode) return;
     statusNode.textContent = message;
     statusNode.dataset.kind = kind;
@@ -216,17 +249,45 @@
     });
     if (!response.ok) {
       let details='';try { details=(await response.json())?.error?.message||''; } catch (_) {}
-      throw new Error('Google Sheets HTTP '+response.status+(details?': '+details:''));
+      const error = new Error('Google Sheets HTTP '+response.status+(details?': '+details:''));
+      error.httpStatus = response.status;
+      throw error;
     }
     return response.status===204?{}:response.json();
   }
   const quote = tab => "'"+tab.replace(/'/g,"''")+"'";
+  const LOCK_TITLE = '_AOS_SYNC_LOCK_V1';
+  // Sheet titles are unique: addSheet is the server-side exclusive claim. No TTL
+  // or lock stealing: a crashed/ambiguous writer requires a reviewed recovery.
+  async function acquireSyncLock() {
+    const sheetId = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff) || 1;
+    const key = 'aos_sheets_lock_attempt_v1:' + cfg.spreadsheetId;
+    localStorage.setItem(key, JSON.stringify({sheetId, startedAt: new Date().toISOString()}));
+    try {
+      await googleApi(':batchUpdate', {method:'POST', body:JSON.stringify({requests:[
+        {addSheet:{properties:{sheetId, title:LOCK_TITLE, hidden:true, gridProperties:{rowCount:1,columnCount:1}}}}
+      ]})});
+      return {sheetId, key};
+    } catch (error) {
+      if (error.httpStatus === 400) throw new Error('Не удалось получить блокировку синхронизации. Другое устройство или незавершённая отправка; проверь служебный лист '+LOCK_TITLE+'.');
+      throw error;
+    }
+  }
+  async function releaseSyncLock(lock) {
+    // Never delete by title or another writer's ID. Only this successful claim.
+    await googleApi(':batchUpdate', {method:'POST', body:JSON.stringify({requests:[{deleteSheet:{sheetId:lock.sheetId}}]})});
+    try {
+      const journal = read(lock.key);
+      if (journal.sheetId === lock.sheetId) localStorage.removeItem(lock.key);
+    } catch (_) { /* The server lock is released; local diagnostic cleanup is optional. */ }
+  }
   async function ensureTabs() {
-    const result=await googleApi('?fields=sheets.properties.title');
+    const result=await googleApi('?fields=sheets.properties(sheetId,title)');
     const known = new Set((result.sheets||[]).map(item => item.properties?.title));
     const missing = TABS.filter(t=>!known.has(t.title));
-    if (!missing.length)return;
+    if (!missing.length)return result.sheets.map(s => s.properties);
     await googleApi(':batchUpdate',{method:'POST',body:JSON.stringify({requests:missing.map(t=>({addSheet:{properties:{title:t.title}}}))})});
+    return ensureTabs();
   }
   function rangeParams(tabs, tail) {
     return tabs.map(t=>'ranges='+encodeURIComponent(quote(t.title)+'!'+tail)).join('&');
@@ -243,76 +304,75 @@
       status('Срок доступа Google истёк. Нажми «Войти через Google» один раз. Несинхронизированные данные сохранены на устройстве.', 'error');
       return;
     }
-    const data = financePayload();
-    const fingerprint = JSON.stringify(data);
-    if (!force && !audit && fingerprint === lastSynced) return;
     busy=true;
-    status('Проверяем актуальные расходы и состояние Google Таблицы…');
+    let data, fingerprint, lock;
+    let writeStarted = false, writeVerified = false;
     try {
-      await ensureTabs();
-      const requestRanges = TABS.map(t => quote(t.title)+'!A1:J');
-      const query = requestRanges.map(r=>'ranges='+encodeURIComponent(r)).join('&');
+      data = financePayload();
+      fingerprint = JSON.stringify(data);
+      if (!force && !audit && fingerprint === lastSynced) return;
+      lock = await acquireSyncLock();
+      const properties = await ensureTabs();
+      const query = rangeParams(TABS, 'A1:J') + '&valueRenderOption=UNFORMATTED_VALUE';
       const current = await googleApi('/values:batchGet?'+query);
-      const currentTables = (current.valueRanges||[]).map(entry => entry.values||[]);
-      // Alexander OS moves explicitly deleted transactions into its local trash.
-      // This persisted evidence survives reopening the PWA and is safer than a
-      // raw row-count comparison or a transient in-memory deletion journal.
-      const trash = inMemoryTrash || read(STATE_KEY).trash || [];
-      const collectionFor = ['transactions','accountTransfers','obligations','accounts'];
-      const deletedByUser = TABS.map((_,i) => new Set((Array.isArray(trash) ? trash : [])
-        .filter(entry => entry?.collection === collectionFor[i] && entry.item?.id)
-        .map(entry => safe(entry.item.id))));
-      const acceptedRemovals = TABS.map(() => []);
-      for (let i=0; i<TABS.length; i++) {
-        const oldRows = (currentTables[i] || []).slice(1).filter(row => row.some(value => safe(value).trim()));
-        const remoteIds = oldRows.map(row => safe(row[0]).trim()).filter(Boolean);
-        const localIds = new Set(data[i].map(row => safe(row[0]).trim()).filter(Boolean));
-        const missing = remoteIds.filter(id => !localIds.has(id));
-        const invalidIds = oldRows.length !== remoteIds.length || new Set(remoteIds).size !== remoteIds.length;
-        if (invalidIds) throw new Error('В «'+TABS[i].title+'» обнаружены пустые или повторяющиеся ID. Автоочистка остановлена.');
-        if (!missing.length) continue;
-        const allProven = missing.every(id => deletedByUser[i].has(id));
-        // A small, explicitly evidenced deletion is safe. A large disappearance
-        // may mean browser storage corruption or an accidental import.
-        const small = missing.length <= 10 && missing.length <= Math.max(2, Math.ceil(remoteIds.length * 0.10));
-        const autoDelete = allProven && small && localPersisted && data[i].length > 0;
-        if (!autoDelete) {
-          if (!force) throw new Error('В «'+TABS[i].title+'» есть '+missing.length+
-            ' записей, которых нет в приложении. Нет достаточного подтверждения их удаления. '+
-            'Автоочистка остановлена для защиты истории.');
-          const yes = confirm('В Google Таблице '+missing.length+' записей отсутствуют в Alexander OS. '+
-            'Они будут удалены из таблицы. Ты уверен, что эти операции действительно удалены в приложении?');
-          if (!yes) throw new Error('Удаление отменено. Данные Google не изменены.');
-        }
-        acceptedRemovals[i] = missing;
+      if (current.valueRanges?.length !== TABS.length) throw new Error('Неполный ответ Google. Запись остановлена.');
+      const currentTables = current.valueRanges.map(entry => entry.values || []);
+      const canonical = tables => tables.map((rows, i) => rows.slice(1)
+        .filter(row => row.some(value => safe(value).trim()))
+        .map(row => TABS[i].headers.map((_, col) => i === 3 && col === 7 ? '' : safe(row[col]))));
+      const remote = canonical(currentTables);
+      const expected = canonical(data.map((rows, i) => [TABS[i].headers, ...rows]));
+      for (let i = 0; i < TABS.length; i++) {
+        const ids = remote[i].map(row => row[0].trim());
+        if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Пустые или повторяющиеся ID в Google.');
+        if (currentTables[i].length && JSON.stringify(currentTables[i][0]) !== JSON.stringify(TABS[i].headers)) throw new Error('Заголовки Google изменены. Запись остановлена.');
       }
+      const journalKey = 'aos_sheets_checkpoint_v1:' + cfg.spreadsheetId;
+      const checkpoint = read(journalKey);
+      const epoch = (inMemoryFinance || read(STATE_KEY)).persistenceEpoch || '';
+      const sameEpoch = (checkpoint.epoch || '') === epoch;
+      const remoteText = JSON.stringify(remote);
+      const empty = !checkpoint.verified && !checkpoint.pending && remote.every(rows => !rows.length);
+      const unchanged = sameEpoch && remoteText === JSON.stringify(checkpoint.verified);
+      const recovered = sameEpoch && remoteText === JSON.stringify(checkpoint.pending) && JSON.stringify(expected) === JSON.stringify(checkpoint.pending);
+      if (!empty && !unchanged && !recovered && remoteText !== JSON.stringify(expected)) {
+        throw new Error('Конфликт Google и локальной копии. Автоперезапись запрещена. Сохрани обе копии для сверки.');
+      }
+      // Never delete remote records based on a stale local copy or a confirmation shortcut.
+      const acceptedRemovals = TABS.map(() => []);
+      for (let i = 0; i < TABS.length; i++) {
+        const localIds = new Set(expected[i].map(row => row[0]));
+        const removed = remote[i].filter(row => !localIds.has(row[0]));
+        if (removed.length) throw new Error('Удаление строк Google приостановлено. Требуется отдельная сверка и резервная копия.');
+      }
+      // Durable write-ahead checkpoint makes an ambiguous response safely retryable.
+      localStorage.setItem(journalKey, JSON.stringify({verified: checkpoint.verified || remote, pending: expected, epoch}));
       status('Отправляем: '+sourceSummary(data));
       const syncedAt = new Date().toISOString();
-      const updates = TABS.map((tab,i)=>({
-        range:quote(tab.title)+'!A1',
-        majorDimension:'ROWS',
-        values:[tab.headers,...(tab.title==='AOS_Счета'
-          ? data[i].map(row=>[...row.slice(0,7),syncedAt])
-          : data[i])]
-      }));
-      await googleApi('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:updates})});
-      const stale=[];
-      TABS.forEach((tab,i)=>{const old=currentTables[i]?.length||0;const keep=1+data[i].length;if(old>keep)stale.push(quote(tab.title)+'!A'+(keep+1)+':J'+old);});
-      if (stale.length) await googleApi('/values:batchClear',{method:'POST',body:JSON.stringify({ranges:stale})});
-      // Server-side readback: don't claim success merely because the write was accepted.
-      const verificationRanges=TABS.map((t,i)=>quote(t.title)+'!A1:A'+Math.max(2, data[i].length+1));
-      const verified=await googleApi('/values:batchGet?'+verificationRanges.map(r=>'ranges='+encodeURIComponent(r)).join('&'));
-      const results=verified.valueRanges||[];
-      for(let i=0;i<TABS.length;i++) {
-        const values=results[i]?.values||[];
-        const actual=values.slice(1).filter(row=>safe(row[0]).trim());
-        const expected=data[i];
-        if (actual.length!==expected.length) throw new Error('Google вернул '+actual.length+' строк для «'+TABS[i].title+'» вместо '+expected.length+'.');
-        for (let j=0;j<expected.length;j++) {
-          if (safe(actual[j]?.[0])!==safe(expected[j]?.[0]))
-            throw new Error('ID записи '+(j+1)+' не совпал после записи в «'+TABS[i].title+'».');
-        }
+      const requests = TABS.map((tab, i) => {
+        const values = [tab.headers, ...data[i].map(row => i === 3 ? [...row.slice(0, 7), syncedAt] : row)];
+        return {updateCells: {
+          range: {sheetId: properties.find(p => p.title === tab.title).sheetId,
+            startRowIndex: 0, endRowIndex: Math.max(values.length, currentTables[i].length),
+            startColumnIndex: 0, endColumnIndex: tab.headers.length},
+          rows: values.map(row => ({values: row.map(value => ({userEnteredValue:
+            typeof value === 'number' ? {numberValue: value} : {stringValue: safe(value)}}))})),
+          fields: 'userEnteredValue'
+        }};
+      });
+      // spreadsheets.batchUpdate validates and applies the complete request atomically.
+      writeStarted = true;
+      await googleApi(':batchUpdate', {method:'POST', body: JSON.stringify({requests})});
+      const verified = await googleApi('/values:batchGet?' + query);
+      if (verified.valueRanges?.length !== TABS.length ||
+          verified.valueRanges.some((entry,i) => JSON.stringify(entry.values?.[0]) !== JSON.stringify(TABS[i].headers)) ||
+          JSON.stringify(canonical(verified.valueRanges.map(entry => entry.values || []))) !== JSON.stringify(expected)) {
+        throw new Error('Содержимое Google не совпало после записи. Успех не подтверждён.');
       }
+      writeVerified = true;
+      localStorage.setItem(journalKey, JSON.stringify({verified: expected, epoch}));
+      await releaseSyncLock(lock);
+      lock = null;
       lastSynced = fingerprint;
       acceptedRemovals.forEach((ids,i)=>ids.forEach(id=>pendingRemovals[i].delete(id)));
       if (acceptedRemovals.some(ids=>ids.length)) savePendingRemovals();
@@ -325,6 +385,15 @@
       status('Синхронизация НЕ завершена: '+error.message,'error');
       console.error('[Alexander OS Sheets sync rescue]',error);
     } finally {
+      if (lock && (!writeStarted || writeVerified)) {
+        try { await releaseSyncLock(lock); }
+        catch (_) { status('Снятие блокировки не подтверждено. Повторную запись останови до сверки служебного листа '+LOCK_TITLE+'.', 'error'); }
+      }
+      // An unverified write may still be in flight. Retain its exclusive lock;
+      // releasing it here would let another device overwrite an ambiguous result.
+      if (lock && writeStarted && !writeVerified) {
+        status('Результат записи не подтверждён. Блокировка '+LOCK_TITLE+' сохранена. Сначала экспортируй JSON и сверяй Google; автоматический повтор запрещён.', 'error');
+      }
       busy=false;
       if(syncAgain) { syncAgain=false; queueSync(); }
     }

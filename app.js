@@ -4,15 +4,62 @@
   const STORAGE_KEY = 'alexander_os_v1';
   const SECURITY_KEY = 'alexander_os_security_v11';
   const memoryStorage = new Map();
+  let storageBlocked = false;
+  let observedStateRaw;
+  function persistenceWarning(message) {
+    window.__AOS_STORAGE_UNSAFE = true;
+    let warning = document.getElementById('aosPersistenceWarning');
+    if (!warning) {
+      warning = document.createElement('div');
+      warning.id = 'aosPersistenceWarning';
+      warning.setAttribute('role', 'alert');
+      warning.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;padding:16px;background:#601515;color:white';
+      document.body.append(warning);
+    }
+    warning.textContent = message;
+  }
+  window.addEventListener('aos-storage-error', () => persistenceWarning(window.__AOS_STORAGE_ERROR || 'Изменения не сохранены. Экспортируй сессию перед перезагрузкой.'));
   const safeStorage = {
     getItem(key) {
-      try { return window.localStorage.getItem(key); } catch (error) { return memoryStorage.has(key) ? memoryStorage.get(key) : null; }
+      if (memoryStorage.has(key)) return memoryStorage.get(key);
+      try { return window.localStorage.getItem(key); }
+      catch (error) {
+        if (key === STORAGE_KEY) storageBlocked = true;
+        persistenceWarning('Хранилище недоступно. Не закрывай приложение: экспортируй JSON. Запись и синхронизация остановлены.');
+        return null;
+      }
     },
     setItem(key, value) {
-      try { window.localStorage.setItem(key, value); } catch (error) { memoryStorage.set(key, String(value)); }
+      try {
+        if (key === STORAGE_KEY) {
+          if (storageBlocked) throw new Error('Запись заблокирована: исходные данные требуют восстановления.');
+          const current = window.localStorage.getItem(key);
+          if (observedStateRaw !== undefined && current !== observedStateRaw) {
+            storageBlocked = true;
+            throw new Error('Данные изменены в другой вкладке. Экспортируй текущую сессию и перезагрузи приложение.');
+          }
+        }
+        window.localStorage.setItem(key, value);
+        if (key === STORAGE_KEY) observedStateRaw = window.localStorage.getItem(key);
+        memoryStorage.delete(key);
+        return true;
+      } catch (error) {
+        // A non-critical interceptor can throw after the actual disk commit.
+        try {
+          if (!storageBlocked && window.localStorage.getItem(key) === String(value)) {
+            if (key === STORAGE_KEY) observedStateRaw = String(value);
+            memoryStorage.delete(key);
+            return true;
+          }
+        } catch (_) { /* Storage itself is unavailable. */ }
+        memoryStorage.set(key, String(value));
+        persistenceWarning('Изменения НЕ сохранены на устройстве. Не закрывай приложение. Экспортируй JSON. ' + error.message);
+        return false;
+      }
     },
     removeItem(key) {
-      try { window.localStorage.removeItem(key); } catch (error) { memoryStorage.delete(key); }
+      try { window.localStorage.removeItem(key); memoryStorage.delete(key); }
+      catch (error) { persistenceWarning('Не удалось изменить хранилище.'); }
     }
   };
   function loadSecurity() {
@@ -373,9 +420,17 @@
   function loadState() {
     try {
       const saved = safeStorage.getItem(STORAGE_KEY);
-      return saved ? migrateState(JSON.parse(saved)) : freshState();
+      observedStateRaw = saved;
+      if (!saved) return freshState();
+      const parsed = JSON.parse(saved);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid saved state');
+      if (Number(parsed.version || 1) < 2 && (!Array.isArray(parsed.tasks) || !Array.isArray(parsed.transactions))) throw new Error('Invalid legacy state structure');
+      if (Number(parsed.version) >= 2 && !validateBackupData(parsed)) throw new Error('Invalid saved state structure');
+      return migrateState(parsed);
     } catch (error) {
       console.error(error);
+      storageBlocked = true;
+      persistenceWarning('Сохранённые данные повреждены. Оригинал оставлен в хранилище; запись и синхронизация заблокированы. Восстанови проверенную резервную копию.');
       return freshState();
     }
   }
@@ -440,7 +495,7 @@
       }
     }
     if (options.snapshot !== false) recordSnapshot();
-    safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   function applyTheme() {
@@ -4022,7 +4077,7 @@
     return {
       format: 'AlexanderOSEncryptedBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '15.8.8-gate0-review',
       exportedAt: new Date().toISOString(),
       kdf: { name: 'PBKDF2', iterations: 250000, hash: 'SHA-256', salt: bytesToBase64(salt) },
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv) },
@@ -4069,13 +4124,14 @@
     return {
       format: 'AlexanderOSBackup',
       schemaVersion: 1,
-      appVersion: '11.6',
+      appVersion: '15.8.8-gate0-review',
       exportedAt: new Date().toISOString(),
       data: clone(sourceState)
     };
   }
 
   function extractBackupData(parsed) {
+    if (parsed?.format === 'AlexanderOSBackup' && parsed.schemaVersion !== 1) throw new Error('Unsupported backup schema');
     if (parsed?.format === 'AlexanderOSBackup' && parsed?.data && typeof parsed.data === 'object') return parsed.data;
     if (parsed && typeof parsed === 'object' && (parsed.profile || parsed.tasks || parsed.transactions)) return parsed;
     throw new Error('Unsupported backup format');
@@ -4085,7 +4141,19 @@
     if (!data || typeof data !== 'object') return false;
     const requiredArrays = ['tasks', 'accounts', 'transactions', 'obligations', 'projects', 'goals', 'habits', 'weeklyReviews', 'noteFolders', 'notes', 'snapshots'];
     const optionalArrays = ['history', 'trash', 'recurringRules', 'customExpenseCategories', 'workoutLogs', 'workoutFavorites'];
-    if (!data.profile || typeof data.profile !== 'object') return false;
+    if (!data.profile || typeof data.profile !== 'object' || Array.isArray(data.profile)) return false;
+    for (const key of [...requiredArrays, ...optionalArrays, 'accountTransfers', 'weeklyTaskGoals']) {
+      if (data[key] === undefined) continue;
+      if (!Array.isArray(data[key])) return false;
+      if (['snapshots', 'workoutFavorites', 'customExpenseCategories'].includes(key)) continue;
+      const ids = data[key].map(item => item?.id);
+      if (ids.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim()) || new Set(ids).size !== ids.length) return false;
+    }
+    for (const key of ['transactions', 'accountTransfers', 'obligations']) {
+      if ((data[key] || []).some(item => typeof item.amount !== 'number' || !Number.isFinite(item.amount))) return false;
+    }
+    if ((data.accounts || []).some(account => typeof account.balance !== 'number' || !Number.isFinite(account.balance) ||
+        (account.baseBalance !== undefined && (typeof account.baseBalance !== 'number' || !Number.isFinite(account.baseBalance))))) return false;
     return requiredArrays.every(key => Array.isArray(data[key])) && optionalArrays.every(key => data[key] === undefined || Array.isArray(data[key]));
   }
 
@@ -4249,6 +4317,9 @@ ${JSON.stringify(state, null, 2)}
     const input = event.target;
     const file = input.files?.[0];
     if (!file) return;
+    const previousMemory = new Map(memoryStorage);
+    const previouslyBlocked = storageBlocked;
+    let committed = false;
     try {
       let parsed = JSON.parse(await file.text());
       if (parsed?.format === 'AlexanderOSEncryptedBackup') {
@@ -4266,10 +4337,25 @@ ${JSON.stringify(state, null, 2)}
       const confirmed = confirm(`Импорт полностью заменит текущие данные приложения.\n\nВ файле: ${summary}.\n\nПродолжить?`);
       if (!confirmed) return;
 
-      safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)));
-      state = normalizeState(clone(backupData));
-      state.version = 14.3;
-      safeStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      // Preserve the exact disk bytes as well as the current in-memory session.
+      const originalRaw = window.localStorage.getItem(STORAGE_KEY);
+      if (!safeStorage.setItem('alexander_os_pre_import_raw', originalRaw || '')) throw new Error('Raw backup failed');
+      if (!safeStorage.setItem('alexander_os_pre_import_backup', JSON.stringify(createBackupPayload(state)))) throw new Error('Pre-import backup failed');
+      if (storageBlocked) {
+        observedStateRaw = originalRaw;
+        storageBlocked = false;
+      }
+      const restored = normalizeState(clone(backupData));
+      restored.version = 14.3;
+      restored.persistenceEpoch = uid();
+      window.__AOS_RESTORE_IN_PROGRESS = true;
+      try {
+        if (!safeStorage.setItem(STORAGE_KEY, JSON.stringify(restored))) throw new Error('Restore persistence failed');
+      } finally { window.__AOS_RESTORE_IN_PROGRESS = false; }
+      state = restored;
+      committed = true;
+      window.__AOS_STORAGE_UNSAFE = false;
+      document.getElementById('aosPersistenceWarning')?.remove();
       financeSelectedMonth = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}`;
       applyTheme();
       render();
@@ -4278,6 +4364,12 @@ ${JSON.stringify(state, null, 2)}
       console.error(error);
       alert(error?.message?.includes('Wrong password') ? 'Неверный пароль или файл повреждён.' : 'Не удалось импортировать файл. Выбери JSON или .aos, скачанный через «Экспорт данных» в Alexander OS.');
     } finally {
+      if (!committed) {
+        // A failed restore must never become the session's next read/export.
+        memoryStorage.clear();
+        previousMemory.forEach((value, key) => memoryStorage.set(key, value));
+        storageBlocked = previouslyBlocked;
+      }
       input.value = '';
     }
   }
@@ -4292,10 +4384,10 @@ ${JSON.stringify(state, null, 2)}
     try {
       const ok = modalAction?.(modalForm);
       if (ok === false) return;
-      saveState();
+      const persisted = saveState();
       closeModal();
       render();
-      toast('Сохранено');
+      toast(persisted ? 'Сохранено' : 'НЕ сохранено на устройстве — экспортируй JSON');
     } catch (error) {
       console.error(error);
       alert('Не удалось сохранить запись. Проверь данные.');
@@ -4399,7 +4491,7 @@ ${JSON.stringify(state, null, 2)}
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js?v=14.3.0');
+        const registration = await navigator.serviceWorker.register('./sw.js?v=15.8.8-gate0-review');
         await registration.update();
         checkTaskReminders();
       } catch (error) { console.error(error); }

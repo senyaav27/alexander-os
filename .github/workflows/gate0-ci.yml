@@ -1,0 +1,92 @@
+name: GATE 0 data integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/aos-gate0-data-integrity']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate0-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node }}
+      - name: JavaScript syntax
+        run: |
+          set -euo pipefail
+          for file in *.js *.mjs; do node --check "$file"; done
+      - name: Synthetic storage and Google Sheets protocol tests
+        run: node tests/gate0.test.cjs
+      - name: Local-only isolated package tests (no deploy)
+        run: node tests/gate0-test-build.test.cjs
+      - name: Whitespace errors in this change
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git merge-base origin/main HEAD)"
+          fi
+          git diff --check "$BASE_SHA" HEAD
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned browser test tools
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Synthetic PWA browser checks
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python tests/gate0-browser.py
+          python tests/gate0-isolation-browser.py
+
+  download-package:
+    name: Download B0 ZIP (no site deployment)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/aos-gate0-data-integrity'
+    needs: [integrity, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Prepare Google-disabled B0 package
+        run: node scripts/prepare-gate0-test.mjs --out "$RUNNER_TEMP/gate0-site"
+      - name: Make ZIP available for download
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: alexander-os-gate0-test-15.8.8
+          path: ${{ runner.temp }}/gate0-site/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
